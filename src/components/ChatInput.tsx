@@ -16,11 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-interface ChatInputProps {
-  isCollapsed: boolean;
-}
-
-const ChatInput = ({ isCollapsed }: ChatInputProps) => {
+const ChatInput = () => {
+  const isMobile = useIsMobile();
   const [message, setMessage] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
@@ -74,15 +71,16 @@ const ChatInput = ({ isCollapsed }: ChatInputProps) => {
     <>
       <div
         className={cn(
-          "fixed bottom-0 right-0 px-4 md:px-8 pb-4 md:pb-8 transition-all duration-300",
-          isCollapsed ? "left-14" : "left-64"
+          "fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-sm border-t border-border",
+          "px-3 sm:px-4 md:px-8 py-3 sm:py-4 md:py-6",
+          !isMobile && "md:left-16 lg:left-64"
         )}
       >
-        <div className="max-w-4xl mx-auto space-y-3 md:space-y-4">
+        <div className="max-w-4xl mx-auto space-y-2 sm:space-y-3 md:space-y-4">
           {/* Input field */}
           <div className="relative">
-            <div className="bg-card rounded-2xl md:rounded-3xl shadow-lg border border-border overflow-hidden">
-              <div className="flex items-center gap-2 px-3 md:px-4 py-2 md:py-3">
+            <div className="bg-card rounded-xl sm:rounded-2xl md:rounded-3xl shadow-lg border border-border overflow-hidden">
+              <div className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 md:px-4 py-2 md:py-3">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -104,13 +102,13 @@ const ChatInput = ({ isCollapsed }: ChatInputProps) => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 md:h-9 md:w-9 rounded-full hover:bg-secondary shrink-0"
+                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 rounded-full hover:bg-secondary shrink-0"
                     >
-                      <Plus className="h-4 w-4 md:h-5 md:w-5" />
+                      <Plus className="h-4 w-4 sm:h-4.5 sm:w-4.5 md:h-5 md:w-5" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
-                    className="w-64 md:w-80 p-2 bg-popover border-border"
+                    className="w-56 sm:w-64 md:w-80 p-2 bg-popover border-border"
                     align="start"
                     side="top"
                   >
@@ -133,24 +131,24 @@ const ChatInput = ({ isCollapsed }: ChatInputProps) => {
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Écrivez votre message..."
-                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm md:text-base placeholder:text-muted-foreground"
+                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-xs sm:text-sm md:text-base placeholder:text-muted-foreground"
                 />
 
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => setShowVoiceRecorder(true)}
-                  className="h-8 w-8 md:h-9 md:w-9 rounded-full hover:bg-secondary shrink-0"
+                  className="h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 rounded-full hover:bg-secondary shrink-0"
                 >
-                  <Mic className="h-4 w-4 md:h-5 md:w-5" />
+                  <Mic className="h-4 w-4 sm:h-4.5 sm:w-4.5 md:h-5 md:w-5" />
                 </Button>
 
                 {message && (
                   <Button
                     size="icon"
-                    className="h-8 w-8 md:h-9 md:w-9 rounded-full shrink-0"
+                    className="h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 rounded-full shrink-0"
                   >
-                    <Send className="h-4 w-4 md:h-5 md:w-5" />
+                    <Send className="h-4 w-4 sm:h-4.5 sm:w-4.5 md:h-5 md:w-5" />
                   </Button>
                 )}
               </div>
@@ -158,12 +156,12 @@ const ChatInput = ({ isCollapsed }: ChatInputProps) => {
           </div>
 
           {/* Quick action buttons */}
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide justify-center flex-wrap">
+          <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center flex-wrap">
             {quickActions.map((action, index) => (
               <Button
                 key={index}
                 variant="secondary"
-                className="rounded-full whitespace-nowrap bg-secondary hover:bg-secondary/80 border border-border/50 text-xs md:text-sm px-3 md:px-4 h-8 md:h-9"
+                className="rounded-full whitespace-nowrap bg-secondary hover:bg-secondary/80 border border-border/50 text-[10px] sm:text-xs md:text-sm px-2 sm:px-3 md:px-4 h-6 sm:h-7 md:h-8"
               >
                 {action}
               </Button>
@@ -192,5 +190,6 @@ const ChatInput = ({ isCollapsed }: ChatInputProps) => {
 
 export default ChatInput;
 
-// Import cn utility
+// Import cn utility and hook
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
