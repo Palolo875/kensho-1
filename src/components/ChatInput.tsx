@@ -71,16 +71,16 @@ const ChatInput = () => {
     <>
       <div
         className={cn(
-          "fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-sm border-t border-border",
-          "px-3 sm:px-4 md:px-8 py-3 sm:py-4 md:py-6",
+          "fixed bottom-0 left-0 right-0 bg-transparent",
+          "px-3 sm:px-4 md:px-8 py-4 sm:py-5 md:py-6",
           !isMobile && "md:left-16 lg:left-64"
         )}
       >
-        <div className="max-w-4xl mx-auto space-y-2 sm:space-y-3 md:space-y-4">
+        <div className="max-w-4xl mx-auto space-y-3 sm:space-y-4">
           {/* Input field */}
           <div className="relative">
-            <div className="bg-card rounded-xl sm:rounded-2xl md:rounded-3xl shadow-lg border border-border overflow-hidden">
-              <div className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 md:px-4 py-2 md:py-3">
+            <div className="bg-background/60 backdrop-blur-xl rounded-full shadow-2xl border border-border/40 overflow-hidden transition-all duration-300 hover:shadow-3xl hover:bg-background/70">
+              <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 md:py-3.5">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -102,13 +102,13 @@ const ChatInput = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 rounded-full hover:bg-secondary shrink-0"
+                      className="h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 rounded-full hover:bg-accent/50 shrink-0 transition-colors"
                     >
-                      <Plus className="h-4 w-4 sm:h-4.5 sm:w-4.5 md:h-5 md:w-5" />
+                      <Plus className="h-5 w-5 sm:h-5 sm:w-5 md:h-5.5 md:w-5.5" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
-                    className="w-56 sm:w-64 md:w-80 p-2 bg-popover border-border"
+                    className="w-56 sm:w-64 md:w-80 p-2 bg-popover/95 backdrop-blur-xl border-border/50 shadow-xl"
                     align="start"
                     side="top"
                   >
@@ -130,25 +130,25 @@ const ChatInput = () => {
                 <Input
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Écrivez votre message..."
-                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-xs sm:text-sm md:text-base placeholder:text-muted-foreground"
+                  placeholder="Envoyer un message..."
+                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/70 font-light"
                 />
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowVoiceRecorder(true)}
-                  className="h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 rounded-full hover:bg-secondary shrink-0"
-                >
-                  <Mic className="h-4 w-4 sm:h-4.5 sm:w-4.5 md:h-5 md:w-5" />
-                </Button>
-
-                {message && (
+                {message ? (
                   <Button
                     size="icon"
-                    className="h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 rounded-full shrink-0"
+                    className="h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 rounded-full shrink-0 bg-foreground text-background hover:bg-foreground/90 transition-all duration-200"
                   >
-                    <Send className="h-4 w-4 sm:h-4.5 sm:w-4.5 md:h-5 md:w-5" />
+                    <Send className="h-4.5 w-4.5 sm:h-5 sm:w-5 md:h-5.5 md:w-5.5" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowVoiceRecorder(true)}
+                    className="h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 rounded-full hover:bg-accent/50 shrink-0 transition-colors"
+                  >
+                    <Mic className="h-4.5 w-4.5 sm:h-5 sm:w-5 md:h-5.5 md:w-5.5" />
                   </Button>
                 )}
               </div>
@@ -156,12 +156,12 @@ const ChatInput = () => {
           </div>
 
           {/* Quick action buttons */}
-          <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center flex-wrap">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center flex-wrap">
             {quickActions.map((action, index) => (
               <Button
                 key={index}
                 variant="secondary"
-                className="rounded-full whitespace-nowrap bg-secondary hover:bg-secondary/80 border border-border/50 text-[10px] sm:text-xs md:text-sm px-2 sm:px-3 md:px-4 h-6 sm:h-7 md:h-8"
+                className="rounded-full whitespace-nowrap bg-background/40 backdrop-blur-md hover:bg-background/60 border border-border/30 text-[11px] sm:text-xs md:text-sm px-3 sm:px-4 md:px-5 h-7 sm:h-8 md:h-9 font-light transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 {action}
               </Button>
