@@ -44,7 +44,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
     return (
       <aside
         className={cn(
-          "fixed left-0 top-0 bottom-0 bg-sidebar border-r border-sidebar-border flex flex-col py-4 transition-all duration-300 z-40",
+          "fixed left-0 top-0 bottom-0 bg-sidebar/80 backdrop-blur-xl border-r border-sidebar-border/50 flex flex-col py-6 transition-all duration-300 z-40 shadow-lg",
           isCollapsed ? "w-16" : "w-64"
         )}
       >
@@ -73,8 +73,8 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
             variant="ghost"
             onClick={onNewConversation}
             className={cn(
-              "h-10 hover:bg-sidebar-accent",
-              isCollapsed ? "w-10 px-0" : "w-full justify-start"
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
             )}
           >
             <MessageSquarePlus className="h-5 w-5" />
@@ -85,8 +85,8 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
             variant="ghost"
             onClick={onOpenSearch}
             className={cn(
-              "h-10 hover:bg-sidebar-accent",
-              isCollapsed ? "w-10 px-0" : "w-full justify-start"
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
             )}
           >
             <Search className="h-5 w-5" />
@@ -96,8 +96,8 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
           <Button
             variant="ghost"
             className={cn(
-              "h-10 hover:bg-sidebar-accent",
-              isCollapsed ? "w-10 px-0" : "w-full justify-start"
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
             )}
           >
             <Clock className="h-5 w-5" />
@@ -113,8 +113,8 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
             variant="ghost"
             onClick={onOpenSettings}
             className={cn(
-              "h-10 hover:bg-sidebar-accent",
-              isCollapsed ? "w-10 px-0" : "w-full justify-start"
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
             )}
           >
             <Settings className="h-5 w-5" />
@@ -124,8 +124,8 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
           <Button
             variant="ghost"
             className={cn(
-              "h-10 hover:bg-sidebar-accent",
-              isCollapsed ? "w-10 px-0" : "w-full justify-start"
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
             )}
           >
             <User className="h-5 w-5" />
@@ -142,7 +142,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
       {/* Mobile overlay */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
+          className="fixed inset-0 bg-black/30 backdrop-blur-md z-40 md:hidden"
           onClick={() => onToggle ? onToggle() : setInternalIsOpen(false)}
         />
       )}
@@ -151,7 +151,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
       <aside
         id="mobile-sidebar"
         className={cn(
-          "fixed left-0 top-0 bottom-0 bg-sidebar border-r border-sidebar-border flex flex-col py-4 transition-transform duration-300 z-50 w-64 md:hidden",
+          "fixed left-0 top-0 bottom-0 bg-sidebar/95 backdrop-blur-xl border-r border-sidebar-border/50 flex flex-col py-6 transition-transform duration-300 z-50 w-64 md:hidden shadow-2xl",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -176,7 +176,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
               onNewConversation();
               onToggle ? onToggle() : setInternalIsOpen(false);
             }}
-            className="h-10 hover:bg-sidebar-accent w-full justify-start"
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
           >
             <MessageSquarePlus className="h-5 w-5" />
             <span className="ml-3">Nouvelle conversation</span>
@@ -188,7 +188,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
               onOpenSearch();
               onToggle ? onToggle() : setInternalIsOpen(false);
             }}
-            className="h-10 hover:bg-sidebar-accent w-full justify-start"
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
           >
             <Search className="h-5 w-5" />
             <span className="ml-3">Rechercher</span>
@@ -196,7 +196,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
 
           <Button
             variant="ghost"
-            className="h-10 hover:bg-sidebar-accent w-full justify-start"
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
           >
             <Clock className="h-5 w-5" />
             <span className="ml-3">Historique</span>
@@ -213,7 +213,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
               onOpenSettings();
               onToggle ? onToggle() : setInternalIsOpen(false);
             }}
-            className="h-10 hover:bg-sidebar-accent w-full justify-start"
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
           >
             <Settings className="h-5 w-5" />
             <span className="ml-3">Paramètres</span>
@@ -221,7 +221,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
 
           <Button
             variant="ghost"
-            className="h-10 hover:bg-sidebar-accent w-full justify-start"
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
           >
             <User className="h-5 w-5" />
             <span className="ml-3">Profil</span>
@@ -239,7 +239,7 @@ export const SidebarTrigger = ({ onClick }: { onClick: () => void }) => (
     variant="ghost"
     size="icon"
     onClick={onClick}
-    className="h-10 w-10 md:hidden fixed top-3 left-3 z-30 hover:bg-sidebar-accent"
+    className="h-11 w-11 md:hidden fixed top-3 left-3 z-30 hover:bg-accent/60 backdrop-blur-md bg-background/40 rounded-xl shadow-lg transition-all duration-200"
   >
     <Menu className="h-5 w-5" />
   </Button>

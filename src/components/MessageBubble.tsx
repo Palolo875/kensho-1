@@ -17,8 +17,8 @@ const MessageBubble = ({ content, isUser }: MessageBubbleProps) => {
     return (
       <div className="flex justify-end items-start gap-2 group px-4 md:px-8 py-4">
         <div className="flex flex-col items-end max-w-[85%] md:max-w-[70%]">
-          <div className="bg-user-bubble text-user-bubble-foreground px-4 py-3 rounded-2xl rounded-tr-sm">
-            <p className="text-sm md:text-base">{content}</p>
+          <div className="bg-user-bubble/90 backdrop-blur-sm text-user-bubble-foreground px-5 py-3.5 rounded-3xl rounded-tr-md shadow-lg">
+            <p className="text-sm md:text-base font-light">{content}</p>
           </div>
         </div>
         <DropdownMenu>
