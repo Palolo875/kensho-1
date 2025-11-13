@@ -1,6 +1,6 @@
 // src/core/agent-system/AgentRuntime.ts
 import { MessageBus } from '../communication/MessageBus';
-import { WorkerName, RequestHandler } from '../communication/types';
+import { WorkerName } from '../communication/types';
 
 /**
  * AgentRuntime est l'environnement d'exécution pour chaque agent.
@@ -10,7 +10,7 @@ import { WorkerName, RequestHandler } from '../communication/types';
 export class AgentRuntime {
     public readonly agentName: WorkerName;
     private readonly messageBus: MessageBus;
-    private methods = new Map<string, RequestHandler>();
+    private methods = new Map<string, (...args: any[]) => any>();
 
     constructor(name: WorkerName) {
         this.agentName = name;
@@ -27,7 +27,7 @@ export class AgentRuntime {
         throw new Error(`Method '${payload.method}' not found on agent '${this.agentName}'`);
     }
 
-    public registerMethod(name: string, handler: RequestHandler): void {
+    public registerMethod(name: string, handler: (...args: any[]) => any): void {
         if (this.methods.has(name)) {
             console.warn(`[AgentRuntime] Method '${name}' on agent '${this.agentName}' is already registered and will be overwritten.`);
         }
