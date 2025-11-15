@@ -12,7 +12,11 @@ import VoiceRecorderInline from "./VoiceRecorderInline";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const ChatInput = () => {
+interface ChatInputProps {
+  showSuggestions?: boolean;
+}
+
+const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
   const isMobile = useIsMobile();
   const [message, setMessage] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -77,18 +81,20 @@ const ChatInput = () => {
         "mx-auto space-y-3 sm:space-y-4",
         isMobile ? "max-w-2xl" : "max-w-3xl lg:max-w-4xl xl:max-w-5xl"
       )}>
-        {/* Quick action buttons */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center flex-wrap">
-          {quickActions.map((action, index) => (
-            <Button
-              key={index}
-              variant="secondary"
-              className="rounded-full whitespace-nowrap bg-background/40 backdrop-blur-md hover:bg-background/60 border border-border/30 text-xs sm:text-sm px-3 sm:px-4 md:px-5 h-8 sm:h-9 font-light transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              {action}
-            </Button>
-          ))}
-        </div>
+        {/* Quick action buttons - only on home screen */}
+        {showSuggestions && (
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center flex-wrap">
+            {quickActions.map((action, index) => (
+              <Button
+                key={index}
+                variant="secondary"
+                className="rounded-full whitespace-nowrap bg-background/40 backdrop-blur-md hover:bg-background/60 border border-border/30 text-xs sm:text-sm px-3 sm:px-4 md:px-5 h-8 sm:h-9 font-light transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                {action}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* Input field */}
         <div className="relative">
@@ -189,3 +195,4 @@ const ChatInput = () => {
 };
 
 export default ChatInput;
+export type { ChatInputProps };

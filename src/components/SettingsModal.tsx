@@ -22,7 +22,7 @@ const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] backdrop-blur-2xl bg-background/80 border-border/50 shadow-2xl">
+      <DialogContent className="sm:max-w-md backdrop-blur-2xl bg-background/95 border-border/50 shadow-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-light">Paramètres</DialogTitle>
           <DialogDescription className="text-muted-foreground/80">
