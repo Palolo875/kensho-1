@@ -8,6 +8,8 @@ import SettingsModal from "@/components/SettingsModal";
 import SearchModal from "@/components/SearchModal";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
 const Index = () => {
   const isMobile = useIsMobile();
@@ -42,8 +44,20 @@ const Index = () => {
 
   return (
     <div className="min-h-screen relative bg-background">
-      {/* Sidebar trigger for mobile */}
-      <SidebarTrigger onClick={() => setSidebarOpen(!sidebarOpen)} />
+      {/* Top bar with new conversation button and sidebar trigger */}
+      <div className="fixed top-4 left-4 right-4 z-50 flex justify-between items-center pointer-events-none">
+        <Button
+          onClick={handleNewConversation}
+          variant="ghost"
+          size="icon"
+          className="pointer-events-auto hover:bg-accent/80 backdrop-blur-sm"
+        >
+          <Plus className="h-6 w-6" />
+        </Button>
+        <div className="pointer-events-auto">
+          <SidebarTrigger onClick={() => setSidebarOpen(!sidebarOpen)} />
+        </div>
+      </div>
       
       <Sidebar 
         isOpen={sidebarOpen}
@@ -84,7 +98,7 @@ const Index = () => {
         </div>
       </main>
 
-      <ChatInput />
+      <ChatInput showSuggestions={messages.length === 0} />
       
       <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
       <SearchModal open={showSearch} onOpenChange={setShowSearch} />
