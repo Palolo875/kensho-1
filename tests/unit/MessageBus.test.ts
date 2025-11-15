@@ -22,14 +22,16 @@ const mockBusController = {
 };
 
 class MockBroadcastChannel {
-    postMessage(msg: KenshoMessage) {
-        mockBusController.postMessage(msg);
+    constructor(name: string) {}
+    postMessage(message: KenshoMessage) {
+        mockBusController.postMessage(message);
     }
-    close() { /* mocked */ }
+    close = vi.fn();
     set onmessage(handler: (event: { data: KenshoMessage }) => void) {
         mockBusController.addEventListener(handler);
     }
 }
+
 vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
 
 

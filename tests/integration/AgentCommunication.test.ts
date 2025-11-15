@@ -15,14 +15,16 @@ const mockBusController = {
     clear() { this.listeners = []; }
 };
 class MockBroadcastChannel {
-    postMessage(msg: any) {
-        mockBusController.postMessage(msg);
+    constructor(name: string) {}
+    postMessage(message: any) {
+        mockBusController.postMessage(message);
     }
-    close() { /* mocked */ }
+    close = vi.fn();
     set onmessage(handler: any) {
         mockBusController.addEventListener(handler);
     }
 }
+
 vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
 
 
