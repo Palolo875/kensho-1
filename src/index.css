@@ -8,24 +8,24 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Light mode - Couleurs pastel papier et noir doux */
-    --background: 45 30% 94%;
-    --foreground: 30 10% 25%;
+    /* Light mode - Papier clair neutre et noir doux pastel */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 25%;
 
-    --card: 40 25% 96%;
-    --card-foreground: 30 10% 25%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 25%;
 
-    --popover: 40 25% 96%;
-    --popover-foreground: 30 10% 25%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 25%;
 
-    --primary: 30 10% 25%;
-    --primary-foreground: 45 30% 94%;
+    --primary: 0 0% 25%;
+    --primary-foreground: 0 0% 98%;
 
-    --secondary: 40 20% 88%;
-    --secondary-foreground: 30 8% 20%;
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 0 0% 25%;
 
-    --muted: 40 15% 90%;
-    --muted-foreground: 30 8% 45%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
 
     --accent: 0 0% 15%;
     --accent-foreground: 0 0% 98%;
@@ -33,9 +33,9 @@ All colors MUST be HSL.
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 40 15% 85%;
-    --input: 40 20% 88%;
-    --ring: 30 15% 30%;
+    --border: 0 0% 88%;
+    --input: 0 0% 92%;
+    --ring: 0 0% 25%;
 
     --radius: 0.75rem;
     
@@ -43,21 +43,21 @@ All colors MUST be HSL.
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
     /* Sidebar */
-    --sidebar-background: 45 30% 94%;
-    --sidebar-foreground: 30 8% 20%;
-    --sidebar-primary: 30 15% 30%;
-    --sidebar-primary-foreground: 45 30% 94%;
-    --sidebar-accent: 40 20% 88%;
-    --sidebar-accent-foreground: 30 8% 20%;
-    --sidebar-border: 40 15% 85%;
-    --sidebar-ring: 30 15% 30%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 25%;
+    --sidebar-primary: 0 0% 25%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 92%;
+    --sidebar-accent-foreground: 0 0% 25%;
+    --sidebar-border: 0 0% 88%;
+    --sidebar-ring: 0 0% 25%;
 
     /* User bubble - noir doux pastel */
-    --user-bubble: 30 10% 25%;
-    --user-bubble-foreground: 45 30% 94%;
+    --user-bubble: 0 0% 25%;
+    --user-bubble-foreground: 0 0% 98%;
 
     /* Thinking text - plus clair et fin */
-    --thinking-text: 30 8% 55%;
+    --thinking-text: 0 0% 55%;
 
     /* Voice recording */
     --recording-active: 0 70% 60%;
@@ -65,51 +65,51 @@ All colors MUST be HSL.
   }
 
   .dark {
-    /* Dark mode - papier pastel et noir doux */
-    --background: 30 10% 12%;
-    --foreground: 45 30% 94%;
+    /* Dark mode - Noir doux et papier clair neutre */
+    --background: 0 0% 12%;
+    --foreground: 0 0% 98%;
 
-    --card: 30 10% 15%;
-    --card-foreground: 45 30% 94%;
+    --card: 0 0% 15%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 30 10% 15%;
-    --popover-foreground: 45 30% 94%;
+    --popover: 0 0% 15%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 45 30% 94%;
-    --primary-foreground: 30 10% 25%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 25%;
 
-    --secondary: 30 8% 20%;
-    --secondary-foreground: 45 25% 90%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 30 8% 18%;
-    --muted-foreground: 45 15% 60%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 60%;
 
     --accent: 0 0% 15%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 70% 50%;
-    --destructive-foreground: 45 25% 90%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 30 8% 22%;
-    --input: 30 8% 20%;
-    --ring: 45 25% 85%;
+    --border: 0 0% 22%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 85%;
 
     /* Sidebar dark */
-    --sidebar-background: 30 10% 12%;
-    --sidebar-foreground: 45 25% 90%;
-    --sidebar-primary: 45 25% 85%;
-    --sidebar-primary-foreground: 30 10% 12%;
-    --sidebar-accent: 30 8% 20%;
-    --sidebar-accent-foreground: 45 25% 90%;
-    --sidebar-border: 30 8% 22%;
-    --sidebar-ring: 45 25% 85%;
+    --sidebar-background: 0 0% 12%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 0 0% 12%;
+    --sidebar-accent: 0 0% 20%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 22%;
+    --sidebar-ring: 0 0% 85%;
 
     /* User bubble dark - noir doux pastel */
-    --user-bubble: 30 10% 22%;
-    --user-bubble-foreground: 45 25% 90%;
+    --user-bubble: 0 0% 22%;
+    --user-bubble-foreground: 0 0% 98%;
 
     /* Thinking text dark */
-    --thinking-text: 45 15% 55%;
+    --thinking-text: 0 0% 55%;
 
     /* Voice recording dark */
     --recording-active: 0 70% 60%;
