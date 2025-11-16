@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1B - Test E2E du WorkerRegistry</title>
+    <style>
+        /* ... (même style que le test précédent) ... */
+        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
+        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
+        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
+        h1, h2 { color: #61afef; }
+        .pass { color: #98c379; font-weight: bold; }
+        .fail { color: #e06c75; font-weight: bold; }
+        .info { color: #56b6c2; }
+        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+    </style>
+</head>
+<body>
+    <h1>Sprint 1B - Test E2E du WorkerRegistry</h1>
+    <p>Ce test valide que les agents se découvrent mutuellement et que les agents inactifs sont correctement retirés du registre.</p>
+    <button id="run-tests">Lancer les Tests</button>
+    <h2>Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const log = (message, status = 'info') => {
+            const line = document.createElement('div');
+            line.innerHTML = `<span class="${status}">[${status.toUpperCase()}] ${message}</span>`;
+            resultsEl.appendChild(line);
+            console.log(`[${status.toUpperCase()}] ${message}`);
+        };
+
+        // Helper pour attendre un certain temps
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // Helper pour démarrer un worker et attendre son signal READY
+        function startWorker(name, path) {
+            const worker = new Worker(path, { name: name, type: 'module' }); // CORRIGÉ: Ajout de type: 'module'
+            const readyPromise = new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => reject(new Error(`Worker ${name} n'a pas démarré à temps.`)), 5000);
+                worker.onmessage = (e) => {
+                    if (e.data && e.data.type === 'READY') {
+                        clearTimeout(timeoutId);
+                        worker.onmessage = null;
+                        resolve(worker);
+                    }
+                };
+            });
+            return readyPromise;
+        }
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('--- Démarrage du test du WorkerRegistry ---', 'info');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            const mainBus = new MessageBus('MainThread');
+            let workers = {};
+            let testPassed = true;
+
+            try {
+                // --- Étape 1: Démarrage et Découverte ---
+                log('\n[Étape 1] Démarrage de 3 agents et vérification de la découverte mutuelle...', 'info');
+
+                const workerNames = ['AgentA', 'AgentB', 'AgentC'];
+                const workerPromises = workerNames.map(name => startWorker(name, '/dist/test-agents/ping.agent.js'));
+
+                const startedWorkers = await Promise.all(workerPromises);
+                workerNames.forEach((name, i) => workers[name] = startedWorkers[i]);
+                log('  Tous les agents ont démarré.', 'pass');
+
+                // Laisser un peu de temps pour que les annonces se propagent
+                await sleep(500);
+
+                // Interroger chaque worker pour connaître son registre
+                for (const name of workerNames) {
+                    const activeList = await mainBus.request(name, { method: 'getActiveWorkers', args: [] });
+                    log(`  Registre de ${name}: [${activeList.sort().join(', ')}]`, 'info');
+
+                    // Chaque worker doit connaître tous les autres
+                    if (activeList.length === workerNames.length && workerNames.every(n => activeList.includes(n))) {
+                        log(`  -> Le registre de ${name} est correct.`, 'pass');
+                    } else {
+                        log(`  -> ERREUR: Le registre de ${name} est incorrect.`, 'fail');
+                        testPassed = false;
+                    }
+                }
+
+                if (!testPassed) throw new Error("La phase de découverte a échoué.");
+
+                // --- Étape 2: Arrêt d'un agent et vérification du nettoyage ---
+                log('\n[Étape 2] Arrêt de l\'AgentB et vérification du nettoyage du registre...', 'info');
+
+                workers['AgentB'].terminate();
+                log('  AgentB terminé.', 'info');
+
+                // Attendre plus longtemps que le INACTIVITY_THRESHOLD (10s) + le cleanupInterval (5s)
+                const waitTime = 16000;
+                log(`  Attente de ${waitTime / 1000} secondes pour le garbage collector...`, 'info');
+                await sleep(waitTime);
+
+                const remainingWorkers = ['AgentA', 'AgentC'];
+                for (const name of remainingWorkers) {
+                    const activeList = await mainBus.request(name, { method: 'getActiveWorkers', args: [] });
+                    log(`  Registre de ${name}: [${activeList.sort().join(', ')}]`, 'info');
+
+                    // Le registre ne doit plus contenir AgentB
+                    if (activeList.length === remainingWorkers.length && !activeList.includes('AgentB')) {
+                        log(`  -> Le registre de ${name} a été nettoyé correctement.`, 'pass');
+                    } else {
+                        log(`  -> ERREUR: Le registre de ${name} n'a pas été nettoyé.`, 'fail');
+                        testPassed = false;
+                    }
+                }
+
+            } catch (error) {
+                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                testPassed = false;
+            } finally {
+                // Nettoyage final
+                Object.values(workers).forEach(w => w.terminate());
+                mainBus.dispose();
+                log('\n--- Test Terminé ---', 'summary');
+                if (testPassed) {
+                    log('🎉 Tâche "WorkerRegistry" validée avec succès !', 'pass');
+                } else {
+                    log('❗️ Des problèmes ont été détectés dans le WorkerRegistry.', 'fail');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

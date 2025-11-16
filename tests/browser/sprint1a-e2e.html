@@ -58,8 +58,8 @@
                 // Importer dynamiquement le MessageBus buildé
                 const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
 
-                pongWorker1 = new Worker('/dist/test-agents/pong.agent.js');
-                pingWorker1 = new Worker('/dist/test-agents/ping.agent.js');
+                pongWorker1 = new Worker('/dist/test-agents/pong.agent.js', { type: 'module' });
+                pingWorker1 = new Worker('/dist/test-agents/ping.agent.js', { type: 'module' });
 
                 log('  Attente du démarrage des workers...', 'info');
                 await Promise.all([
@@ -95,8 +95,8 @@
             try {
                 const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
 
-                pongWorker2 = new Worker('/dist/test-agents/pong.agent.js');
-                pingWorker2 = new Worker('/dist/test-agents/ping.agent.js');
+                pongWorker2 = new Worker('/dist/test-agents/pong.agent.js', { type: 'module' });
+                pingWorker2 = new Worker('/dist/test-agents/ping.agent.js', { type: 'module' });
 
                 await Promise.all([
                     waitForWorkerReady(pongWorker2),
