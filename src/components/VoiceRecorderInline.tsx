@@ -17,6 +17,7 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number>();
+  const isRecordingRef = useRef(false);
 
   useEffect(() => {
     if (isRecording) {
@@ -57,10 +58,12 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
       
       const updateAudioLevel = () => {
-        if (analyserRef.current && isRecording) {
+        if (analyserRef.current && isRecordingRef.current) {
           analyserRef.current.getByteFrequencyData(dataArray);
           const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-          setAudioLevel(average / 255);
+          const normalizedLevel = average / 255;
+          setAudioLevel(normalizedLevel);
+          console.log('Audio level:', normalizedLevel);
           animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
         }
       };
@@ -85,6 +88,7 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
   const toggleRecording = () => {
     if (!isRecording) {
       setIsRecording(true);
+      isRecordingRef.current = true;
       setTranscript("");
       startAudioAnalysis();
       
@@ -104,6 +108,7 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
       }, 7000);
     } else {
       setIsRecording(false);
+      isRecordingRef.current = false;
       stopAudioAnalysis();
       if (transcript) {
         onTranscript?.(transcript);
