@@ -6,9 +6,10 @@ import { cn } from "@/lib/utils";
 interface VoiceRecorderInlineProps {
   onTranscript?: (text: string) => void;
   onStop?: () => void;
+  onLevel?: (level: number) => void;
 }
 
-const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps) => {
+const VoiceRecorderInline = ({ onTranscript, onStop, onLevel }: VoiceRecorderInlineProps) => {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [transcript, setTranscript] = useState("");
@@ -60,10 +61,10 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
       const updateAudioLevel = () => {
         if (analyserRef.current && isRecordingRef.current) {
           analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
           const normalizedLevel = average / 255;
           setAudioLevel(normalizedLevel);
-          console.log('Audio level:', normalizedLevel);
+          onLevel?.(normalizedLevel);
           animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
         }
       };
