@@ -136,6 +136,16 @@ export class MessageBus {
         });
     }
 
+    public sendSystemMessage(target: WorkerName, type: string, payload: any): void {
+        this.sendMessage({
+            type: 'broadcast', // Send as broadcast so it's picked up by subscribers
+            sourceWorker: this.workerName,
+            targetWorker: target,
+            payload: { systemType: type, ...payload },
+            traceId: `system-trace-${crypto.randomUUID()}`,
+        });
+    }
+
     public request<TResponse>(target: WorkerName, payload: any, timeout?: number): Promise<TResponse> {
         return new Promise<TResponse>((resolve, reject) => {
             const traceId = this.currentTraceId || `trace-${crypto.randomUUID()}`;

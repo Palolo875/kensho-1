@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1B - Test E2E de l'Élection</title>
+    <style>
+        /* ... (même style que les tests précédents) ... */
+        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
+        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
+        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
+        h1, h2 { color: #61afef; }
+        .pass { color: #98c379; font-weight: bold; }
+        .fail { color: #e06c75; font-weight: bold; }
+        .info { color: #56b6c2; }
+        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+    </style>
+</head>
+<body>
+    <h1>Sprint 1B - Test E2E de l'Élection de Leader</h1>
+    <p>Ce test valide que, parmi un groupe d'agents, un seul leader est élu et que c'est bien celui avec l'ID le plus élevé.</p>
+    <button id="run-tests">Lancer le Test</button>
+    <h2>Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const log = (message, status = 'info') => {
+            const line = document.createElement('div');
+            line.innerHTML = `<span class="${status}">[${status.toUpperCase()}] ${message}</span>`;
+            resultsEl.appendChild(line);
+            console.log(`[${status.toUpperCase()}] ${message}`);
+        };
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        function startWorker(name, path) {
+            const worker = new Worker(path, { name: name, type: 'module' });
+            const readyPromise = new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => reject(new Error('Worker n\'a pas démarré à temps.')), 5000);
+                worker.onmessage = (e) => {
+                    if (e.data && e.data.type === 'READY') {
+                        clearTimeout(timeoutId);
+                        worker.onmessage = null;
+                        resolve(worker);
+                    }
+                };
+            });
+            return readyPromise;
+        }
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('--- Démarrage du test d\'élection ---', 'info');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            const mainBus = new MessageBus('MainThread');
+            const workers = [];
+            let testPassed = true;
+
+            try {
+                // --- Étape 1: Démarrage et Élection ---
+                const agentNames = ['AgentA', 'AgentB', 'AgentC', 'AgentD', 'AgentE'];
+                const expectedLeader = 'AgentE'; // L'ID le plus élevé alphabétiquement
+                log(`[INFO] Démarrage de ${agentNames.length} agents. Le leader attendu est '${expectedLeader}'.`);
+
+                const workerPromises = agentNames.map(name => startWorker(name, '/dist/test-agents/ping.agent.js'));
+                const startedWorkers = await Promise.all(workerPromises);
+                startedWorkers.forEach(w => workers.push(w));
+                log('[PASS] Tous les agents ont démarré.', 'pass');
+
+                // Laisser le temps à l'élection de se dérouler.
+                // Le timeout de l'élection est de 1s, plus le délai de démarrage aléatoire. 3s est sûr.
+                const electionTime = 3000;
+                log(`[INFO] Attente de ${electionTime / 1000} secondes pour la stabilisation de l'élection...`, 'info');
+                await sleep(electionTime);
+
+                // --- Étape 2: Vérification du Consensus ---
+                log('\n[Étape 2] Vérification du consensus du leader...', 'info');
+                const statuses = await Promise.all(
+                    agentNames.map(name => mainBus.request(name, { method: 'getGuardianStatus', args: [] }))
+                );
+
+                let electedLeader = null;
+                let allAgree = true;
+
+                statuses.forEach((status, i) => {
+                    const name = agentNames[i];
+                    log(`  Statut de ${name}: Leader est ${status.leader}`, 'info');
+                    if (i === 0) {
+                        electedLeader = status.leader;
+                    } else if (electedLeader !== status.leader) {
+                        allAgree = false;
+                    }
+                });
+
+                if (!allAgree) {
+                    log('ERREUR: Tous les agents ne sont pas d\'accord sur qui est le leader !', 'fail');
+                    testPassed = false;
+                } else {
+                    log('Tous les agents sont d\'accord sur le leader.', 'pass');
+                }
+
+                if (electedLeader === expectedLeader) {
+                    log(`Le leader élu ('${electedLeader}') est bien celui attendu.`, 'pass');
+                } else {
+                    log(`ERREUR: Le leader élu ('${electedLeader}') n'est pas celui attendu ('${expectedLeader}').`, 'fail');
+                    testPassed = false;
+                }
+
+            } catch (error) {
+                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                testPassed = false;
+            } finally {
+                workers.forEach(w => w.terminate());
+                mainBus.dispose();
+                log('\n--- Test Terminé ---', 'summary');
+                if (testPassed) {
+                    log('🎉 Tâche "LeaderElection" validée avec succès !', 'pass');
+                } else {
+                    log('❗️ Des problèmes ont été détectés dans le processus d\'élection.', 'fail');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
