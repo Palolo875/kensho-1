@@ -12,7 +12,11 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [transcript, setTranscript] = useState("");
+  const [audioLevel, setAudioLevel] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout>();
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number>();
 
   useEffect(() => {
     if (isRecording) {
@@ -30,6 +34,7 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      stopAudioAnalysis();
     };
   }, [isRecording]);
 
@@ -39,10 +44,49 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const startAudioAnalysis = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContextRef.current = new AudioContext();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      
+      analyserRef.current.fftSize = 256;
+      source.connect(analyserRef.current);
+
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      
+      const updateAudioLevel = () => {
+        if (analyserRef.current && isRecording) {
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          setAudioLevel(average / 255);
+          animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+        }
+      };
+      
+      updateAudioLevel();
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+    }
+  };
+
+  const stopAudioAnalysis = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    setAudioLevel(0);
+  };
+
   const toggleRecording = () => {
     if (!isRecording) {
       setIsRecording(true);
       setTranscript("");
+      startAudioAnalysis();
       
       // Simulation de transcription en temps réel
       let count = 0;
@@ -60,6 +104,7 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
       }, 7000);
     } else {
       setIsRecording(false);
+      stopAudioAnalysis();
       if (transcript) {
         onTranscript?.(transcript);
       }
@@ -89,25 +134,20 @@ const VoiceRecorderInline = ({ onTranscript, onStop }: VoiceRecorderInlineProps)
           )}
         </Button>
 
-        {/* Animated waves */}
+        {/* Animated waves dynamiques basées sur l'intensité */}
         {isRecording && (
           <>
-            <div 
-              className="absolute inset-0 rounded-full bg-recording-wave/30 animate-wave-pulse"
-              style={{ animationDelay: "0s" }}
-            />
-            <div 
-              className="absolute inset-0 rounded-full bg-recording-wave/20 animate-wave-pulse"
-              style={{ animationDelay: "0.5s" }}
-            />
-            <div 
-              className="absolute inset-0 rounded-full bg-recording-wave/20 animate-wave-ripple"
-              style={{ animationDelay: "0s" }}
-            />
-            <div 
-              className="absolute inset-0 rounded-full bg-recording-wave/15 animate-wave-ripple"
-              style={{ animationDelay: "0.5s" }}
-            />
+            {[0, 1, 2, 3].map((index) => (
+              <div
+                key={index}
+                className="absolute inset-0 rounded-full bg-recording-wave transition-all duration-100"
+                style={{
+                  transform: `scale(${1 + (audioLevel * (index + 1) * 0.5)})`,
+                  opacity: Math.max(0.05, (audioLevel * (0.4 - index * 0.08))),
+                  animationDelay: `${index * 0.15}s`,
+                }}
+              />
+            ))}
           </>
         )}
       </div>

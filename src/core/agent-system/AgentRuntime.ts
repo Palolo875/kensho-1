@@ -22,7 +22,7 @@ export class AgentRuntime {
         const handler = this.methods.get(payload.method);
         if (handler) {
             // Appeler la méthode enregistrée avec les arguments fournis
-            return await handler(...payload.args);
+            return await handler(payload.args);
         }
         throw new Error(`Method '${payload.method}' not found on agent '${this.agentName}'`);
     }
