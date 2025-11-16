@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kensho - Sprint 1A - Test de Bout en Bout</title>
+    <style>
+        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
+        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
+        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
+        h1, h2 { color: #61afef; }
+        .pass { color: #98c379; font-weight: bold; }
+        .fail { color: #e06c75; font-weight: bold; }
+        .info { color: #56b6c2; }
+        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+    </style>
+</head>
+<body>
+    <h1>Sprint 1A - Test de Bout en Bout</h1>
+    <p>Ce test lance de vrais Web Workers et valide l'architecture de communication de base.</p>
+    <button id="run-tests">Lancer les Tests</button>
+    <h2>Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const log = (message, status = 'info') => {
+            const line = document.createElement('div');
+            line.innerHTML = `<span class="${status}">[${status.toUpperCase()}] ${message}</span>`;
+            resultsEl.appendChild(line);
+            console.log(`[${status.toUpperCase()}] ${message}`);
+        };
+
+        // Fonction de démarrage robuste pour un worker
+        function waitForWorkerReady(worker, timeout = 2000) {
+            return new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => reject(new Error('Le worker n\'a pas envoyé le signal READY à temps.')), timeout);
+                
+                worker.onmessage = (e) => {
+                    if (e.data && e.data.type === 'READY') {
+                        clearTimeout(timeoutId);
+                        // Nettoyer le listener pour ne pas interférer avec les futurs messages
+                        worker.onmessage = null; 
+                        resolve(true);
+                    }
+                };
+            });
+        }
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('--- Démarrage des tests de bout en bout ---', 'info');
+
+            // --- Test 1: Scénario Ping-Pong de base ---
+            log('\n[Test 1] Scénario Ping-Pong de base...', 'info');
+            let test1Passed = false;
+            let pongWorker1, pingWorker1, mainBus1;
+            try {
+                // Importer dynamiquement le MessageBus buildé
+                const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+                
+                pongWorker1 = new Worker('/dist/test-agents/pong.agent.js');
+                pingWorker1 = new Worker('/dist/test-agents/ping.agent.js');
+
+                log('  Attente du démarrage des workers...', 'info');
+                await Promise.all([
+                    waitForWorkerReady(pongWorker1),
+                    waitForWorkerReady(pingWorker1)
+                ]);
+                log('  Workers prêts.', 'pass');
+
+                mainBus1 = new MessageBus('MainThread');
+                
+                log('  Envoi de la requête de PongAgent à PingAgent...', 'info');
+                const response = await mainBus1.request('PongAgent', { method: 'start', args: ['Test 1'] });
+
+                if (response === 'pong: Test 1') {
+                    log('Réponse correcte reçue: "pong: Test 1"', 'pass');
+                    test1Passed = true;
+                } else {
+                    log(`Réponse inattendue: ${response}`, 'fail');
+                }
+            } catch (error) {
+                log(`Erreur durant le Test 1: ${error.message}`, 'fail');
+            } finally {
+                if (pongWorker1) pongWorker1.terminate();
+                if (pingWorker1) pingWorker1.terminate();
+                if (mainBus1) mainBus1.dispose();
+                log(`[Test 1] Résultat: ${test1Passed ? 'RÉUSSI' : 'ÉCHOUÉ'}`, test1Passed ? 'pass' : 'fail');
+            }
+
+            // --- Test 2: Stress Test de Performance ---
+            log('\n[Test 2] Stress Test (500 appels concurrents)...', 'info');
+            let test2Passed = false;
+            let pongWorker2, pingWorker2, mainBus2;
+            try {
+                const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+                
+                pongWorker2 = new Worker('/dist/test-agents/pong.agent.js');
+                pingWorker2 = new Worker('/dist/test-agents/ping.agent.js');
+
+                await Promise.all([
+                    waitForWorkerReady(pongWorker2),
+                    waitForWorkerReady(pingWorker2)
+                ]);
+
+                mainBus2 = new MessageBus('MainThread');
+                
+                const numCalls = 500;
+                log(`  Envoi de ${numCalls} requêtes concurrentes...`, 'info');
+                const promises = [];
+                const startTime = performance.now();
+
+                for (let i = 0; i < numCalls; i++) {
+                    promises.push(mainBus2.request('PongAgent', { method: 'start', args: [`call ${i}`] }));
+                }
+
+                const responses = await Promise.all(promises);
+                const duration = performance.now() - startTime;
+
+                const allPassed = responses.every((res, i) => res === `pong: call ${i}`);
+                if (allPassed && responses.length === numCalls) {
+                    log(`${numCalls} appels réussis en ${duration.toFixed(2)} ms.`, 'pass');
+                    log(`  -> Latence moyenne par appel: ${(duration / numCalls).toFixed(2)} ms.`, 'info');
+                    test2Passed = true;
+                } else {
+                    log('Toutes les réponses ne sont pas correctes ou n\'ont pas été reçues.', 'fail');
+                }
+            } catch (error) {
+                log(`Erreur durant le Test 2: ${error.message}`, 'fail');
+            } finally {
+                if (pongWorker2) pongWorker2.terminate();
+                if (pingWorker2) pingWorker2.terminate();
+                if (mainBus2) mainBus2.dispose();
+                log(`[Test 2] Résultat: ${test2Passed ? 'RÉUSSI' : 'ÉCHOUÉ'}`, test2Passed ? 'pass' : 'fail');
+            }
+
+            // --- Résumé Final ---
+            log('\n--- Tests Terminés ---', 'summary');
+            if (test1Passed && test2Passed) {
+                log('🎉 Sprint 1A validé avec succès ! Le système nerveux est fonctionnel et performant.', 'pass');
+            } else {
+                log('❗️ Des problèmes ont été détectés. Le Sprint 1A n\'est pas entièrement validé.', 'fail');
+            }
+        });
+    </script>
+</body>
+</html>

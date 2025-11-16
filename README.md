@@ -60,6 +60,38 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Sprint 1A – Tests E2E
+
+Ce dépôt inclut une suite complète pour valider la pile agents/MessageBus directement dans le navigateur.
+
+### 1. Builder les agents de test
+
+```sh
+npm run build:test-agents
+```
+
+Cela génère `dist/test-agents/ping.agent.js` et `pong.agent.js`, consommés par les tests HTML.
+
+### 2. Lancer les vérifications rapides
+
+- Compatibilité BroadcastChannel : ouvrir `tests/browser/compatibility/broadcast-channel.html` dans un navigateur supportant les Web Workers. La page doit afficher ✅.
+- Sanity build Ping : lancer `npm run dev` puis visiter `tests/browser/build/test-ping-only.html`. L’absence d’erreurs 404/CORS confirme le chargement du worker.
+
+### 3. Exécuter le test de bout en bout
+
+Un script facilite l’orchestration complète :
+
+```sh
+npm run test:e2e
+```
+
+Ce script build les agents puis démarre Vite en ouvrant `tests/browser/sprint1a-e2e.html`. Cliquez sur « Lancer les Tests » pour exécuter :
+
+1. Ping ↔ Pong (scénario fonctionnel de base)
+2. Stress test avec 500 requêtes concurrentes et mesure de latence
+
+Le test réussit lorsque les deux scénarios passent et que le résumé affiche 🎉.
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/74a7a0c8-6d5c-4c99-ac3b-3ba7a53cdd75) and click on Share -> Publish.

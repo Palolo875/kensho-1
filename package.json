@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "build:test-agents": "vite build --config vite.test-agents.config.ts",
+    "test:e2e": "npm run build:test-agents && vite dev --open tests/browser/sprint1a-e2e.html",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest"
