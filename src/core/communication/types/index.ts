@@ -56,3 +56,19 @@ export interface HeartbeatPayload {
 
 // On pourrait créer un type uni pour les messages système
 export type SystemPayload = AnnouncePayload | HeartbeatPayload | { type: 'ELECTION' } | { type: 'NEW_LEADER' };
+
+// Un message ELECTION est envoyé pour démarrer un vote.
+export interface ElectionPayload {
+  candidateId: WorkerName;
+}
+
+// Un message ALIVE est une réponse à un message ELECTION.
+export interface AlivePayload {
+  responderId: WorkerName;
+}
+
+// Un message NEW_LEADER est diffusé par le nouveau leader.
+export interface NewLeaderPayload {
+  leaderId: WorkerName;
+  epochId: number;
+}

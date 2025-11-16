@@ -1,7 +1,7 @@
 // src/core/agent-system/AgentRuntime.ts
 import { MessageBus } from '../communication/MessageBus';
-import { WorkerName, RequestHandler, KenshoMessage } from '../communication/types';
-import { WorkerRegistry } from '../guardian/WorkerRegistry'; // Importer le registre
+import { WorkerName, RequestHandler } from '../communication/types';
+import { OrionGuardian } from '../guardian/OrionGuardian'; // Importer le Guardian
 
 /**
  * AgentRuntime est l'environnement d'exécution pour chaque agent.
@@ -11,25 +11,21 @@ import { WorkerRegistry } from '../guardian/WorkerRegistry'; // Importer le regi
 export class AgentRuntime {
     public readonly agentName: WorkerName;
     private readonly messageBus: MessageBus;
-    private readonly workerRegistry: WorkerRegistry; // Ajouter une instance du registre
     private methods = new Map<string, RequestHandler>();
+    private readonly guardian: OrionGuardian; // Ajouter une instance du Guardian
 
     constructor(name: WorkerName) {
         this.agentName = name;
         this.messageBus = new MessageBus(name);
-        this.workerRegistry = new WorkerRegistry(name); // Initialiser le registre
+        this.guardian = new OrionGuardian(name, this.messageBus); // Initialiser le Guardian
 
-        // Le runtime écoute les requêtes et les route vers la bonne méthode enregistrée
         this.messageBus.setRequestHandler(this.handleRequest.bind(this));
 
-        // NOUVEAU : S'abonner aux messages système pour mettre à jour le registre
-        this.messageBus.subscribeToSystemMessages(this.handleSystemMessage.bind(this));
+        // Annoncer son existence (déplacé dans le Guardian)
+        this.guardian.start();
 
-        // Annoncer son existence au démarrage
-        this.announceSelf();
-
-        // NOUVEAU : Enregistrer une méthode interne pour le débogage
-        this.registerMethod('getActiveWorkers', () => this.getActiveWorkers());
+        // Enregistrer la méthode de statut pour le débogage/test
+        this.registerMethod('getGuardianStatus', () => this.getGuardianStatus());
     }
 
     private async handleRequest(payload: { method: string, args: any[] }): Promise<any> {
@@ -66,24 +62,13 @@ export class AgentRuntime {
         this.messageBus.setCurrentTraceId(traceId);
     }
 
-    // NOUVEAU : Annoncer son existence à la constellation
-    private announceSelf(): void {
-        this.messageBus.broadcastSystemMessage('WORKER_ANNOUNCE', { workerName: this.agentName });
-    }
-
-    // NOUVEAU : Gérer les messages système pour le registre
-    private handleSystemMessage(message: KenshoMessage): void {
-        // Chaque message reçu d'un autre worker est une preuve de vie
-        this.workerRegistry.update(message.sourceWorker);
-    }
-
-    // Exposer la liste des workers actifs
-    public getActiveWorkers(): WorkerName[] {
-        return this.workerRegistry.getActiveWorkers();
+    // Exposer les méthodes du Guardian pour les tests
+    public getGuardianStatus() {
+        return this.guardian.getStatus();
     }
 
     public dispose(): void {
         this.messageBus.dispose();
-        this.workerRegistry.dispose();
+        // this.guardian.dispose(); // TODO: Add dispose to guardian
     }
 }
