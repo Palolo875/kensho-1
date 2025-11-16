@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import VoiceRecorderInline from "./VoiceRecorderInline";
+import VoiceWaveformBar from "./VoiceWaveformBar";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -21,6 +22,7 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
   const [message, setMessage] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [samples, setSamples] = useState<number[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -99,10 +101,13 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
         {/* Input field */}
         <div className="relative">
           <div className={cn(
-            "bg-background/60 backdrop-blur-xl rounded-full shadow-2xl border border-border/40 overflow-hidden transition-all duration-300 hover:shadow-3xl hover:bg-background/70",
+            "relative bg-background/60 backdrop-blur-xl rounded-full shadow-2xl border border-border/40 overflow-hidden transition-all duration-300 hover:shadow-3xl hover:bg-background/70",
             isRecording && "ring-2 ring-recording-active/50"
           )}>
-            <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 md:px-6 py-3 sm:py-3.5 md:py-4">
+            {isRecording && (
+              <VoiceWaveformBar samples={samples} />
+            )}
+            <div className="relative z-10 flex items-center gap-2 sm:gap-3 px-3 sm:px-5 md:px-6 py-3 sm:py-3.5 md:py-4">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -157,6 +162,12 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
                     setIsRecording(false);
                   }}
                   onStop={() => setIsRecording(false)}
+                  onLevel={(level) => {
+                    setSamples((prev) => {
+                      const next = [...prev, level];
+                      return next.length > 160 ? next.slice(next.length - 160) : next;
+                    });
+                  }}
                 />
               ) : (
                 <>
@@ -178,7 +189,7 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setIsRecording(true)}
+                      onClick={() => { setSamples([]); setIsRecording(true); }}
                       className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full hover:bg-accent/50 shrink-0 transition-colors"
                     >
                       <Mic className="h-5 w-5 sm:h-5.5 sm:w-5.5 md:h-6 md:w-6" />
