@@ -1,11 +1,7 @@
 <!-- tests/browser/compatibility/broadcast-channel.html -->
 <!DOCTYPE html>
 <html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Test Compatibilité BroadcastChannel</title>
-</head>
+<head><title>Test Compatibilité BroadcastChannel</title></head>
 <body>Vérification en cours...</body>
 <script>
     // worker-script.js
@@ -18,7 +14,7 @@
 
     const bc = new BroadcastChannel('kensho-compat-test');
     let received = false;
-    
+
     bc.onmessage = (e) => {
         if (e.data === 'pong') {
             received = true;

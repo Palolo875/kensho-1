@@ -45,3 +45,14 @@ export interface KenshoMessage<T = any> {
  * Elle reçoit la charge utile et doit retourner une réponse (ou une promesse de réponse).
  */
 export type RequestHandler = (payload: any) => Promise<any> | any;
+
+export interface AnnouncePayload {
+  workerName: WorkerName;
+}
+
+export interface HeartbeatPayload {
+  epochId: number;
+}
+
+// On pourrait créer un type uni pour les messages système
+export type SystemPayload = AnnouncePayload | HeartbeatPayload | { type: 'ELECTION' } | { type: 'NEW_LEADER' };

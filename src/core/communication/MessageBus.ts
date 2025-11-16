@@ -18,6 +18,7 @@ export class MessageBus {
 
     private pendingRequests = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
     private requestHandler: RequestHandler | null = null;
+    private systemSubscribers: ((message: KenshoMessage) => void)[] = [];
 
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
@@ -36,6 +37,10 @@ export class MessageBus {
 
     private handleIncomingMessage(event: MessageEvent<KenshoMessage>): void {
         const message = event.data;
+
+        // NOUVEAU : Notifier les abonnés système de chaque message reçu
+        this.systemSubscribers.forEach(cb => cb(message));
+
         if (!this.validateMessage(message) || message.targetWorker !== this.workerName) {
             return;
         }
@@ -111,6 +116,24 @@ export class MessageBus {
 
     public setRequestHandler(handler: RequestHandler): void {
         this.requestHandler = handler;
+    }
+
+    // NOUVEAU : Méthode pour s'abonner au flux de messages
+    public subscribeToSystemMessages(callback: (message: KenshoMessage) => void): void {
+        this.systemSubscribers.push(callback);
+    }
+
+    // NOUVEAU : Méthode pour diffuser un message système à tous
+    public broadcastSystemMessage(type: string, payload: any): void {
+        // Un message système est envoyé à une cible spéciale '*' que tout le monde écoute
+        // mais que personne ne traite comme une requête.
+        this.sendMessage({
+            type: 'broadcast',
+            sourceWorker: this.workerName,
+            targetWorker: '*', // Cible spéciale pour les messages de diffusion générale
+            payload: { systemType: type, ...payload },
+            traceId: `system-trace-${crypto.randomUUID()}`,
+        });
     }
 
     public request<TResponse>(target: WorkerName, payload: any, timeout?: number): Promise<TResponse> {

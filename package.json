@@ -11,7 +11,8 @@
     "test:e2e": "npm run build:test-agents && vite dev --open tests/browser/sprint1a-e2e.html",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "build:test-agents": "vite build --config vite.test-agents.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
