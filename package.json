@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "build:test-agents": "vite build --config vite.test-agents.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

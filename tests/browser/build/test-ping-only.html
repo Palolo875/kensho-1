@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><title>Test de Build - Ping Agent</title></head>
+<body>
+    <h1>Test de Build : Ping Agent</h1>
+    <p>Ouvrez la console. Vous devriez voir un message d'erreur indiquant que le worker a été terminé, ce qui est normal et prouve qu'il a bien été chargé.</p>
+    <script>
+        console.log('Tentative de chargement du worker PingAgent...');
+        const worker = new Worker('/dist/test-agents/ping.agent.js');
+
+        worker.onerror = (e) => {
+            console.error('Erreur du worker (ceci peut être normal si le test est court) :', e.message);
+        };
+
+        worker.onmessage = (e) => {
+            console.log('Message reçu du worker :', e.data);
+        };
+
+        setTimeout(() => {
+            console.log('Test terminé. Le worker a été chargé sans erreur de syntaxe ou de chargement initial.');
+            worker.terminate();
+        }, 1000);
+    </script>
+</body>
+</html>

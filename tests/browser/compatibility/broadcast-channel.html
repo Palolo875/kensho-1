@@ -1,0 +1,35 @@
+<!-- tests/browser/compatibility/broadcast-channel.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head><title>Test Compatibilité BroadcastChannel</title></head>
+<body>Vérification en cours...</body>
+<script>
+    // worker-script.js
+    const workerScriptContent = `
+        const bc = new BroadcastChannel('kensho-compat-test');
+        self.onmessage = () => { bc.postMessage('pong'); };
+    `;
+    const blob = new Blob([workerScriptContent], { type: 'application/javascript' });
+    const worker = new Worker(URL.createObjectURL(blob));
+
+    const bc = new BroadcastChannel('kensho-compat-test');
+    let received = false;
+
+    bc.onmessage = (e) => {
+        if (e.data === 'pong') {
+            received = true;
+            document.body.innerHTML = '<h1 style="color: green;">✅ Compatibilité BroadcastChannel OK</h1>';
+            bc.close();
+            worker.terminate();
+        }
+    };
+
+    worker.postMessage('start');
+
+    setTimeout(() => {
+        if (!received) {
+            document.body.innerHTML = '<h1 style="color: red;">❌ ERREUR: BroadcastChannel ne communique pas entre le Worker et le Thread Principal sur ce navigateur.</h1>';
+        }
+    }, 2000);
+</script>
+</html>
