@@ -69,6 +69,6 @@ export class AgentRuntime {
 
     public dispose(): void {
         this.messageBus.dispose();
-        // this.guardian.dispose(); // TODO: Add dispose to guardian
+        this.guardian.dispose();
     }
 }

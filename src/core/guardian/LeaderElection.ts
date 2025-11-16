@@ -89,11 +89,12 @@ export class LeaderElection {
      * Se déclare leader et l'annonce à toute la constellation.
      */
     private becomeLeader(): void {
-        console.log(`[${this.selfName}] Je suis le nouveau Leader !`);
-        this.isElectionRunning = false;
+        if (this.isElectionRunning) {
+            console.log(`[${this.selfName}] Élection gagnée. Je deviens le nouveau Leader !`);
+            this.isElectionRunning = false;
 
-        // La logique de l'epochId sera gérée par le Guardian principal.
-        // Ici, on se contente de diffuser l'annonce.
-        this.messageBus.broadcastSystemMessage('NEW_LEADER', { leaderId: this.selfName });
+            // On ne diffuse plus directement, on notifie le Guardian qui gère l'état.
+            this.messageBus.sendSystemMessage(this.selfName, 'I_AM_THE_NEW_LEADER', {});
+        }
     }
 }
