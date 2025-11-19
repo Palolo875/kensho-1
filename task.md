@@ -1,6 +1,6 @@
 # Kensho Project Tasks
 
-## Sprint 3: Persistence (In Progress) 🔄
+## Sprint 3: Persistence (Completed) ✅
 Focus: Giving agents long-term memory using IndexedDB.
 
 - [x] **Core Infrastructure**
@@ -9,10 +9,11 @@ Focus: Giving agents long-term memory using IndexedDB.
     - [x] Create basic test page (`tests/browser/storage-test.html`)
 - [x] **System Integration**
     - [x] Integrate `IndexedDBAdapter` into `OfflineQueue` (Persistent Queue)
-    - [ ] Integrate `IndexedDBAdapter` into `AgentRuntime` (State Management)
-    - [ ] Make `WorkerRegistry` persistent in `OrionGuardian`
-- [ ] **Validation**
-    - [ ] Create `sprint3-persistence-e2e.html` (Reload resilience test)
+    - [x] Integrate `IndexedDBAdapter` into `AgentRuntime` (State Management)
+    - [ ] Make `WorkerRegistry` persistent in `OrionGuardian` (Optional)
+- [x] **Validation**
+    - [x] Create `sprint3-persistence-e2e.html` (Reload resilience test)
+    - [x] Create `sprint3-agent-state-e2e.html` (Agent state test)
 
 ## Sprint 2: Streaming Support (Completed) ✅
 - [x] **Core Implementation**
