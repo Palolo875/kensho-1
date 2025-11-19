@@ -1,9 +1,12 @@
 // src/core/communication/MessageBus.ts
 
 import { KenshoMessage, WorkerName, RequestHandler, SerializedError } from './types';
+import { NetworkTransport } from './transport/NetworkTransport';
+import { BroadcastTransport } from './transport/BroadcastTransport';
 
 interface MessageBusConfig {
-  defaultTimeout?: number;
+    defaultTimeout?: number;
+    transport?: NetworkTransport;
 }
 
 /**
@@ -12,7 +15,7 @@ interface MessageBusConfig {
  */
 export class MessageBus {
     private readonly workerName: WorkerName;
-    private readonly broadcastChannel: BroadcastChannel;
+    private readonly transport: NetworkTransport;
     private readonly defaultTimeout: number;
     private currentTraceId: string | null = null;
 
@@ -22,8 +25,8 @@ export class MessageBus {
 
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
-        this.broadcastChannel = new BroadcastChannel('kensho-main-bus');
-        this.broadcastChannel.onmessage = this.handleIncomingMessage.bind(this);
+        this.transport = config.transport ?? new BroadcastTransport();
+        this.transport.onMessage(this.handleIncomingMessage.bind(this));
         this.defaultTimeout = config.defaultTimeout ?? 5000;
     }
 
@@ -35,9 +38,7 @@ export class MessageBus {
         return true;
     }
 
-    private handleIncomingMessage(event: MessageEvent<KenshoMessage>): void {
-        const message = event.data;
-
+    private handleIncomingMessage(message: KenshoMessage): void {
         // NOUVEAU : Notifier les abonnés système de chaque message reçu
         this.systemSubscribers.forEach(cb => cb(message));
 
@@ -106,7 +107,7 @@ export class MessageBus {
             messageId: message.messageId || crypto.randomUUID(),
             ...message,
         };
-        this.broadcastChannel.postMessage(fullMessage);
+        this.transport.send(fullMessage);
         return fullMessage.messageId;
     }
 
@@ -172,6 +173,6 @@ export class MessageBus {
     }
 
     public dispose(): void {
-        this.broadcastChannel.close();
+        this.transport.dispose();
     }
 }

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kensho WebSocket Transport - Test E2E</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .info-box {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .info-box h2 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .info-box p {
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+
+        .test-section {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            color: #333;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .status.idle { background: #e0e0e0; color: #666; }
+        .status.running { background: #ffd54f; color: #f57f17; }
+        .status.success { background: #81c784; color: #2e7d32; }
+        .status.error { background: #e57373; color: #c62828; }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 1rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .log {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry.success { color: #2e7d32; }
+        .log-entry.error { color: #c62828; }
+        .log-entry.info { color: #1976d2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 Kensho WebSocket Transport</h1>
+        
+        <div class="info-box">
+            <h2>📡 Test de Communication Multi-Appareils</h2>
+            <p>
+                Cette page teste le nouveau système de transport WebSocket. 
+                Ouvrez cette page dans <strong>deux navigateurs différents</strong> (ou deux appareils sur le même réseau) 
+                et lancez le test. Les agents communiqueront via le serveur relais WebSocket au lieu du BroadcastChannel local.
+            </p>
+            <p style="margin-top: 1rem;">
+                <strong>Prérequis :</strong> Le serveur relais doit être actif (<code>node server/relay.js</code>).
+            </p>
+        </div>
+
+        <div class="test-section">
+            <div class="status idle" id="status">⏸️ Prêt</div>
+            
+            <div style="margin-bottom: 2rem;">
+                <button id="startBtn" onclick="startTest()">🚀 Lancer le Test</button>
+                <button id="sendMessageBtn" onclick="sendTestMessage()" disabled>📨 Envoyer un Message</button>
+                <button onclick="clearLog()">🗑️ Effacer le Log</button>
+            </div>
+
+            <div class="log" id="log">
+                <div class="log-entry info">En attente du démarrage...</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        let worker = null;
+        let testRunning = false;
+
+        window.log = function(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        };
+
+        window.updateStatus = function(text, className) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = `status ${className}`;
+        };
+
+        window.clearLog = function() {
+            document.getElementById('log').innerHTML = '<div class="log-entry info">Log effacé.</div>';
+        };
+
+        window.startTest = async function() {
+            if (testRunning) return;
+            
+            testRunning = true;
+            updateStatus('🔄 Démarrage...', 'running');
+            document.getElementById('startBtn').disabled = true;
+            
+            log('Initialisation du RemotePingAgent...', 'info');
+
+            try {
+                // Créer le worker avec le transport WebSocket
+                worker = new Worker('/dist/remote-agents/remote-ping.agent.js', { 
+                    type: 'module',
+                    name: 'RemotePingAgent-' + Math.random().toString(36).substr(2, 9)
+                });
+
+                worker.onmessage = (e) => {
+                    if (e.data.type === 'READY') {
+                        log('✅ Agent prêt et connecté au serveur WebSocket', 'success');
+                        updateStatus('✅ Connecté', 'success');
+                        document.getElementById('sendMessageBtn').disabled = false;
+                    }
+                };
+
+                worker.onerror = (err) => {
+                    log(`❌ Erreur Worker: ${err.message}`, 'error');
+                    updateStatus('❌ Erreur', 'error');
+                };
+
+            } catch (error) {
+                log(`❌ Erreur: ${error.message}`, 'error');
+                updateStatus('❌ Erreur', 'error');
+                testRunning = false;
+                document.getElementById('startBtn').disabled = false;
+            }
+        };
+
+        window.sendTestMessage = function() {
+            if (!worker) {
+                log('❌ Agent non initialisé', 'error');
+                return;
+            }
+            
+            const message = `Test message at ${Date.now()}`;
+            log(`📤 Envoi de message de test via WebSocket...`, 'info');
+            log(`💬 Message: "${message}"`, 'info');
+            
+            // Note: Dans une vraie implémentation, il faudrait un MessageBus côté main thread
+            // Pour l'instant, c'est juste une démo de connexion
+            log('ℹ️ Pour tester la communication complète, ouvrez cette page dans deux navigateurs différents', 'info');
+        };
+
+        // Auto-log des messages console du worker
+        const originalConsoleLog = console.log;
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            if (args[0] && typeof args[0] === 'string' && args[0].includes('[RemotePingAgent]')) {
+                log(args.join(' '), 'info');
+            }
+        };
+    </script>
+</body>
+</html>

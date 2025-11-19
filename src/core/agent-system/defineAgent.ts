@@ -1,8 +1,14 @@
 // src/core/agent-system/defineAgent.ts
 import { AgentRuntime } from './AgentRuntime';
+import { WebSocketTransport } from '../communication/transport/WebSocketTransport';
+import { HybridTransport } from '../communication/transport/HybridTransport';
 
 export interface AgentDefinition {
     name: string;
+    config?: {
+        useWebSocket?: boolean;
+        useHybrid?: boolean; // Nouveau : utilise BroadcastChannel + WebSocket
+    };
     init: (runtime: AgentRuntime) => void;
 }
 
@@ -13,7 +19,18 @@ export function runAgent(definition: Omit<AgentDefinition, 'name'> & { name?: st
     if (!agentName) {
         throw new Error("Agent name must be provided either in the definition or as the worker's name.");
     }
-    const runtime = new AgentRuntime(agentName);
+
+    let transport;
+    if (definition.config?.useHybrid) {
+        // Transport hybride : local + distant
+        transport = new HybridTransport();
+    } else if (definition.config?.useWebSocket) {
+        // Transport WebSocket uniquement
+        transport = new WebSocketTransport();
+    }
+    // Sinon, BroadcastTransport par défaut (via MessageBus)
+
+    const runtime = new AgentRuntime(agentName, transport);
     definition.init(runtime);
 
     // NOUVEAU : Signaler que l'initialisation est terminée.

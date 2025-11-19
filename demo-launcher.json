@@ -1,0 +1,11 @@
+{
+    "name": "kensho-demo-launcher",
+    "version": "1.0.0",
+    "description": "Lanceur automatique pour démonstrations Kensho",
+    "type": "module",
+    "scripts": {
+        "demo:full": "concurrently \"npm run relay\" \"npm run dev\" --names \"RELAY,DEV\" --prefix-colors \"cyan,magenta\"",
+        "demo:websocket": "concurrently \"npm run relay\" \"npm run test:websocket\" --names \"RELAY,TEST\" --prefix-colors \"cyan,green\"",
+        "demo:visualizer": "concurrently \"npm run relay\" \"vite dev --open tests/browser/network-visualizer.html\" --names \"RELAY,VIZ\" --prefix-colors \"cyan,yellow\""
+    }
+}

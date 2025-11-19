@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kensho Network Visualizer - Live Communication</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0e27;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            height: 100vh;
+        }
+
+        .sidebar {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            color: #64ffda;
+        }
+
+        .agent-list {
+            margin-bottom: 2rem;
+        }
+
+        .agent-card {
+            background: rgba(100, 255, 218, 0.1);
+            border: 1px solid rgba(100, 255, 218, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .agent-card:hover {
+            transform: translateX(5px);
+            background: rgba(100, 255, 218, 0.15);
+        }
+
+        .agent-name {
+            font-weight: 600;
+            color: #64ffda;
+        }
+
+        .agent-status {
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            opacity: 0.8;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #1a1f3a 0%, #0a0e27 100%);
+        }
+
+        #networkCanvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .stats-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .stats-panel h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            color: #ff6b9d;
+        }
+
+        .stat-item {
+            background: rgba(255, 107, 157, 0.1);
+            border-left: 3px solid #ff6b9d;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.7;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #ff6b9d;
+        }
+
+        .message-log {
+            margin-top: 2rem;
+        }
+
+        .message-entry {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            border-left: 3px solid transparent;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .message-entry.sent {
+            border-left-color: #64ffda;
+        }
+
+        .message-entry.received {
+            border-left-color: #ffd700;
+        }
+
+        .message-time {
+            opacity: 0.5;
+            font-size: 0.75rem;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(100, 255, 218, 0.2);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(100, 255, 218, 0.5);
+            padding: 1.5rem 2rem;
+            border-radius: 16px;
+            display: flex;
+            gap: 1rem;
+            box-shadow: 0 10px 40px rgba(100, 255, 218, 0.3);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #64ffda 0%, #00b8a9 100%);
+            color: #0a0e27;
+        }
+
+        button.danger {
+            background: linear-gradient(135deg, #ff6b9d 0%, #c92a6d 100%);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: rgba(100, 255, 218, 0.2);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Sidebar Gauche : Agents -->
+        <div class="sidebar">
+            <h2>🤖 Agents Connectés</h2>
+            <div class="agent-list" id="agentList">
+                <p style="opacity: 0.5;">Aucun agent démarré...</p>
+            </div>
+
+            <h2>⚙️ Configuration</h2>
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.85rem;">
+                    Mode de Transport :
+                </label>
+                <select id="transportMode"
+                    style="width: 100%; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px;">
+                    <option value="broadcast">BroadcastChannel (Local)</option>
+                    <option value="websocket">WebSocket (Distant)</option>
+                    <option value="hybrid" selected>Hybride (Recommandé)</option>
+                </select>
+            </div>
+
+            <button onclick="createAgent()" style="width: 100%; margin-top: 1rem;">
+                ➕ Créer un Agent
+            </button>
+        </div>
+
+        <!-- Centre : Visualisation -->
+        <div class="canvas-container">
+            <canvas id="networkCanvas" width="800" height="600"></canvas>
+        </div>
+
+        <!-- Sidebar Droite : Stats -->
+        <div class="stats-panel">
+            <h2>📊 Statistiques</h2>
+
+            <div class="stat-item">
+                <div class="stat-label">Messages Envoyés</div>
+                <div class="stat-value" id="messagesSent">0</div>
+            </div>
+
+            <div class="stat-item">
+                <div class="stat-label">Messages Reçus</div>
+                <div class="stat-value" id="messagesReceived">0</div>
+            </div>
+
+            <div class="stat-item">
+                <div class="stat-label">Latence Moyenne</div>
+                <div class="stat-value" id="avgLatency">0ms</div>
+            </div>
+
+            <div class="message-log">
+                <h3 style="margin-bottom: 1rem; font-size: 1rem;">📜 Journal des Messages</h3>
+                <div id="messageLog" style="max-height: 300px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contrôles -->
+    <div class="controls">
+        <button class="primary" onclick="sendBroadcast()">📡 Broadcast Message</button>
+        <button onclick="pingAll()">🏓 Ping All</button>
+        <button class="danger" onclick="stopAll()">⏹️ Stop All</button>
+    </div>
+
+    <script type="module">
+        const agents = [];
+        let messagesSent = 0;
+        let messagesReceived = 0;
+        let latencies = [];
+
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Système de particules pour visualiser les messages
+        const particles = [];
+
+        class MessageParticle {
+            constructor(from, to, color) {
+                this.from = from;
+                this.to = to;
+                this.color = color;
+                this.progress = 0;
+                this.speed = 0.02;
+            }
+
+            update() {
+                this.progress += this.speed;
+                return this.progress >= 1;
+            }
+
+            draw(ctx) {
+                const x = this.from.x + (this.to.x - this.from.x) * this.progress;
+                const y = this.from.y + (this.to.y - this.from.y) * this.progress;
+
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function drawNetwork() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Dessiner les connexions
+            for (let i = 0; i < agents.length; i++) {
+                for (let j = i + 1; j < agents.length; j++) {
+                    ctx.beginPath();
+                    ctx.moveTo(agents[i].x, agents[i].y);
+                    ctx.lineTo(agents[j].x, agents[j].y);
+                    ctx.strokeStyle = 'rgba(100, 255, 218, 0.1)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            }
+
+            // Dessiner les agents
+            agents.forEach((agent, index) => {
+                const radius = 40;
+
+                // Cercle extérieur (glow)
+                ctx.beginPath();
+                ctx.arc(agent.x, agent.y, radius + 5, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(100, 255, 218, 0.2)`;
+                ctx.fill();
+
+                // Cercle principal
+                ctx.beginPath();
+                ctx.arc(agent.x, agent.y, radius, 0, Math.PI * 2);
+                const gradient = ctx.createRadialGradient(agent.x, agent.y, 0, agent.x, agent.y, radius);
+                gradient.addColorStop(0, '#667eea');
+                gradient.addColorStop(1, '#764ba2');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+
+                // Bordure
+                ctx.strokeStyle = '#64ffda';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Nom de l'agent
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 14px Inter';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`Agent ${index + 1}`, agent.x, agent.y);
+            });
+
+            // Dessiner les particules
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                particle.draw(ctx);
+                if (particle.update()) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(drawNetwork);
+        }
+
+        window.createAgent = function () {
+            const mode = document.getElementById('transportMode').value;
+            const agentId = agents.length + 1;
+
+            // Position circulaire
+            const angle = (agents.length / 6) * Math.PI * 2;
+            const radius = 200;
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            const agent = {
+                id: agentId,
+                name: `Agent${agentId}`,
+                mode: mode,
+                x: centerX + Math.cos(angle) * radius,
+                y: centerY + Math.sin(angle) * radius,
+                worker: null
+            };
+
+            agents.push(agent);
+            updateAgentList();
+
+            log(`Agent ${agentId} créé (mode: ${mode})`, 'info');
+
+            // Simuler la création d'un worker (dans un vrai cas, on créerait vraiment un worker)
+            setTimeout(() => {
+                log(`Agent ${agentId} prêt et connecté`, 'success');
+            }, 500);
+        };
+
+        window.sendBroadcast = function () {
+            if (agents.length < 2) {
+                alert('Créez au moins 2 agents pour tester la communication !');
+                return;
+            }
+
+            const from = agents[0];
+            const message = `Broadcast from Agent ${from.id} at ${Date.now()}`;
+
+            agents.forEach((to, index) => {
+                if (to.id !== from.id) {
+                    // Créer une particule
+                    particles.push(new MessageParticle(
+                        from,
+                        to,
+                        '#64ffda'
+                    ));
+
+                    setTimeout(() => {
+                        messagesSent++;
+                        messagesReceived++;
+                        updateStats();
+                        log(`${from.name} → ${to.name}: "${message}"`, 'sent');
+                    }, 500 * index);
+                }
+            });
+        };
+
+        window.pingAll = function () {
+            if (agents.length === 0) {
+                alert('Créez au moins un agent !');
+                return;
+            }
+
+            agents.forEach((agent, i) => {
+                setTimeout(() => {
+                    const startTime = Date.now();
+
+                    // Simuler un ping
+                    setTimeout(() => {
+                        const latency = Date.now() - startTime;
+                        latencies.push(latency);
+                        if (latencies.length > 10) latencies.shift();
+
+                        messagesSent++;
+                        messagesReceived++;
+                        updateStats();
+                        log(`Ping Agent ${agent.id}: ${latency}ms`, 'received');
+                    }, Math.random() * 100 + 50);
+                }, i * 200);
+            });
+        };
+
+        window.stopAll = function () {
+            if (confirm('Arrêter tous les agents ?')) {
+                agents.length = 0;
+                particles.length = 0;
+                updateAgentList();
+                log('Tous les agents ont été arrêtés', 'error');
+            }
+        };
+
+        function updateAgentList() {
+            const list = document.getElementById('agentList');
+            if (agents.length === 0) {
+                list.innerHTML = '<p style="opacity: 0.5;">Aucun agent démarré...</p>';
+                return;
+            }
+
+            list.innerHTML = agents.map(agent => `
+                <div class="agent-card">
+                    <div class="agent-name">
+                        ${agent.name}
+                        <span class="badge pulse">●</span>
+                    </div>
+                    <div class="agent-status">
+                        Mode: ${agent.mode}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats() {
+            document.getElementById('messagesSent').textContent = messagesSent;
+            document.getElementById('messagesReceived').textContent = messagesReceived;
+
+            if (latencies.length > 0) {
+                const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+                document.getElementById('avgLatency').textContent = Math.round(avg) + 'ms';
+            }
+        }
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('messageLog');
+            const entry = document.createElement('div');
+            entry.className = `message-entry ${type}`;
+
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = `
+                <div class="message-time">${time}</div>
+                <div>${message}</div>
+            `;
+
+            logEl.insertBefore(entry, logEl.firstChild);
+
+            // Limiter à 50 entrées
+            while (logEl.children.length > 50) {
+                logEl.removeChild(logEl.lastChild);
+            }
+        }
+
+        // Démarrer l'animation
+        drawNetwork();
+
+        // Message de bienvenue
+        log('🚀 Visualiseur Kensho démarré', 'success');
+        log('Créez des agents pour voir la communication en temps réel', 'info');
+    </script>
+</body>
+
+</html>

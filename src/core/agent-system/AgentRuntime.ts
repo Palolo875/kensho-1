@@ -1,7 +1,8 @@
 // src/core/agent-system/AgentRuntime.ts
 import { MessageBus } from '../communication/MessageBus';
 import { WorkerName, RequestHandler } from '../communication/types';
-import { OrionGuardian } from '../guardian/OrionGuardian'; // Importer le Guardian
+import { OrionGuardian } from '../guardian/OrionGuardian';
+import { NetworkTransport } from '../communication/transport/NetworkTransport';
 
 /**
  * AgentRuntime est l'environnement d'exécution pour chaque agent.
@@ -12,20 +13,21 @@ export class AgentRuntime {
     public readonly agentName: WorkerName;
     private readonly messageBus: MessageBus;
     private methods = new Map<string, RequestHandler>();
-    private readonly guardian: OrionGuardian; // Ajouter une instance du Guardian
+    private readonly guardian: OrionGuardian;
 
-    constructor(name: WorkerName) {
+    constructor(name: WorkerName, transport?: NetworkTransport) {
         this.agentName = name;
-        this.messageBus = new MessageBus(name);
-        this.guardian = new OrionGuardian(name, this.messageBus); // Initialiser le Guardian
+        this.messageBus = new MessageBus(name, { transport });
+        this.guardian = new OrionGuardian(name, this.messageBus);
 
         this.messageBus.setRequestHandler(this.handleRequest.bind(this));
 
         // Annoncer son existence (déplacé dans le Guardian)
         this.guardian.start();
 
-        // Enregistrer la méthode de statut pour le débogage/test
+        // Enregistrer les méthodes de test/débogage
         this.registerMethod('getGuardianStatus', () => this.getGuardianStatus());
+        this.registerMethod('getActiveWorkers', () => this.getActiveWorkers());
     }
 
     private async handleRequest(payload: { method: string, args: any[] }): Promise<any> {
@@ -65,6 +67,10 @@ export class AgentRuntime {
     // Exposer les méthodes du Guardian pour les tests
     public getGuardianStatus() {
         return this.guardian.getStatus();
+    }
+
+    public getActiveWorkers(): WorkerName[] {
+        return this.guardian.workerRegistry.getActiveWorkers();
     }
 
     public dispose(): void {

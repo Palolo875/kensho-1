@@ -4,6 +4,62 @@
 
 **URL**: https://lovable.dev/projects/74a7a0c8-6d5c-4c99-ac3b-3ba7a53cdd75
 
+## What is Kensho?
+
+Kensho est bien plus qu'une simple application React : c'est un **système distribué complet** qui s'exécute directement dans le navigateur. Il implémente :
+
+- 🧠 **Agents autonomes** (via Web Workers) avec communication RPC
+- 📡 **MessageBus** multi-transport (BroadcastChannel, WebSocket, Hybride)
+- 👑 **Élection de leader** avec détection de pannes
+- 🔄 **Auto-réparation** et résilience du système
+- 🌐 **Communication inter-appareils** via WebSocket
+
+## 🚀 Nouveau : Support Multi-Transport
+
+Kensho supporte désormais **3 modes de transport** :
+
+### 1️⃣ BroadcastChannel (Local - Par défaut)
+Communication ultra-rapide entre onglets/workers du même domaine
+```typescript
+runAgent({ name: 'MyAgent', init: (runtime) => { /* ... */ } });
+```
+
+### 2️⃣ WebSocket (Distant)
+Communication entre différents navigateurs/appareils
+```typescript
+runAgent({ 
+    name: 'MyAgent', 
+    config: { useWebSocket: true },
+    init: (runtime) => { /* ... */ }
+});
+```
+
+### 3️⃣ Hybride (Recommandé)
+Combine local + distant avec déduplication automatique
+```typescript
+runAgent({ 
+    name: 'MyAgent', 
+    config: { useHybrid: true },
+    init: (runtime) => { /* ... */ }
+});
+```
+
+### 🔥 Démo Rapide
+
+**Terminal 1 :**
+```bash
+npm run relay
+```
+
+**Terminal 2 :**
+```bash
+npm run test:websocket
+```
+
+Ouvrez ensuite l'URL dans **deux navigateurs différents** et regardez-les communiquer !
+
+📖 **Guide complet** : [docs/QUICKSTART_WEBSOCKET.md](./docs/QUICKSTART_WEBSOCKET.md)
+
 ## How can I edit this code?
 
 There are several ways of editing your application.
@@ -74,23 +130,29 @@ Cela génère `dist/test-agents/ping.agent.js` et `pong.agent.js`, consommés pa
 
 ### 2. Lancer les vérifications rapides
 
-- Compatibilité BroadcastChannel : ouvrir `tests/browser/compatibility/broadcast-channel.html` dans un navigateur supportant les Web Workers. La page doit afficher ✅.
-- Sanity build Ping : lancer `npm run dev` puis visiter `tests/browser/build/test-ping-only.html`. L’absence d’erreurs 404/CORS confirme le chargement du worker.
+- Compatibilité BroadcastChannel : ouvrir `tests/browser/compatibility/broadcast-channel.html` dans un navigateur supportant les Web Workers. La page doit afficher ✅.
+- Sanity build Ping : lancer `npm run dev` puis visiter `tests/browser/build/test-ping-only.html`. L'absence d'erreurs 404/CORS confirme le chargement du worker.
 
 ### 3. Exécuter le test de bout en bout
 
-Un script facilite l’orchestration complète :
+Un script facilite l'orchestration complète :
 
 ```sh
 npm run test:e2e
 ```
 
-Ce script build les agents puis démarre Vite en ouvrant `tests/browser/sprint1a-e2e.html`. Cliquez sur « Lancer les Tests » pour exécuter :
+Ce script build les agents puis démarre Vite en ouvrant `tests/browser/sprint1a-e2e.html`. Cliquez sur « Lancer les Tests » pour exécuter :
 
 1. Ping ↔ Pong (scénario fonctionnel de base)
 2. Stress test avec 500 requêtes concurrentes et mesure de latence
 
 Le test réussit lorsque les deux scénarios passent et que le résumé affiche 🎉.
+
+## 📚 Documentation
+
+- [🌐 Architecture du Transport](./docs/TRANSPORT.md)
+- [⚡ Guide de démarrage WebSocket](./docs/QUICKSTART_WEBSOCKET.md)
+- [💡 Exemples de code](./docs/EXAMPLES.ts)
 
 ## How can I deploy this project?
 

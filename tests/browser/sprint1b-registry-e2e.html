@@ -1,23 +1,80 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <title>Kensho - Sprint 1B - Test E2E du WorkerRegistry</title>
     <style>
-        /* ... (même style que le test précédent) ... */
-        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
-        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
-        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
-        h1, h2 { color: #61afef; }
-        .pass { color: #98c379; font-weight: bold; }
-        .fail { color: #e06c75; font-weight: bold; }
-        .info { color: #56b6c2; }
-        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+        body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.6;
+            padding: 2em;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        pre {
+            background-color: #282c34;
+            padding: 1em;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        button {
+            font-size: 1.2em;
+            padding: 0.5em 1em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid #61afef;
+            background-color: #282c34;
+            color: #61afef;
+        }
+
+        button:hover {
+            background-color: #3e4451;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        h1,
+        h2 {
+            color: #61afef;
+        }
+
+        .pass {
+            color: #98c379;
+            font-weight: bold;
+        }
+
+        .fail {
+            color: #e06c75;
+            font-weight: bold;
+        }
+
+        .info {
+            color: #56b6c2;
+        }
+
+        .warning {
+            color: #e5c07b;
+        }
+
+        .summary {
+            margin-top: 1em;
+            border-top: 1px solid #444;
+            padding-top: 1em;
+        }
     </style>
 </head>
+
 <body>
-    <h1>Sprint 1B - Test E2E du WorkerRegistry</h1>
-    <p>Ce test valide que les agents se découvrent mutuellement et que les agents inactifs sont correctement retirés du registre.</p>
+    <h1>🛡️ Sprint 1B - Test E2E du WorkerRegistry</h1>
+    <p>Ce test valide que les agents se découvrent mutuellement et que les agents inactifs sont correctement retirés du
+        registre.</p>
     <button id="run-tests">Lancer les Tests</button>
     <h2>Résultats :</h2>
     <pre id="results"></pre>
@@ -36,21 +93,27 @@
 
         // Helper pour démarrer un worker et attendre son signal READY
         function startWorker(name, path) {
-            const worker = new Worker(path, { name: name, type: 'module' }); // CORRIGÉ: Ajout de type: 'module'
+            const worker = new Worker(path, { type: 'module', name: name });
             const readyPromise = new Promise((resolve, reject) => {
                 const timeoutId = setTimeout(() => reject(new Error(`Worker ${name} n'a pas démarré à temps.`)), 5000);
                 worker.onmessage = (e) => {
                     if (e.data && e.data.type === 'READY') {
                         clearTimeout(timeoutId);
-                        worker.onmessage = null;
+                        worker.onmessage = null; // Désactiver après READY
                         resolve(worker);
                     }
+                };
+                worker.onerror = (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
                 };
             });
             return readyPromise;
         }
 
         document.getElementById('run-tests').addEventListener('click', async () => {
+            const btn = document.getElementById('run-tests');
+            btn.disabled = true;
             resultsEl.innerHTML = '';
             log('--- Démarrage du test du WorkerRegistry ---', 'info');
 
@@ -64,25 +127,38 @@
                 log('\n[Étape 1] Démarrage de 3 agents et vérification de la découverte mutuelle...', 'info');
 
                 const workerNames = ['AgentA', 'AgentB', 'AgentC'];
-                const workerPromises = workerNames.map(name => startWorker(name, '/dist/test-agents/ping.agent.js'));
+                const workerPromises = workerNames.map(name =>
+                    startWorker(name, '/dist/test-agents/ping.agent.js')
+                );
 
                 const startedWorkers = await Promise.all(workerPromises);
                 workerNames.forEach((name, i) => workers[name] = startedWorkers[i]);
-                log('  Tous les agents ont démarré.', 'pass');
+                log('  ✓ Tous les agents ont démarré.', 'pass');
 
                 // Laisser un peu de temps pour que les annonces se propagent
-                await sleep(500);
+                log('  Attente de 2 secondes pour la propagation des annonces...', 'info');
+                await sleep(2000);
 
                 // Interroger chaque worker pour connaître son registre
                 for (const name of workerNames) {
-                    const activeList = await mainBus.request(name, { method: 'getActiveWorkers', args: [] });
-                    log(`  Registre de ${name}: [${activeList.sort().join(', ')}]`, 'info');
+                    try {
+                        const activeList = await mainBus.request(name, { method: 'getActiveWorkers', args: [] }, 3000);
+                        log(`  Registre de ${name}: [${activeList.sort().join(', ')}]`, 'info');
 
-                    // Chaque worker doit connaître tous les autres
-                    if (activeList.length === workerNames.length && workerNames.every(n => activeList.includes(n))) {
-                        log(`  -> Le registre de ${name} est correct.`, 'pass');
-                    } else {
-                        log(`  -> ERREUR: Le registre de ${name} est incorrect.`, 'fail');
+                        // Chaque worker doit connaître tous les autres
+                        const expectedWorkers = workerNames.filter(n => n !== name);
+                        const hasAllOthers = expectedWorkers.every(n => activeList.includes(n));
+                        const hasSelf = activeList.includes(name);
+
+                        if (hasSelf && hasAllOthers && activeList.length === workerNames.length) {
+                            log(`  ✓ Le registre de ${name} est correct (${activeList.length} agents).`, 'pass');
+                        } else {
+                            log(`  ✗ ERREUR: Le registre de ${name} est incorrect.`, 'fail');
+                            log(`    Attendu: ${workerNames.length} agents, Reçu: ${activeList.length}`, 'fail');
+                            testPassed = false;
+                        }
+                    } catch (error) {
+                        log(`  ✗ Erreur lors de la requête à ${name}: ${error.message}`, 'fail');
                         testPassed = false;
                     }
                 }
@@ -93,42 +169,81 @@
                 log('\n[Étape 2] Arrêt de l\'AgentB et vérification du nettoyage du registre...', 'info');
 
                 workers['AgentB'].terminate();
-                log('  AgentB terminé.', 'info');
+                delete workers['AgentB'];
+                log('  ✓ AgentB terminé.', 'pass');
 
                 // Attendre plus longtemps que le INACTIVITY_THRESHOLD (10s) + le cleanupInterval (5s)
+                // Soyons généreux et attendons 16 secondes
                 const waitTime = 16000;
-                log(`  Attente de ${waitTime / 1000} secondes pour le garbage collector...`, 'info');
-                await sleep(waitTime);
+                log(`  ⏳ Attente de ${waitTime / 1000} secondes pour le garbage collector...`, 'warning');
+                log('  (Ceci est normal, le WorkerRegistry utilise un seuil de 10s d\'inactivité)', 'info');
+
+                // Afficher un compte à rebours
+                for (let i = waitTime / 1000; i > 0; i--) {
+                    await sleep(1000);
+                    if (i % 2 === 0) {
+                        log(`    ${i} secondes restantes...`, 'info');
+                    }
+                }
 
                 const remainingWorkers = ['AgentA', 'AgentC'];
-                for (const name of remainingWorkers) {
-                    const activeList = await mainBus.request(name, { method: 'getActiveWorkers', args: [] });
-                    log(`  Registre de ${name}: [${activeList.sort().join(', ')}]`, 'info');
+                log('\n  Vérification des registres après nettoyage...', 'info');
 
-                    // Le registre ne doit plus contenir AgentB
-                    if (activeList.length === remainingWorkers.length && !activeList.includes('AgentB')) {
-                        log(`  -> Le registre de ${name} a été nettoyé correctement.`, 'pass');
-                    } else {
-                        log(`  -> ERREUR: Le registre de ${name} n'a pas été nettoyé.`, 'fail');
+                for (const name of remainingWorkers) {
+                    try {
+                        const activeList = await mainBus.request(name, { method: 'getActiveWorkers', args: [] }, 3000);
+                        log(`  Registre de ${name}: [${activeList.sort().join(', ')}]`, 'info');
+
+                        // Le registre ne doit plus contenir AgentB
+                        const stillHasB = activeList.includes('AgentB');
+                        const hasCorrectCount = activeList.length === remainingWorkers.length;
+
+                        if (!stillHasB && hasCorrectCount) {
+                            log(`  ✓ Le registre de ${name} a été nettoyé correctement.`, 'pass');
+                        } else {
+                            if (stillHasB) {
+                                log(`  ✗ ERREUR: Le registre de ${name} contient toujours AgentB !`, 'fail');
+                            }
+                            if (!hasCorrectCount) {
+                                log(`  ✗ ERREUR: Le registre de ${name} a ${activeList.length} agents au lieu de ${remainingWorkers.length}.`, 'fail');
+                            }
+                            testPassed = false;
+                        }
+                    } catch (error) {
+                        log(`  ✗ Erreur lors de la requête à ${name}: ${error.message}`, 'fail');
                         testPassed = false;
                     }
                 }
 
             } catch (error) {
-                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                log(`\n❌ Erreur critique durant le test: ${error.message}`, 'fail');
+                console.error(error);
                 testPassed = false;
             } finally {
                 // Nettoyage final
-                Object.values(workers).forEach(w => w.terminate());
+                log('\n--- Nettoyage ---', 'info');
+                Object.values(workers).forEach(w => {
+                    try {
+                        w.terminate();
+                    } catch (e) {
+                        // Ignorer les erreurs de terminaison
+                    }
+                });
                 mainBus.dispose();
+
                 log('\n--- Test Terminé ---', 'summary');
                 if (testPassed) {
                     log('🎉 Tâche "WorkerRegistry" validée avec succès !', 'pass');
+                    log('✓ Tous les agents se sont découverts correctement', 'pass');
+                    log('✓ Le garbage collector fonctionne comme prévu', 'pass');
                 } else {
                     log('❗️ Des problèmes ont été détectés dans le WorkerRegistry.', 'fail');
                 }
+
+                btn.disabled = false;
             }
         });
     </script>
 </body>
+
 </html>
