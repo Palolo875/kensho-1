@@ -2,6 +2,7 @@
 import { AgentRuntime } from './AgentRuntime';
 import { WebSocketTransport } from '../communication/transport/WebSocketTransport';
 import { HybridTransport } from '../communication/transport/HybridTransport';
+import { IndexedDBAdapter } from '../storage/IndexedDBAdapter';
 
 export interface AgentDefinition {
     name: string;
@@ -30,7 +31,10 @@ export function runAgent(definition: Omit<AgentDefinition, 'name'> & { name?: st
     }
     // Sinon, BroadcastTransport par défaut (via MessageBus)
 
-    const runtime = new AgentRuntime(agentName, transport);
+    // Initialiser le stockage persistant
+    const storage = new IndexedDBAdapter();
+
+    const runtime = new AgentRuntime(agentName, transport, storage);
     definition.init(runtime);
 
     // NOUVEAU : Signaler que l'initialisation est terminée.

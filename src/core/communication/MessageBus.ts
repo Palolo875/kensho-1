@@ -4,10 +4,12 @@ import { KenshoMessage, WorkerName, RequestHandler, SerializedError } from './ty
 import { NetworkTransport } from './transport/NetworkTransport';
 import { BroadcastTransport } from './transport/BroadcastTransport';
 import { OfflineQueue } from './OfflineQueue';
+import { StorageAdapter } from '../storage/types';
 
 interface MessageBusConfig {
     defaultTimeout?: number;
     transport?: NetworkTransport;
+    storage?: StorageAdapter;
 }
 
 export interface StreamCallbacks<TChunk> {
@@ -41,7 +43,7 @@ export class MessageBus {
     private systemSubscribers: ((message: KenshoMessage) => void)[] = [];
 
     // Gestion de l'OfflineQueue
-    private readonly offlineQueue = new OfflineQueue();
+    private readonly offlineQueue: OfflineQueue;
     private knownWorkers = new Set<WorkerName>();
     private cleanupInterval: NodeJS.Timeout;
 
@@ -60,6 +62,9 @@ export class MessageBus {
         this.transport = config.transport ?? new BroadcastTransport();
         this.transport.onMessage(this.handleIncomingMessage.bind(this));
         this.defaultTimeout = config.defaultTimeout ?? 5000;
+
+        // Initialiser l'OfflineQueue avec le storage
+        this.offlineQueue = new OfflineQueue(config.storage);
 
         // S'ajouter soi-même à la liste des workers connus
         this.knownWorkers.add(name);

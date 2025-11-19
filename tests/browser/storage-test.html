@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IndexedDB Storage Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .log {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+        }
+
+        .success {
+            color: #00cc00;
+        }
+
+        .error {
+            color: #ff4444;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📦 IndexedDB Storage Test</h1>
+        <p>Test de la couche de persistance de Kensho</p>
+
+        <div>
+            <button onclick="testSave()">💾 Sauvegarder des données</button>
+            <button onclick="testLoad()">📂 Charger des données</button>
+            <button onclick="testDelete()">🗑️ Supprimer</button>
+            <button onclick="testGetAll()">📋 Tout récupérer</button>
+            <button onclick="testClear()">🧹 Nettoyer le store</button>
+        </div>
+
+        <div class="log" id="logs"></div>
+    </div>
+
+    <script type="module">
+        import { IndexedDBAdapter } from '../../src/core/storage/IndexedDBAdapter.ts';
+        import { STORES } from '../../src/core/storage/types.ts';
+
+        const logsDiv = document.getElementById('logs');
+        const storage = new IndexedDBAdapter();
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logsDiv.appendChild(entry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            console.log(message);
+        }
+
+        window.testSave = async () => {
+            try {
+                const testData = {
+                    name: 'TestAgent',
+                    state: { counter: 42, lastUpdate: Date.now() },
+                    metadata: { version: '1.0' }
+                };
+
+                await storage.set(STORES.AGENT_STATE, 'test-agent-1', testData);
+                log('✅ Données sauvegardées avec succès', 'success');
+                log(JSON.stringify(testData, null, 2));
+            } catch (error) {
+                log(`❌ Erreur lors de la sauvegarde: ${error.message}`, 'error');
+            }
+        };
+
+        window.testLoad = async () => {
+            try {
+                const data = await storage.get(STORES.AGENT_STATE, 'test-agent-1');
+                if (data) {
+                    log('✅ Données chargées avec succès', 'success');
+                    log(JSON.stringify(data, null, 2));
+                } else {
+                    log('⚠️ Aucune donnée trouvée pour cette clé', 'error');
+                }
+            } catch (error) {
+                log(`❌ Erreur lors du chargement: ${error.message}`, 'error');
+            }
+        };
+
+        window.testDelete = async () => {
+            try {
+                await storage.delete(STORES.AGENT_STATE, 'test-agent-1');
+                log('✅ Donnée supprimée avec succès', 'success');
+            } catch (error) {
+                log(`❌ Erreur lors de la suppression: ${error.message}`, 'error');
+            }
+        };
+
+        window.testGetAll = async () => {
+            try {
+                const allData = await storage.getAll(STORES.AGENT_STATE);
+                log(`✅ Récupération de ${allData.length} entrée(s)`, 'success');
+                allData.forEach((item, index) => {
+                    log(`[${index}] ${JSON.stringify(item)}`);
+                });
+            } catch (error) {
+                log(`❌ Erreur lors de la récupération: ${error.message}`, 'error');
+            }
+        };
+
+        window.testClear = async () => {
+            try {
+                await storage.clear(STORES.AGENT_STATE);
+                log('✅ Store nettoyé avec succès', 'success');
+            } catch (error) {
+                log(`❌ Erreur lors du nettoyage: ${error.message}`, 'error');
+            }
+        };
+
+        // Test initial
+        log('📦 IndexedDB Adapter initialisé', 'success');
+    </script>
+</body>
+
+</html>

@@ -1,5 +1,6 @@
 // src/core/communication/OfflineQueue.ts
 import { KenshoMessage, WorkerName } from './types';
+import { StorageAdapter, STORES } from '../storage/types';
 
 interface QueuedMessage {
     message: KenshoMessage;
@@ -9,13 +10,66 @@ interface QueuedMessage {
 /**
  * Gère la mise en file d'attente des messages destinés à des workers
  * qui ne sont pas encore connus ou actifs dans la constellation.
+ * 
+ * Supporte la persistance via IndexedDB pour survivre aux rechargements.
  */
 export class OfflineQueue {
     private queues = new Map<WorkerName, QueuedMessage[]>();
+    private storage?: StorageAdapter;
+    private initPromise: Promise<void>;
 
     // Protections pour éviter une consommation de mémoire incontrôlée
     private static readonly MAX_QUEUE_SIZE = 100;
     private static readonly MAX_MESSAGE_AGE_MS = 60000; // 60 secondes
+
+    constructor(storage?: StorageAdapter) {
+        this.storage = storage;
+        this.initPromise = this.loadFromStorage();
+    }
+
+    /**
+     * Charge les messages en attente depuis le stockage persistant.
+     */
+    private async loadFromStorage(): Promise<void> {
+        if (!this.storage) return;
+
+        try {
+            const allQueues = await this.storage.getAll<{ target: WorkerName; messages: QueuedMessage[] }>(STORES.OFFLINE_QUEUE);
+
+            allQueues.forEach(entry => {
+                this.queues.set(entry.target, entry.messages);
+            });
+
+            const totalMessages = allQueues.reduce((sum, entry) => sum + entry.messages.length, 0);
+            if (totalMessages > 0) {
+                console.log(`[OfflineQueue] ${totalMessages} message(s) restauré(s) depuis IndexedDB.`);
+            }
+        } catch (error) {
+            console.error('[OfflineQueue] Erreur lors du chargement depuis le stockage:', error);
+        }
+    }
+
+    /**
+     * Sauvegarde une file d'attente spécifique dans le stockage.
+     */
+    private async saveQueue(target: WorkerName): Promise<void> {
+        if (!this.storage) return;
+
+        try {
+            const messages = this.queues.get(target);
+            if (messages && messages.length > 0) {
+                await this.storage.set(STORES.OFFLINE_QUEUE, target, {
+                    target,
+                    messages
+                });
+            } else {
+                // Si la queue est vide, la supprimer du stockage
+                await this.storage.delete(STORES.OFFLINE_QUEUE, target);
+            }
+        } catch (error) {
+            console.error(`[OfflineQueue] Erreur lors de la sauvegarde de la queue '${target}':`, error);
+        }
+    }
 
     /**
      * Met un message en file d'attente pour un destinataire donné.
@@ -38,6 +92,11 @@ export class OfflineQueue {
             enqueuedAt: Date.now(),
         });
         console.log(`[OfflineQueue] Message ${message.messageId} mis en file d'attente pour '${target}'. Taille de la file: ${queue.length}`);
+
+        // Sauvegarder dans le storage (fire-and-forget pour ne pas bloquer)
+        this.saveQueue(target).catch(err =>
+            console.error(`[OfflineQueue] Échec de la sauvegarde pour '${target}':`, err)
+        );
     }
 
     /**
@@ -63,6 +122,11 @@ export class OfflineQueue {
 
         // Vider la file d'attente pour ce destinataire
         this.queues.delete(target);
+
+        // Supprimer du storage
+        this.saveQueue(target).catch(err =>
+            console.error(`[OfflineQueue] Échec de la suppression du storage pour '${target}':`, err)
+        );
 
         return validMessages.map(qm => qm.message);
     }

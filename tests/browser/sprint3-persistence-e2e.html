@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 3: Persistence E2E Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .log-container {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            border-bottom: 1px solid #333;
+            padding-bottom: 2px;
+        }
+
+        .timestamp {
+            color: #888;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>💾 Sprint 3: Persistence E2E Test</h1>
+        <p>Ce test valide que les messages en attente survivent à un rechargement de page.</p>
+
+        <div>
+            <button onclick="runTest()">🚀 Test 1: Envoyer un message vers un agent offline</button>
+            <button onclick="checkQueue()">📋 Test 2: Vérifier que le message est dans IndexedDB</button>
+            <button onclick="reloadPage()">🔄 Recharger la page</button>
+            <button onclick="flushQueue()">📤 Test 3: Vider la queue</button>
+        </div>
+
+        <div id="status" class="status" style="display: none;"></div>
+
+        <div class="log-container" id="logs"></div>
+    </div>
+
+    <script type="module">
+        import { MessageBus } from '../../src/core/communication/MessageBus.ts';
+        import { BroadcastTransport } from '../../src/core/communication/transport/BroadcastTransport.ts';
+        import { IndexedDBAdapter } from '../../src/core/storage/IndexedDBAdapter.ts';
+        import { STORES } from '../../src/core/storage/types.ts';
+
+        const logsDiv = document.getElementById('logs');
+        const statusDiv = document.getElementById('status');
+
+        // Initialiser le storage
+        const storage = new IndexedDBAdapter();
+
+        // Initialiser le MessageBus AVEC persistance
+        const messageBus = new MessageBus('TestAgent', {
+            transport: new BroadcastTransport(),
+            storage: storage
+        });
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff4444' : type === 'success' ? '#00cc00' : '#00ff00';
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span><span style="color: ${color}">${message}</span>`;
+            logsDiv.appendChild(entry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            console.log(`[TEST] ${message}`);
+        }
+
+        window.runTest = async () => {
+            try {
+                log('📨 Envoi d\'un message vers un agent offline (OfflineAgent)...');
+
+                // Envoyer un message sans attendre de réponse (timeout rapide)
+                const messagePromise = messageBus.request('OfflineAgent', {
+                    action: 'ping',
+                    timestamp: Date.now()
+                }, 1000); // Timeout de 1 seconde
+
+                try {
+                    await messagePromise;
+                } catch (error) {
+                    // Le timeout est attendu car l'agent n'existe pas
+                    log('⏱️ Timeout attendu (l\'agent n\'existe pas)', 'info');
+                }
+
+                // Vérifier que le message est dans la queue
+                await new Promise(resolve => setTimeout(resolve, 500));
+                log('✅ Message envoyé. Il devrait être dans l\'OfflineQueue.', 'success');
+
+                statusDiv.textContent = '✅ Message en attente dans l\'OfflineQueue';
+                statusDiv.className = 'status success';
+                statusDiv.style.display = 'block';
+            } catch (error) {
+                log(`❌ Erreur: ${error.message}`, 'error');
+                statusDiv.textContent = `❌ Erreur: ${error.message}`;
+                statusDiv.className = 'status error';
+                statusDiv.style.display = 'block';
+            }
+        };
+
+        window.checkQueue = async () => {
+            try {
+                log('🔍 Vérification de l\'IndexedDB...');
+
+                const queueData = await storage.get(STORES.OFFLINE_QUEUE, 'OfflineAgent');
+
+                if (queueData) {
+                    log(`✅ Trouvé dans IndexedDB: ${JSON.stringify(queueData, null, 2)}`, 'success');
+                    log(`📊 Nombre de messages: ${queueData.messages.length}`, 'success');
+                    statusDiv.textContent = `✅ ${queueData.messages.length} message(s) persisté(s) dans IndexedDB`;
+                    statusDiv.className = 'status success';
+                } else {
+                    log('⚠️ Aucune donnée trouvée dans IndexedDB pour OfflineAgent', 'error');
+                    statusDiv.textContent = '⚠️ Aucun message trouvé dans IndexedDB';
+                    statusDiv.className = 'status error';
+                }
+                statusDiv.style.display = 'block';
+            } catch (error) {
+                log(`❌ Erreur lors de la vérification: ${error.message}`, 'error');
+            }
+        };
+
+        window.reloadPage = () => {
+            log('🔄 Rechargement de la page en cours...', 'info');
+            setTimeout(() => location.reload(), 500);
+        };
+
+        window.flushQueue = async () => {
+            try {
+                log('📤 Tentative de flush de la queue (simulation d\'un agent qui vient enligne)...');
+
+                // Notifier le MessageBus que 'OfflineAgent' est maintenant en ligne
+                messageBus.notifyWorkerOnline('OfflineAgent');
+
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                log('✅ Queue flushée (messages livrés ou supprimés)', 'success');
+                statusDiv.textContent = '✅ Queue vidée';
+                statusDiv.className = 'status success';
+                statusDiv.style.display = 'block';
+
+                // Vérifier qu'IndexedDB est maintenant vide
+                setTimeout(async () => {
+                    const queueData = await storage.get(STORES.OFFLINE_QUEUE, 'OfflineAgent');
+                    if (!queueData) {
+                        log('✅ Confirmation: IndexedDB ne contient plus de messages pour OfflineAgent', 'success');
+                    } else {
+                        log('⚠️ Attention: Des messages restent dans IndexedDB', 'error');
+                    }
+                }, 500);
+            } catch (error) {
+                log(`❌ Erreur: ${error.message}`, 'error');
+            }
+        };
+
+        // Log initial
+        log('💾 Système de persistance initialisé avec IndexedDB', 'success');
+        log('Utilisez les boutons pour tester le cycle de vie complet:', 'info');
+        log('1️⃣ Envoyer un message vers un agent offline', 'info');
+        log('2️⃣ Vérifier qu\'il est dans IndexedDB', 'info');
+        log('3️⃣ Recharger la page', 'info');
+        log('4️⃣ Re-vérifier que le message est toujours là', 'info');
+        log('5️⃣ Flusher la queue', 'info');
+    </script>
+</body>
+
+</html>

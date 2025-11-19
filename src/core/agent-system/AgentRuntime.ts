@@ -3,6 +3,7 @@ import { MessageBus, StreamCallbacks } from '../communication/MessageBus';
 import { WorkerName, RequestHandler } from '../communication/types';
 import { OrionGuardian } from '../guardian/OrionGuardian';
 import { NetworkTransport } from '../communication/transport/NetworkTransport';
+import { StorageAdapter, STORES } from '../storage/types';
 
 interface LogEntry {
     timestamp: number;
@@ -25,10 +26,12 @@ export class AgentRuntime {
     private readonly guardian: OrionGuardian;
     private logBuffer: LogEntry[] = [];
     private flushLogsInterval: NodeJS.Timeout;
+    private readonly storage?: StorageAdapter;
 
-    constructor(name: WorkerName, transport?: NetworkTransport) {
+    constructor(name: WorkerName, transport?: NetworkTransport, storage?: StorageAdapter) {
         this.agentName = name;
-        this.messageBus = new MessageBus(name, { transport });
+        this.storage = storage;
+        this.messageBus = new MessageBus(name, { transport, storage });
         this.guardian = new OrionGuardian(name, this.messageBus);
 
         this.messageBus.setRequestHandler(this.handleRequest.bind(this));
@@ -149,6 +152,31 @@ export class AgentRuntime {
 
     public setCurrentTraceId(traceId: string | null): void {
         this.messageBus.setCurrentTraceId(traceId);
+    }
+
+    /**
+     * Sauvegarde une valeur dans le stockage persistant de l'agent.
+     * La clé est préfixée par le nom de l'agent pour éviter les collisions.
+     */
+    public async saveState(key: string, value: unknown): Promise<void> {
+        if (!this.storage) {
+            console.warn(`[AgentRuntime] Cannot save state: no storage adapter configured for agent '${this.agentName}'`);
+            return;
+        }
+        // Utiliser une clé composite : agentName:key
+        const compositeKey = `${this.agentName}:${key}`;
+        await this.storage.set(STORES.AGENT_STATE, compositeKey, value);
+    }
+
+    /**
+     * Charge une valeur depuis le stockage persistant de l'agent.
+     */
+    public async loadState<T>(key: string): Promise<T | undefined> {
+        if (!this.storage) {
+            return undefined;
+        }
+        const compositeKey = `${this.agentName}:${key}`;
+        return await this.storage.get<T>(STORES.AGENT_STATE, compositeKey);
     }
 
     // Exposer les méthodes du Guardian pour les tests

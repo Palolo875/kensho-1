@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 3: Agent State Persistence Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin: 0 0 10px 0;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+
+        .boot-counter {
+            font-size: 72px;
+            font-weight: bold;
+            color: #667eea;
+            text-align: center;
+            margin: 40px 0;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 12px 24px;
+            margin: 5px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin: 3px 0;
+            padding: 3px 0;
+        }
+
+        .timestamp {
+            color: #858585;
+            margin-right: 8px;
+        }
+
+        .log-info {
+            color: #4ec9b0;
+        }
+
+        .log-success {
+            color: #6a9955;
+            font-weight: bold;
+        }
+
+        .log-error {
+            color: #f48771;
+        }
+
+        .instructions {
+            background: #e8f4f8;
+            border: 1px solid #bee5eb;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: #0c5460;
+        }
+
+        .instructions ol {
+            margin: 10px 0;
+        }
+
+        .instructions li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>💾 Agent State Persistence</h1>
+        <p class="subtitle">Validez que les agents peuvent sauvegarder et restaurer leur état après un rechargement de
+            page</p>
+
+        <div class="instructions">
+            <h3>📋 Instructions du test</h3>
+            <ol>
+                <li>Cliquez sur "Démarrer l'Agent" pour lancer le StateAgent</li>
+                <li>Observez le compteur de boots (devrait être 1 au premier lancement)</li>
+                <li>Rechargez la page avec F5 ou le bouton ci-dessous</li>
+                <li>Re-cliquez sur "Démarrer l'Agent"</li>
+                <li>Le compteur devrait être incrémenté (2, 3, 4...)</li>
+                <li>Utilisez "Réinitialiser l'État" pour repartir de zéro</li>
+            </ol>
+        </div>
+
+        <div>
+            <button onclick="startAgent()">🚀 Démarrer l'Agent</button>
+            <button onclick="checkBootCount()">🔢 Vérifier le Boot Count</button>
+            <button onclick="resetState()">🗑️ Réinitialiser l'État</button>
+            <button onclick="location.reload()">🔄 Recharger la Page</button>
+        </div>
+
+        <div class="boot-counter" id="bootCounter">-</div>
+
+        <div class="info-box">
+            <strong>📊 Comment ça marche :</strong><br>
+            Le StateAgent charge son état depuis IndexedDB au démarrage, incrémente un compteur de boots,
+            puis sauvegarde cet état. Chaque rechargement de page devrait préserver et incrémenter ce compteur.
+        </div>
+
+        <div class="log-container" id="logs"></div>
+    </div>
+
+    <script type="module">
+        import { IndexedDBAdapter } from '../../src/core/storage/IndexedDBAdapter.ts';
+        import { STORES } from '../../src/core/storage/types.ts';
+
+        const logsDiv = document.getElementById('logs');
+        const bootCounterDiv = document.getElementById('bootCounter');
+        const storage = new IndexedDBAdapter();
+
+        let stateAgent = null;
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span>${message}`;
+            logsDiv.appendChild(entry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            console.log(`[TEST] ${message}`);
+        }
+
+        window.startAgent = async () => {
+            try {
+                log('🚀 Démarrage du StateAgent...', 'info');
+
+                if (stateAgent) {
+                    stateAgent.terminate();
+                }
+
+                stateAgent = new Worker('/dist/test-agents/state.agent.js', {
+                    type: 'module',
+                    name: 'StateAgent'
+                });
+
+                stateAgent.onmessage = (e) => {
+                    if (e.data.type === 'READY') {
+                        log('✅ StateAgent prêt !', 'success');
+                        // Attendre un peu puis vérifier le boot count
+                        setTimeout(() => checkBootCount(), 500);
+                    }
+                };
+
+                stateAgent.onerror = (error) => {
+                    log(`❌ Erreur agent: ${error.message}`, 'error');
+                };
+
+            } catch (error) {
+                log(`❌ Erreur: ${error.message}`, 'error');
+            }
+        };
+
+        window.checkBootCount = async () => {
+            try {
+                log('🔍 Vérification du boot count dans IndexedDB...', 'info');
+
+                const state = await storage.get(STORES.AGENT_STATE, 'StateAgent:boot_info');
+
+                if (state) {
+                    bootCounterDiv.textContent = state.bootCount;
+                    log(`✅ Boot count: ${state.bootCount}`, 'success');
+                    log(`📅 Dernier boot: ${new Date(state.lastBoot).toLocaleString()}`, 'info');
+                } else {
+                    bootCounterDiv.textContent = '0';
+                    log('⚠️ Aucun état trouvé. L\'agent n\'a pas encore démarré.', 'info');
+                }
+            } catch (error) {
+                log(`❌ Erreur: ${error.message}`, 'error');
+            }
+        };
+
+        window.resetState = async () => {
+            try {
+                log('🗑️ Réinitialisation de l\'état...', 'info');
+                await storage.delete(STORES.AGENT_STATE, 'StateAgent:boot_info');
+                bootCounterDiv.textContent = '0';
+                log('✅ État réinitialisé. Rechargez la page pour recommencer à 1.', 'success');
+            } catch (error) {
+                log(`❌ Erreur: ${error.message}`, 'error');
+            }
+        };
+
+        // Log initial
+        log('💾 Système de persistance d\'état initialisé', 'success');
+        log('Cliquez sur "Démarrer l\'Agent" pour commencer le test', 'info');
+
+        // Auto-check au chargement pour voir si on a un état précédent
+        setTimeout(() => checkBootCount(), 500);
+    </script>
+</body>
+
+</html>
