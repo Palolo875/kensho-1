@@ -14,6 +14,7 @@ export default defineConfig({
         // The key ('ping') will be the output file name.
         ping: resolve(__dirname, 'src/agents/ping/index.ts'),
         pong: resolve(__dirname, 'src/agents/pong/index.ts'),
+        telemetry: resolve(__dirname, 'src/agents/telemetry/index.ts'),
       },
       output: {
         // Specify where and how the files are generated.

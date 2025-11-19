@@ -1,24 +1,80 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
-    <title>Kensho - Sprint 1B - Test E2E de l'Élection</title>
+    <title>Kensho - Sprint 1B - Test E2E Élection de Leader</title>
     <style>
-        /* ... (même style que les tests précédents) ... */
-        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
-        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
-        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
-        h1, h2 { color: #61afef; }
-        .pass { color: #98c379; font-weight: bold; }
-        .fail { color: #e06c75; font-weight: bold; }
-        .info { color: #56b6c2; }
-        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+        body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.6;
+            padding: 2em;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        pre {
+            background-color: #282c34;
+            padding: 1em;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        button {
+            font-size: 1.2em;
+            padding: 0.5em 1em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid #61afef;
+            background-color: #282c34;
+            color: #61afef;
+        }
+
+        button:hover {
+            background-color: #3e4451;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        h1,
+        h2 {
+            color: #61afef;
+        }
+
+        .pass {
+            color: #98c379;
+            font-weight: bold;
+        }
+
+        .fail {
+            color: #e06c75;
+            font-weight: bold;
+        }
+
+        .info {
+            color: #56b6c2;
+        }
+
+        .warning {
+            color: #e5c07b;
+        }
+
+        .summary {
+            margin-top: 1em;
+            border-top: 1px solid #444;
+            padding-top: 1em;
+        }
     </style>
 </head>
+
 <body>
-    <h1>Sprint 1B - Test E2E de l'Élection de Leader</h1>
-    <p>Ce test valide que, parmi un groupe d'agents, un seul leader est élu et que c'est bien celui avec l'ID le plus élevé.</p>
-    <button id="run-tests">Lancer le Test</button>
+    <h1>👑 Sprint 1B - Test E2E Élection de Leader</h1>
+    <p>Ce test valide l'algorithme d'élection (Bully) et la réélection en cas de panne.</p>
+    <button id="run-tests">Lancer les Tests</button>
     <h2>Résultats :</h2>
     <pre id="results"></pre>
 
@@ -34,9 +90,9 @@
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         function startWorker(name, path) {
-            const worker = new Worker(path, { name: name, type: 'module' });
+            const worker = new Worker(path, { type: 'module', name: name });
             const readyPromise = new Promise((resolve, reject) => {
-                const timeoutId = setTimeout(() => reject(new Error('Worker n\'a pas démarré à temps.')), 5000);
+                const timeoutId = setTimeout(() => reject(new Error(`Worker ${name} n'a pas démarré à temps.`)), 5000);
                 worker.onmessage = (e) => {
                     if (e.data && e.data.type === 'READY') {
                         clearTimeout(timeoutId);
@@ -44,83 +100,109 @@
                         resolve(worker);
                     }
                 };
+                worker.onerror = (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
+                };
             });
             return readyPromise;
         }
 
         document.getElementById('run-tests').addEventListener('click', async () => {
+            const btn = document.getElementById('run-tests');
+            btn.disabled = true;
             resultsEl.innerHTML = '';
-            log('--- Démarrage du test d\'élection ---', 'info');
+            log('--- Démarrage du test Élection de Leader ---', 'info');
 
             const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
             const mainBus = new MessageBus('MainThread');
-            const workers = [];
+            let workers = {};
             let testPassed = true;
 
             try {
-                // --- Étape 1: Démarrage et Élection ---
-                const agentNames = ['AgentA', 'AgentB', 'AgentC', 'AgentD', 'AgentE'];
-                const expectedLeader = 'AgentE'; // L'ID le plus élevé alphabétiquement
-                log(`[INFO] Démarrage de ${agentNames.length} agents. Le leader attendu est '${expectedLeader}'.`);
+                // --- Étape 1: Démarrage et Élection Initiale ---
+                log('\n[Étape 1] Démarrage de 3 agents (A, B, C) et attente de l\'élection...', 'info');
 
-                const workerPromises = agentNames.map(name => startWorker(name, '/dist/test-agents/ping.agent.js'));
-                const startedWorkers = await Promise.all(workerPromises);
-                startedWorkers.forEach(w => workers.push(w));
-                log('[PASS] Tous les agents ont démarré.', 'pass');
-
-                // Laisser le temps à l'élection de se dérouler.
-                // Le timeout de l'élection est de 1s, plus le délai de démarrage aléatoire. 3s est sûr.
-                const electionTime = 3000;
-                log(`[INFO] Attente de ${electionTime / 1000} secondes pour la stabilisation de l'élection...`, 'info');
-                await sleep(electionTime);
-
-                // --- Étape 2: Vérification du Consensus ---
-                log('\n[Étape 2] Vérification du consensus du leader...', 'info');
-                const statuses = await Promise.all(
-                    agentNames.map(name => mainBus.request(name, { method: 'getGuardianStatus', args: [] }))
+                // Ordre lexicographique : AgentA < AgentB < AgentC
+                // AgentC devrait gagner l'élection
+                const workerNames = ['AgentA', 'AgentB', 'AgentC'];
+                const workerPromises = workerNames.map(name =>
+                    startWorker(name, '/dist/test-agents/ping.agent.js')
                 );
 
-                let electedLeader = null;
-                let allAgree = true;
+                const startedWorkers = await Promise.all(workerPromises);
+                workerNames.forEach((name, i) => workers[name] = startedWorkers[i]);
+                log('  ✓ Tous les agents ont démarré.', 'pass');
 
-                statuses.forEach((status, i) => {
-                    const name = agentNames[i];
-                    log(`  Statut de ${name}: Leader est ${status.leader}`, 'info');
-                    if (i === 0) {
-                        electedLeader = status.leader;
-                    } else if (electedLeader !== status.leader) {
-                        allAgree = false;
-                    }
-                });
+                // Attendre que l'élection se stabilise (Bully prend un peu de temps)
+                log('  Attente de 4 secondes pour l\'élection...', 'info');
+                await sleep(4000);
 
-                if (!allAgree) {
-                    log('ERREUR: Tous les agents ne sont pas d\'accord sur qui est le leader !', 'fail');
-                    testPassed = false;
-                } else {
-                    log('Tous les agents sont d\'accord sur le leader.', 'pass');
+                // Vérifier qui est le leader
+                let leaders = new Set();
+                for (const name of workerNames) {
+                    const status = await mainBus.request(name, { method: 'getGuardianStatus', args: [] });
+                    if (status.leader) leaders.add(status.leader);
+                    log(`  ${name} voit le leader: ${status.leader} (Epoch: ${status.epoch})`, 'info');
                 }
 
-                if (electedLeader === expectedLeader) {
-                    log(`Le leader élu ('${electedLeader}') est bien celui attendu.`, 'pass');
+                if (leaders.size === 1 && leaders.has('AgentC')) {
+                    log('  ✓ Élection initiale réussie : AgentC est le leader unique.', 'pass');
                 } else {
-                    log(`ERREUR: Le leader élu ('${electedLeader}') n'est pas celui attendu ('${expectedLeader}').`, 'fail');
+                    log(`  ✗ ÉCHEC : Leaders incohérents ou incorrects : ${Array.from(leaders).join(', ')}`, 'fail');
+                    testPassed = false;
+                }
+
+                if (!testPassed) throw new Error("Échec de l'élection initiale");
+
+                // --- Étape 2: Panne du Leader et Réélection ---
+                log('\n[Étape 2] Arrêt du leader (AgentC) et vérification de la réélection...', 'info');
+
+                workers['AgentC'].terminate();
+                delete workers['AgentC'];
+                log('  ✓ AgentC terminé.', 'pass');
+
+                // Attendre que la panne soit détectée (Failure Detector) + Nouvelle élection
+                // Failure threshold = 6s, Election timeout = 1s
+                log('  Attente de 10 secondes pour la détection et réélection...', 'info');
+                await sleep(10000);
+
+                const remainingWorkers = ['AgentA', 'AgentB'];
+                leaders.clear();
+
+                for (const name of remainingWorkers) {
+                    const status = await mainBus.request(name, { method: 'getGuardianStatus', args: [] });
+                    if (status.leader) leaders.add(status.leader);
+                    log(`  ${name} voit le leader: ${status.leader} (Epoch: ${status.epoch})`, 'info');
+                }
+
+                // AgentB devrait être le nouveau leader (AgentB > AgentA)
+                if (leaders.size === 1 && leaders.has('AgentB')) {
+                    log('  ✓ Réélection réussie : AgentB est le nouveau leader.', 'pass');
+                } else {
+                    log(`  ✗ ÉCHEC : Réélection incorrecte. Leaders vus : ${Array.from(leaders).join(', ')}`, 'fail');
                     testPassed = false;
                 }
 
             } catch (error) {
-                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                log(`\n❌ Erreur critique durant le test: ${error.message}`, 'fail');
+                console.error(error);
                 testPassed = false;
             } finally {
-                workers.forEach(w => w.terminate());
+                log('\n--- Nettoyage ---', 'info');
+                Object.values(workers).forEach(w => w.terminate());
                 mainBus.dispose();
+
                 log('\n--- Test Terminé ---', 'summary');
                 if (testPassed) {
                     log('🎉 Tâche "LeaderElection" validée avec succès !', 'pass');
                 } else {
-                    log('❗️ Des problèmes ont été détectés dans le processus d\'élection.', 'fail');
+                    log('❗️ Des problèmes ont été détectés dans l\'élection.', 'fail');
                 }
+                btn.disabled = false;
             }
         });
     </script>
 </body>
+
 </html>

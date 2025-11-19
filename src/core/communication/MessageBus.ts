@@ -3,6 +3,7 @@
 import { KenshoMessage, WorkerName, RequestHandler, SerializedError } from './types';
 import { NetworkTransport } from './transport/NetworkTransport';
 import { BroadcastTransport } from './transport/BroadcastTransport';
+import { OfflineQueue } from './OfflineQueue';
 
 interface MessageBusConfig {
     defaultTimeout?: number;
@@ -23,11 +24,24 @@ export class MessageBus {
     private requestHandler: RequestHandler | null = null;
     private systemSubscribers: ((message: KenshoMessage) => void)[] = [];
 
+    // NOUVEAU : Gestion de l'OfflineQueue
+    private readonly offlineQueue = new OfflineQueue();
+    private knownWorkers = new Set<WorkerName>();
+    private cleanupInterval: NodeJS.Timeout;
+
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
         this.transport = config.transport ?? new BroadcastTransport();
         this.transport.onMessage(this.handleIncomingMessage.bind(this));
         this.defaultTimeout = config.defaultTimeout ?? 5000;
+
+        // S'ajouter soi-même à la liste des workers connus
+        this.knownWorkers.add(name);
+
+        // Nettoyer périodiquement les messages expirés (toutes les 30 secondes)
+        this.cleanupInterval = setInterval(() => {
+            this.offlineQueue.cleanExpiredMessages();
+        }, 30000);
     }
 
     private validateMessage(message: KenshoMessage): boolean {
@@ -126,12 +140,10 @@ export class MessageBus {
 
     // NOUVEAU : Méthode pour diffuser un message système à tous
     public broadcastSystemMessage(type: string, payload: any): void {
-        // Un message système est envoyé à une cible spéciale '*' que tout le monde écoute
-        // mais que personne ne traite comme une requête.
         this.sendMessage({
             type: 'broadcast',
             sourceWorker: this.workerName,
-            targetWorker: '*', // Cible spéciale pour les messages de diffusion générale
+            targetWorker: '*',
             payload: { systemType: type, ...payload },
             traceId: `system-trace-${crypto.randomUUID()}`,
         });
@@ -139,7 +151,7 @@ export class MessageBus {
 
     public sendSystemMessage(target: WorkerName, type: string, payload: any): void {
         this.sendMessage({
-            type: 'broadcast', // Send as broadcast so it's picked up by subscribers
+            type: 'broadcast',
             sourceWorker: this.workerName,
             targetWorker: target,
             payload: { systemType: type, ...payload },
@@ -152,6 +164,27 @@ export class MessageBus {
             const traceId = this.currentTraceId || `trace-${crypto.randomUUID()}`;
             const actualTimeout = timeout ?? this.defaultTimeout;
 
+            // Si le worker n'est pas connu, mettre en file d'attente
+            if (!this.knownWorkers.has(target)) {
+                console.warn(`[MessageBus] '${target}' est hors ligne. Mise en file d'attente de la requête.`);
+
+                const message: KenshoMessage = {
+                    messageId: crypto.randomUUID(),
+                    traceId,
+                    type: 'request',
+                    sourceWorker: this.workerName,
+                    targetWorker: target,
+                    payload
+                };
+
+                this.offlineQueue.enqueue(target, message);
+
+                // Attendre que le worker revienne en ligne
+                this.waitForWorkerAndRetry(target, message.messageId, actualTimeout, resolve, reject);
+                return;
+            }
+
+            // Envoyer la requête normalement
             const messageId = this.sendMessage({
                 type: 'request',
                 sourceWorker: this.workerName,
@@ -172,7 +205,64 @@ export class MessageBus {
         });
     }
 
+    private waitForWorkerAndRetry<TResponse>(
+        target: WorkerName,
+        originalMessageId: string,
+        timeout: number,
+        resolve: (value: TResponse) => void,
+        reject: (reason?: any) => void
+    ): void {
+        const startTime = Date.now();
+
+        const checkInterval = setInterval(() => {
+            if (this.pendingRequests.has(originalMessageId)) {
+                clearInterval(checkInterval);
+                return;
+            }
+
+            if (Date.now() - startTime > timeout) {
+                clearInterval(checkInterval);
+                reject(new Error(`Le worker '${target}' n'est pas revenu en ligne dans le délai de ${timeout}ms.`));
+            }
+        }, 100);
+    }
+
+    public notifyWorkerOnline(workerName: WorkerName): void {
+        const wasOffline = !this.knownWorkers.has(workerName);
+        this.knownWorkers.add(workerName);
+
+        if (wasOffline && this.offlineQueue.hasQueuedMessages(workerName)) {
+            console.log(`[MessageBus] '${workerName}' est maintenant en ligne. Flush de la queue.`);
+            const queuedMessages = this.offlineQueue.flush(workerName);
+
+            queuedMessages.forEach(message => {
+                if (message.type === 'request') {
+                    this.transport.send(message);
+
+                    if (!this.pendingRequests.has(message.messageId)) {
+                        this.pendingRequests.set(message.messageId, {
+                            resolve: () => { },
+                            reject: () => { }
+                        });
+                    }
+                } else {
+                    this.transport.send(message);
+                }
+            });
+        }
+    }
+
+    public notifyWorkerOffline(workerName: WorkerName): void {
+        this.knownWorkers.delete(workerName);
+        console.log(`[MessageBus] '${workerName}' est maintenant hors ligne.`);
+    }
+
+    public getQueueStats() {
+        return this.offlineQueue.getStats();
+    }
+
     public dispose(): void {
+        clearInterval(this.cleanupInterval);
         this.transport.dispose();
     }
 }

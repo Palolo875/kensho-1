@@ -14,6 +14,8 @@ export class AgentRuntime {
     private readonly messageBus: MessageBus;
     private methods = new Map<string, RequestHandler>();
     private readonly guardian: OrionGuardian;
+    private logBuffer: any[] = [];
+    private flushLogsInterval: any;
 
     constructor(name: WorkerName, transport?: NetworkTransport) {
         this.agentName = name;
@@ -28,6 +30,39 @@ export class AgentRuntime {
         // Enregistrer les méthodes de test/débogage
         this.registerMethod('getGuardianStatus', () => this.getGuardianStatus());
         this.registerMethod('getActiveWorkers', () => this.getActiveWorkers());
+
+        // Démarrer le flush périodique des logs
+        this.flushLogsInterval = setInterval(() => this.flushLogs(), 500);
+
+        // Ajouter un logger interne pour le runtime lui-même
+        this.log('info', `Agent ${name} initialisé.`);
+    }
+
+    // NOUVEAU : Méthode de logging avec buffer
+    public log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
+        this.logBuffer.push({
+            timestamp: Date.now(),
+            agent: this.agentName,
+            level,
+            message,
+            data,
+        });
+
+        if (this.logBuffer.length >= 10) {
+            this.flushLogs();
+        }
+    }
+
+    private flushLogs(): void {
+        if (this.logBuffer.length === 0) return;
+
+        // Utiliser callAgent pour envoyer le lot au TelemetryWorker.
+        // C'est un appel "fire-and-forget", donc on n'attend pas la réponse.
+        // Note: On utilise une méthode interne pour éviter la dépendance circulaire ou l'échec si TelemetryWorker n'est pas là
+        this.messageBus.request('TelemetryWorker', { method: 'logBatch', args: [this.logBuffer] }, 1000).catch(() => {
+            // Ignorer les erreurs si le TelemetryWorker n'est pas là (ex: tests unitaires)
+        });
+        this.logBuffer = [];
     }
 
     private async handleRequest(payload: { method: string, args: any[] }): Promise<any> {
@@ -74,6 +109,8 @@ export class AgentRuntime {
     }
 
     public dispose(): void {
+        this.flushLogs(); // S'assurer que tous les logs sont envoyés avant de mourir
+        clearInterval(this.flushLogsInterval);
         this.messageBus.dispose();
         this.guardian.dispose();
     }

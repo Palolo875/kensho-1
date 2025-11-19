@@ -6,6 +6,8 @@ import MessageBubble from "@/components/MessageBubble";
 import AIResponse from "@/components/AIResponse";
 import SettingsModal from "@/components/SettingsModal";
 import SearchModal from "@/components/SearchModal";
+import { ObservatoryModal } from "@/components/ObservatoryModal";
+import { useObservatory } from "@/contexts/ObservatoryContext";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -15,7 +17,17 @@ const Index = () => {
   const isMobile = useIsMobile();
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showObservatory, setShowObservatory] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const { workers, leader, epoch, logs, isEnabled, startObservatory, killWorker } = useObservatory();
+
+  const handleOpenObservatory = () => {
+    if (!isEnabled) {
+      startObservatory();
+    }
+    setShowObservatory(true);
+  };
 
   // Demo messages
   const [messages, setMessages] = useState([
@@ -58,12 +70,13 @@ const Index = () => {
           <SidebarTrigger onClick={() => setSidebarOpen(!sidebarOpen)} />
         </div>
       </div>
-      
-      <Sidebar 
+
+      <Sidebar
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         onOpenSettings={() => setShowSettings(true)}
         onOpenSearch={() => setShowSearch(true)}
+        onOpenObservatory={handleOpenObservatory}
         onNewConversation={handleNewConversation}
       />
 
@@ -99,9 +112,18 @@ const Index = () => {
       </main>
 
       <ChatInput showSuggestions={messages.length === 0} />
-      
+
       <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
       <SearchModal open={showSearch} onOpenChange={setShowSearch} />
+      <ObservatoryModal
+        open={showObservatory}
+        onOpenChange={setShowObservatory}
+        workers={workers}
+        leader={leader}
+        epoch={epoch}
+        logs={logs}
+        onKillWorker={killWorker}
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
@@ -7,12 +7,13 @@ import { useIsMobile } from "@/hooks/use-mobile";
 interface SidebarProps {
   onOpenSettings: () => void;
   onOpenSearch: () => void;
+  onOpenObservatory: () => void;
   onNewConversation: () => void;
   isOpen?: boolean;
   onToggle?: () => void;
 }
 
-const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: externalIsOpen, onToggle }: SidebarProps) => {
+const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConversation, isOpen: externalIsOpen, onToggle }: SidebarProps) => {
   const isMobile = useIsMobile();
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -103,6 +104,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
             <Clock className="h-5 w-5" />
             {!isCollapsed && <span className="ml-3">Historique</span>}
           </Button>
+
+          <Button
+            variant="ghost"
+            onClick={onOpenObservatory}
+            className={cn(
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
+            )}
+          >
+            <Activity className="h-5 w-5" />
+            {!isCollapsed && <span className="ml-3">Observatory</span>}
+          </Button>
         </div>
 
         <div className="flex-1" />
@@ -141,12 +154,12 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
     <>
       {/* Mobile overlay */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/30 backdrop-blur-md z-40 md:hidden"
           onClick={() => onToggle ? onToggle() : setInternalIsOpen(false)}
         />
       )}
-      
+
       {/* Mobile sidebar */}
       <aside
         id="mobile-sidebar"
@@ -200,6 +213,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onNewConversation, isOpen: exte
           >
             <Clock className="h-5 w-5" />
             <span className="ml-3">Historique</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            onClick={() => {
+              onOpenObservatory();
+              onToggle ? onToggle() : setInternalIsOpen(false);
+            }}
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
+          >
+            <Activity className="h-5 w-5" />
+            <span className="ml-3">Observatory</span>
           </Button>
         </div>
 

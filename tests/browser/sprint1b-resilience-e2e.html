@@ -1,19 +1,76 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <title>Kensho - Sprint 1B - Test E2E de Résilience</title>
     <style>
-        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
-        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
-        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
-        h1, h2 { color: #61afef; }
-        .pass { color: #98c379; font-weight: bold; }
-        .fail { color: #e06c75; font-weight: bold; }
-        .info { color: #56b6c2; }
-        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+        body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.6;
+            padding: 2em;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        pre {
+            background-color: #282c34;
+            padding: 1em;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        button {
+            font-size: 1.2em;
+            padding: 0.5em 1em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid #61afef;
+            background-color: #282c34;
+            color: #61afef;
+        }
+
+        button:hover {
+            background-color: #3e4451;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        h1,
+        h2 {
+            color: #61afef;
+        }
+
+        .pass {
+            color: #98c379;
+            font-weight: bold;
+        }
+
+        .fail {
+            color: #e06c75;
+            font-weight: bold;
+        }
+
+        .info {
+            color: #56b6c2;
+        }
+
+        .warning {
+            color: #e5c07b;
+        }
+
+        .summary {
+            margin-top: 1em;
+            border-top: 1px solid #444;
+            padding-top: 1em;
+        }
     </style>
 </head>
+
 <body>
     <h1>Sprint 1B - Test E2E de Résilience (Heartbeat & Panne)</h1>
     <p>Ce test valide que la constellation peut survivre à la perte de son leader.</p>
@@ -29,10 +86,11 @@
             resultsEl.appendChild(line);
             console.log(`[${status.toUpperCase()}] ${message}`);
         };
+
         const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        function startWorker(name, path) {
-            const worker = new Worker(path, { name: name, type: 'module' });
+        function startWorker(path, name) {
+            const worker = new Worker(path, { type: 'module', name: name });
             const readyPromise = new Promise((resolve, reject) => {
                 const timeoutId = setTimeout(() => reject(new Error(`Worker ${name} n'a pas démarré à temps.`)), 5000);
                 worker.onmessage = (e) => {
@@ -42,11 +100,17 @@
                         resolve(worker);
                     }
                 };
+                worker.onerror = (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
+                };
             });
             return readyPromise;
         }
 
         document.getElementById('run-tests').addEventListener('click', async () => {
+            const btn = document.getElementById('run-tests');
+            btn.disabled = true;
             resultsEl.innerHTML = '';
             log('--- Démarrage du test de résilience ---', 'info');
 
@@ -61,16 +125,23 @@
                 const initialExpectedLeader = 'AgentC';
                 log(`[Étape 1] Démarrage de ${agentNames.length} agents. Leader initial attendu: '${initialExpectedLeader}'.`);
 
-                const startedWorkers = await Promise.all(agentNames.map(name => startWorker(name, '/dist/test-agents/ping.agent.js')));
+                const startedWorkers = await Promise.all(agentNames.map(name => startWorker('/dist/test-agents/ping.agent.js', name)));
                 agentNames.forEach((name, i) => workers[name] = { worker: startedWorkers[i], name });
                 log('  Agents prêts.', 'pass');
 
-                await sleep(3000); // Attendre la fin de la première élection
+                await sleep(4000); // Attendre la fin de la première élection
 
                 const statuses1 = await Promise.all(agentNames.map(name => mainBus.request(name, { method: 'getGuardianStatus', args: [] })));
                 const firstLeader = statuses1[0].leader;
+
+                // Vérifier que tout le monde est d'accord
+                const allAgree = statuses1.every(s => s.leader === firstLeader);
+                if (!allAgree) {
+                    throw new Error(`Désaccord initial sur le leader: ${statuses1.map(s => s.leader).join(', ')}`);
+                }
+
                 if (firstLeader !== initialExpectedLeader) {
-                    throw new Error(`L'élection initiale a échoué. Leader élu: ${firstLeader}`);
+                    throw new Error(`L'élection initiale a échoué. Leader élu: ${firstLeader}, Attendu: ${initialExpectedLeader}`);
                 }
                 log(`  Élection initiale réussie. Leader est bien '${firstLeader}'.`, 'pass');
 
@@ -97,7 +168,7 @@
                 });
 
                 if (consensusFailed) {
-                    throw new Error("Les agents ne sont pas d'accord sur le nouveau leader !");
+                    throw new Error(`Les agents ne sont pas d'accord sur le nouveau leader ! ${statuses2.map(s => `${s.leader}`).join(', ')}`);
                 }
                 log('  Consensus atteint sur le nouveau leader.', 'pass');
 
@@ -109,6 +180,7 @@
 
             } catch (error) {
                 log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                console.error(error);
                 testPassed = false;
             } finally {
                 Object.values(workers).forEach(w => w.worker.terminate());
@@ -119,8 +191,10 @@
                 } else {
                     log('❗️ Des problèmes ont été détectés dans le cycle de résilience.', 'fail');
                 }
+                btn.disabled = false;
             }
         });
     </script>
 </body>
+
 </html>
