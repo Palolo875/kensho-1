@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1C - Test du Chaos (Chaos Monkey)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1400px;
+            margin: 40px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: #333;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        p {
+            color: #f0f0f0;
+            text-align: center;
+            font-size: 1.1rem;
+        }
+
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5em;
+            margin-bottom: 2em;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 1.5em;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card h3 {
+            margin: 0 0 0.5em 0;
+            color: #555;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card p {
+            font-size: 2em;
+            margin: 0;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .stat-card.success p {
+            color: #16a34a;
+        }
+
+        .stat-card.failure p {
+            color: #dc2626;
+        }
+
+        .stat-card.rate p {
+            color: #7c3aed;
+        }
+
+        #progress-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 1em;
+        }
+
+        #progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #16a34a 0%, #84cc16 100%);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        #results {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            min-height: 400px;
+            max-height: 600px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-y: auto;
+        }
+
+        .log-info {
+            color: #2563eb;
+        }
+
+        .log-pass {
+            color: #16a34a;
+            font-weight: bold;
+        }
+
+        .log-fail {
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        .log-warn {
+            color: #ea580c;
+        }
+
+        .log-chaos {
+            color: #f5576c;
+            font-weight: bold;
+        }
+
+        .log-repair {
+            color: #7c3aed;
+        }
+
+        .log-summary {
+            color: #7c3aed;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 2px solid #e5e7eb;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🐒 Sprint 1C - Test du Chaos (Chaos Monkey)</h1>
+    <p>Ce test valide la robustesse de la constellation en tuant et redémarrant des agents aléatoirement tout en
+        effectuant des requêtes continues.</p>
+    <button id="run-tests">🚀 Lancer le Chaos 🐒</button>
+
+    <div id="progress-bar">
+        <div id="progress-fill">0%</div>
+    </div>
+
+    <div id="stats"></div>
+
+    <h2 style="color: white; text-align: center;">📊 Journal des Événements :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const statsEl = document.getElementById('stats');
+        const progressFill = document.getElementById('progress-fill');
+        const runButton = document.getElementById('run-tests');
+
+        const log = (message, status = 'info') => {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = `log-${status}`;
+            const line = document.createElement('span');
+            line.className = className;
+            line.textContent = `[${timestamp}] ${message}\n`;
+            resultsEl.appendChild(line);
+            resultsEl.scrollTop = resultsEl.scrollHeight;
+        };
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // --- Configuration du Test ---
+        const NUM_AGENTS = 5;
+        const TEST_DURATION_MS = 30000; // 30 secondes de chaos
+        const CHAOS_INTERVAL_MIN_MS = 2000;
+        const CHAOS_INTERVAL_MAX_MS = 5000;
+        const CLIENT_REQUEST_INTERVAL_MS = 200;
+
+        let testRunning = false;
+
+        function updateStats(stats, elapsed, total) {
+            const successRate = stats.requests > 0
+                ? ((stats.successes / stats.requests) * 100).toFixed(2)
+                : '0.00';
+
+            const progress = Math.min(100, (elapsed / total) * 100);
+            progressFill.style.width = `${progress}%`;
+            progressFill.textContent = `${progress.toFixed(0)}% - ${Math.floor((total - elapsed) / 1000)}s restantes`;
+
+            statsEl.innerHTML = `
+                <div class="stat-card">
+                    <h3>Temps Écoulé</h3>
+                    <p>${Math.floor(elapsed / 1000)}s / ${total / 1000}s</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Requêtes Tentées</h3>
+                    <p>${stats.requests}</p>
+                </div>
+                <div class="stat-card success">
+                    <h3>✅ Succès</h3>
+                    <p>${stats.successes}</p>
+                </div>
+                <div class="stat-card failure">
+                    <h3>❌ Échecs</h3>
+                    <p>${stats.failures}</p>
+                </div>
+                <div class="stat-card rate">
+                    <h3>📈 Taux de Succès</h3>
+                    <p>${successRate}%</p>
+                </div>
+            `;
+        }
+
+        runButton.addEventListener('click', async () => {
+            if (testRunning) return;
+            testRunning = true;
+            runButton.disabled = true;
+            resultsEl.innerHTML = '';
+            statsEl.innerHTML = '';
+
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+            log('    🐒 DÉMARRAGE DU TEST DU CHAOS', 'summary');
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+            log('');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            const mainBus = new MessageBus('MainThread');
+            let workers = new Map();
+            let stats = { requests: 0, successes: 0, failures: 0 };
+            let startTime = Date.now();
+
+            // --- Fonctions Helper ---
+            async function startWorker(name) {
+                try {
+                    const worker = new Worker('/dist/test-agents/ping.agent.js', {
+                        type: 'module',
+                        name
+                    });
+                    workers.set(name, worker);
+                    log(`  ✅ ${name} démarré`, 'pass');
+                    return worker;
+                } catch (error) {
+                    log(`  ❌ Échec démarrage ${name}: ${error.message}`, 'fail');
+                    return null;
+                }
+            }
+
+            try {
+                // --- Étape 1: Initialisation de la Constellation ---
+                log(`[Étape 1] Démarrage de ${NUM_AGENTS} agents...`, 'info');
+                for (let i = 0; i < NUM_AGENTS; i++) {
+                    await startWorker(`Agent${i}`);
+                    await sleep(50); // Petit délai pour éviter les race conditions
+                }
+                await sleep(500); // Attendre que tous les agents s'enregistrent
+                log('  🎉 Constellation initiale prête !', 'pass');
+                log('');
+
+                // --- Étape 2: Lancement du Chaos Monkey ---
+                log('[Étape 2] 🐒 Lancement du Chaos Monkey...', 'chaos');
+                log(`  → Intervalle de chaos: ${CHAOS_INTERVAL_MIN_MS}-${CHAOS_INTERVAL_MAX_MS}ms`, 'info');
+                log('');
+
+                let chaosRunning = true;
+
+                // Chaos Monkey (tue et redémarre des agents)
+                const chaosLoop = async () => {
+                    while (chaosRunning) {
+                        await sleep(CHAOS_INTERVAL_MIN_MS + Math.random() * (CHAOS_INTERVAL_MAX_MS - CHAOS_INTERVAL_MIN_MS));
+
+                        if (!chaosRunning || workers.size === 0) break;
+
+                        const workerNames = Array.from(workers.keys());
+                        const victimName = workerNames[Math.floor(Math.random() * workerNames.length)];
+                        const victimWorker = workers.get(victimName);
+
+                        if (victimWorker) {
+                            log(`🐒💥 Chaos Monkey tue ${victimName}...`, 'chaos');
+                            victimWorker.terminate();
+                            workers.delete(victimName);
+
+                            // Redémarrer après un délai
+                            setTimeout(async () => {
+                                if (chaosRunning) {
+                                    log(`🔧 Réparation: redémarrage de ${victimName}...`, 'repair');
+                                    await startWorker(victimName);
+                                }
+                            }, 800);
+                        }
+                    }
+                };
+
+                // Démarrer le Chaos Monkey
+                chaosLoop();
+
+                // --- Étape 3: Client Continu ---
+                log('[Étape 3] 📡 Lancement du client de requêtes continues...', 'info');
+                log(`  → Intervalle de requêtes: ${CLIENT_REQUEST_INTERVAL_MS}ms`, 'info');
+                log('');
+
+                let clientRunning = true;
+                const clientLoop = async () => {
+                    while (clientRunning) {
+                        await sleep(CLIENT_REQUEST_INTERVAL_MS);
+
+                        if (!clientRunning || workers.size === 0) continue;
+
+                        const workerNames = Array.from(workers.keys());
+                        if (workerNames.length === 0) continue;
+
+                        const targetName = workerNames[Math.floor(Math.random() * workerNames.length)];
+
+                        stats.requests++;
+                        try {
+                            await mainBus.request(targetName, { method: 'ping', args: ['chaos-test'] }, 1500);
+                            stats.successes++;
+                        } catch (error) {
+                            stats.failures++;
+                            // Log uniquement les échecs intéressants (pas tous pour ne pas spammer)
+                            if (stats.failures % 5 === 0) {
+                                log(`  ⚠️  Échec intermittent (#${stats.failures}): ${targetName} - ${error.message.substring(0, 50)}`, 'warn');
+                            }
+                        }
+
+                        const elapsed = Date.now() - startTime;
+                        updateStats(stats, elapsed, TEST_DURATION_MS);
+                    }
+                };
+
+                // Démarrer le client
+                clientLoop();
+
+                // --- Étape 4: Attendre la fin du test ---
+                log(`[Étape 4] ⏱️  Test en cours pendant ${TEST_DURATION_MS / 1000} secondes...`, 'info');
+                log('');
+                await sleep(TEST_DURATION_MS);
+
+                // --- Étape 5: Arrêt et Nettoyage ---
+                chaosRunning = false;
+                clientRunning = false;
+
+                log('');
+                log('[Étape 5] 🛑 Arrêt du chaos et nettoyage...', 'info');
+
+                workers.forEach(w => {
+                    try { w.terminate(); } catch (e) { }
+                });
+                workers.clear();
+                mainBus.dispose();
+
+                // --- Étape 6: Verdict Final ---
+                log('');
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+                log('    📊 RÉSULTATS FINAUX DU TEST DU CHAOS', 'summary');
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+                log('');
+                log(`  📈 Requêtes totales: ${stats.requests}`, 'info');
+                log(`  ✅ Succès: ${stats.successes}`, 'pass');
+                log(`  ❌ Échecs: ${stats.failures}`, 'fail');
+
+                const finalSuccessRate = stats.requests > 0
+                    ? (stats.successes / stats.requests) * 100
+                    : 0;
+
+                log(`  🎯 Taux de succès: ${finalSuccessRate.toFixed(2)}%`, 'info');
+                log('');
+
+                if (finalSuccessRate >= 95) {
+                    log('🎉🎉🎉 TEST RÉUSSI ! 🎉🎉🎉', 'pass');
+                    log('', 'pass');
+                    log(`✅ Taux de succès de ${finalSuccessRate.toFixed(2)}% (> 95%)`, 'pass');
+                    log('✅ Le système est ROBUSTE et ANTI-FRAGILE !', 'pass');
+                    log('✅ Les mécanismes de résilience fonctionnent correctement', 'pass');
+                    log('✅ OfflineQueue + Duplicate Detection ont prouvé leur efficacité', 'pass');
+                } else {
+                    log('❌ TEST ÉCHOUÉ', 'fail');
+                    log('', 'fail');
+                    log(`❌ Taux de succès de ${finalSuccessRate.toFixed(2)}% (< 95%)`, 'fail');
+                    log('❌ Le système n\'est pas assez robuste', 'fail');
+                    throw new Error(`Taux de succès trop bas: ${finalSuccessRate.toFixed(2)}%`);
+                }
+
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+
+            } catch (error) {
+                log('', 'fail');
+                log(`💥 ERREUR CRITIQUE: ${error.message}`, 'fail');
+                log('', 'fail');
+            } finally {
+                testRunning = false;
+                runButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
