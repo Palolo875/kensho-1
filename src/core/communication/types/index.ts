@@ -21,7 +21,7 @@ export interface SerializedError {
  * Le format standard et immuable de tous les messages échangés dans Kensho.
  * Chaque message est une enveloppe contenant des métadonnées de routage et une charge utile.
  */
-export interface KenshoMessage<T = any> {
+export interface KenshoMessage<T = unknown> {
   /** Identifiant unique de ce message spécifique (UUID v4), généré à l'envoi. */
   readonly messageId: string;
   /** Identifiant de la transaction globale, pour suivre une requête de bout en bout. */
@@ -31,11 +31,13 @@ export interface KenshoMessage<T = any> {
   /** Le nom du worker destinataire. */
   readonly targetWorker: WorkerName;
   /** Le type de message, qui détermine comment il est traité. */
-  readonly type: 'request' | 'response' | 'broadcast';
+  readonly type: 'request' | 'response' | 'broadcast' | 'stream_request' | 'stream_chunk' | 'stream_end' | 'stream_error';
   /** La charge utile (payload) du message. */
   readonly payload: T;
   /** Pour les réponses, l'ID du message de la requête originale. */
   readonly responseFor?: string;
+  /** Pour les messages de stream, l'ID unique du flux de données. */
+  readonly streamId?: string;
   /** En cas d'erreur dans le traitement d'une requête, ce champ contiendra l'erreur sérialisée. */
   readonly error?: SerializedError;
 }
@@ -44,7 +46,7 @@ export interface KenshoMessage<T = any> {
  * La signature d'une fonction capable de gérer une requête entrante.
  * Elle reçoit la charge utile et doit retourner une réponse (ou une promesse de réponse).
  */
-export type RequestHandler = (payload: any) => Promise<any> | any;
+export type RequestHandler = (payload: unknown) => Promise<unknown> | unknown;
 
 export interface AnnouncePayload {
   workerName: WorkerName;

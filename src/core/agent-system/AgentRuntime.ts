@@ -1,8 +1,16 @@
 // src/core/agent-system/AgentRuntime.ts
-import { MessageBus } from '../communication/MessageBus';
+import { MessageBus, StreamCallbacks } from '../communication/MessageBus';
 import { WorkerName, RequestHandler } from '../communication/types';
 import { OrionGuardian } from '../guardian/OrionGuardian';
 import { NetworkTransport } from '../communication/transport/NetworkTransport';
+
+interface LogEntry {
+    timestamp: number;
+    agent: WorkerName;
+    level: 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+}
 
 /**
  * AgentRuntime est l'environnement d'exécution pour chaque agent.
@@ -13,9 +21,10 @@ export class AgentRuntime {
     public readonly agentName: WorkerName;
     private readonly messageBus: MessageBus;
     private methods = new Map<string, RequestHandler>();
+    private streamRequestHandlers = new Map<string, (payload: unknown, stream: AgentStreamEmitter) => void>();
     private readonly guardian: OrionGuardian;
-    private logBuffer: any[] = [];
-    private flushLogsInterval: any;
+    private logBuffer: LogEntry[] = [];
+    private flushLogsInterval: NodeJS.Timeout;
 
     constructor(name: WorkerName, transport?: NetworkTransport) {
         this.agentName = name;
@@ -38,8 +47,8 @@ export class AgentRuntime {
         this.log('info', `Agent ${name} initialisé.`);
     }
 
-    // NOUVEAU : Méthode de logging avec buffer
-    public log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
+    // Méthode de logging avec buffer
+    public log(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void {
         this.logBuffer.push({
             timestamp: Date.now(),
             agent: this.agentName,
@@ -58,20 +67,63 @@ export class AgentRuntime {
 
         // Utiliser callAgent pour envoyer le lot au TelemetryWorker.
         // C'est un appel "fire-and-forget", donc on n'attend pas la réponse.
-        // Note: On utilise une méthode interne pour éviter la dépendance circulaire ou l'échec si TelemetryWorker n'est pas là
         this.messageBus.request('TelemetryWorker', { method: 'logBatch', args: [this.logBuffer] }, 1000).catch(() => {
             // Ignorer les erreurs si le TelemetryWorker n'est pas là (ex: tests unitaires)
         });
         this.logBuffer = [];
     }
 
-    private async handleRequest(payload: { method: string, args: any[] }): Promise<any> {
-        const handler = this.methods.get(payload.method);
+    private async handleRequest(payload: unknown): Promise<unknown> {
+        // Validation basique du payload
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Invalid payload: must be an object');
+        }
+
+        const request = payload as { method: string, args: unknown[], streamId?: string };
+
+        if (!request.method) {
+            throw new Error('Invalid payload: missing method');
+        }
+
+        // Si c'est une requête de stream, on la route vers le bon handler de stream
+        if (request.streamId) {
+            const streamHandler = this.streamRequestHandlers.get(request.method);
+            if (streamHandler) {
+                const streamEmitter = new AgentStreamEmitter(request.streamId, this.messageBus, this.agentName);
+                streamHandler(request, streamEmitter);
+                return; // Les streams n'ont pas de réponse de requête directe
+            }
+            throw new Error(`Stream method '${request.method}' not found on agent '${this.agentName}'`);
+        }
+
+        const handler = this.methods.get(request.method);
         if (handler) {
             // Appeler la méthode enregistrée avec les arguments fournis
-            return await handler(payload.args);
+            // Note: on passe args tel quel, le handler doit savoir quoi en faire
+            return await handler(request.args);
         }
-        throw new Error(`Method '${payload.method}' not found on agent '${this.agentName}'`);
+        throw new Error(`Method '${request.method}' not found on agent '${this.agentName}'`);
+    }
+
+    public registerStreamMethod(name: string, handler: (payload: unknown, stream: AgentStreamEmitter) => void): void {
+        if (this.streamRequestHandlers.has(name)) {
+            console.warn(`[AgentRuntime] Stream method '${name}' on agent '${this.agentName}' is already registered and will be overwritten.`);
+        }
+        this.streamRequestHandlers.set(name, handler);
+    }
+
+    // API pour appeler un stream sur un autre agent
+    public callAgentStream<TChunk>(
+        targetAgent: WorkerName,
+        method: string,
+        args: unknown[],
+        callbacks: StreamCallbacks<TChunk>
+    ): string {
+        return this.messageBus.requestStream(
+            targetAgent,
+            { method, args },
+            callbacks
+        );
     }
 
     public registerMethod(name: string, handler: RequestHandler): void {
@@ -85,7 +137,7 @@ export class AgentRuntime {
     public async callAgent<TResponse>(
         targetAgent: WorkerName,
         method: string,
-        args: any[],
+        args: unknown[],
         timeout?: number
     ): Promise<TResponse> {
         return this.messageBus.request<TResponse>(
@@ -113,5 +165,29 @@ export class AgentRuntime {
         clearInterval(this.flushLogsInterval);
         this.messageBus.dispose();
         this.guardian.dispose();
+    }
+}
+
+/**
+ * NOUVELLE CLASSE HELPER
+ * Fournit une API simple pour un agent pour émettre des données sur un stream.
+ */
+export class AgentStreamEmitter {
+    constructor(
+        private readonly streamId: string,
+        private readonly messageBus: MessageBus,
+        private readonly selfName: WorkerName
+    ) { }
+
+    public chunk(data: unknown): void {
+        this.messageBus.sendStreamChunk(this.streamId, data, this.selfName);
+    }
+
+    public end(finalPayload?: unknown): void {
+        this.messageBus.sendStreamEnd(this.streamId, finalPayload, this.selfName);
+    }
+
+    public error(error: Error): void {
+        this.messageBus.sendStreamError(this.streamId, error, this.selfName);
     }
 }

@@ -1,12 +1,41 @@
-# Tâches - Sprint 1B : Élection de Leader
+# Kensho Project Tasks
 
-- [ ] **Planification**
-    - [x] Analyser le code existant de `LeaderElection.ts` <!-- id: 0 -->
-    - [x] Créer le plan d'implémentation pour le test E2E <!-- id: 1 -->
-- [ ] **Implémentation du Test E2E**
-    - [x] Créer `tests/browser/sprint1b-election-e2e.html` <!-- id: 2 -->
-    - [x] Implémenter le scénario de démarrage et élection initiale <!-- id: 3 -->
-    - [x] Implémenter le scénario de panne du leader et réélection <!-- id: 4 -->
+## Sprint 3: Persistence (Next)
+Focus: Giving agents long-term memory using IndexedDB.
+
+- [ ] **Core Infrastructure**
+    - [ ] Define State Interfaces (`src/core/state/types.ts`)
+    - [ ] Implement `IndexedDBAdapter`
+    - [ ] Implement `StateManager` class
+- [ ] **System Integration**
+    - [ ] Integrate StateManager into `AgentRuntime`
+    - [ ] Make `WorkerRegistry` persistent
+    - [ ] Make `OfflineQueue` persistent
 - [ ] **Validation**
-    - [x] Exécuter le test et corriger les bugs éventuels <!-- id: 5 -->
-    - [x] Documenter la validation dans `docs/SPRINT1B_ELECTION_VALIDATION.md` <!-- id: 6 -->
+    - [ ] Create `sprint3-persistence-e2e.html`
+
+## Sprint 2: Streaming Support (Completed) ✅
+- [x] **Core Implementation**
+    - [x] Add streaming types to `KenshoMessage`
+    - [x] Implement stream routing in `MessageBus`
+    - [x] Add timeouts and cleanup logic
+- [x] **Agent API**
+    - [x] `registerStreamMethod` & `callAgentStream`
+    - [x] `AgentStreamEmitter` helper
+- [x] **Validation**
+    - [x] E2E Test: `tests/browser/sprint2-streaming-e2e.html`
+    - [x] Robustness verification (timeouts, types)
+
+## Sprint 1C: Robustness & Chaos (Completed) ✅
+- [x] **Offline Message Queue**
+- [x] **Duplicate Detection**
+- [x] **Chaos Testing**
+
+## Sprint 1B: Coordination (Completed) ✅
+- [x] **Discovery & Registry**
+- [x] **Leader Election**
+- [x] **Observability**
+
+## Sprint 1A: Foundation (Completed) ✅
+- [x] Basic MessageBus
+- [x] Multi-transport support

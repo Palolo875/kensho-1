@@ -10,6 +10,17 @@ interface MessageBusConfig {
     transport?: NetworkTransport;
 }
 
+export interface StreamCallbacks<TChunk> {
+    onChunk: (chunk: TChunk) => void;
+    onEnd: (finalPayload?: unknown) => void;
+    onError: (error: Error) => void;
+}
+
+interface ActiveStream<TChunk> {
+    callbacks: StreamCallbacks<TChunk>;
+    lastActivity: number;
+}
+
 /**
  * Le MessageBus est le système nerveux central de Kensho.
  * Il gère toute la communication inter-workers de manière fiable.
@@ -20,21 +31,29 @@ export class MessageBus {
     private readonly defaultTimeout: number;
     private currentTraceId: string | null = null;
 
-    private pendingRequests = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
+    private pendingRequests = new Map<string, { resolve: (value: unknown) => void, reject: (reason?: unknown) => void }>();
+
+    // Map pour suivre les abonnements aux streams actifs avec métadonnées
+    private activeStreams = new Map<string, ActiveStream<unknown>>();
+    private streamCleanupTimer: NodeJS.Timeout;
+
     private requestHandler: RequestHandler | null = null;
     private systemSubscribers: ((message: KenshoMessage) => void)[] = [];
 
-    // NOUVEAU : Gestion de l'OfflineQueue
+    // Gestion de l'OfflineQueue
     private readonly offlineQueue = new OfflineQueue();
     private knownWorkers = new Set<WorkerName>();
     private cleanupInterval: NodeJS.Timeout;
 
-    // NOUVEAU : Cache pour la détection de doublons
-    private recentlyProcessedRequests = new Map<string, { response: any, error?: SerializedError, timestamp: number }>();
+    // Cache pour la détection de doublons
+    private recentlyProcessedRequests = new Map<string, { response: unknown, error?: SerializedError, timestamp: number }>();
     private cacheCleanupTimer: NodeJS.Timeout;
 
     private static readonly CACHE_MAX_AGE_MS = 60000; // 60 secondes
     private static readonly CACHE_CLEANUP_INTERVAL_MS = 10000; // 10 secondes
+
+    private static readonly STREAM_TIMEOUT_MS = 300000; // 5 minutes d'inactivité max
+    private static readonly STREAM_CLEANUP_INTERVAL_MS = 60000; // Vérification toutes les minutes
 
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
@@ -54,6 +73,11 @@ export class MessageBus {
         this.cacheCleanupTimer = setInterval(() => {
             this.cleanupRequestCache();
         }, MessageBus.CACHE_CLEANUP_INTERVAL_MS);
+
+        // Démarrer le nettoyage des streams orphelins
+        this.streamCleanupTimer = setInterval(() => {
+            this.cleanupStreams();
+        }, MessageBus.STREAM_CLEANUP_INTERVAL_MS);
     }
 
     private validateMessage(message: KenshoMessage): boolean {
@@ -65,7 +89,7 @@ export class MessageBus {
     }
 
     private handleIncomingMessage(message: KenshoMessage): void {
-        // NOUVEAU : Notifier les abonnés système de chaque message reçu
+        // Notifier les abonnés système de chaque message reçu
         this.systemSubscribers.forEach(cb => cb(message));
 
         if (!this.validateMessage(message) || message.targetWorker !== this.workerName) {
@@ -77,7 +101,17 @@ export class MessageBus {
                 this.processResponseMessage(message);
                 break;
             case 'request':
+            case 'stream_request': // Traiter les demandes de stream comme des requêtes
                 this.processRequestMessage(message);
+                break;
+            case 'stream_chunk':
+                this.processStreamChunkMessage(message);
+                break;
+            case 'stream_end':
+                this.processStreamEndMessage(message);
+                break;
+            case 'stream_error':
+                this.processStreamErrorMessage(message);
                 break;
         }
     }
@@ -99,7 +133,7 @@ export class MessageBus {
     }
 
     private async processRequestMessage(message: KenshoMessage): Promise<void> {
-        // NOUVEAU : Vérifier le cache de détection de doublons
+        // Vérifier le cache de détection de doublons
         const cachedEntry = this.recentlyProcessedRequests.get(message.messageId);
         if (cachedEntry) {
             console.warn(`[MessageBus] Doublon de requête détecté (${message.messageId}). Retour de la réponse mise en cache.`);
@@ -122,13 +156,27 @@ export class MessageBus {
         }
 
         try {
-            const responsePayload = await this.requestHandler(message.payload);
-            // Mettre en cache la réponse en cas de succès
-            this.recentlyProcessedRequests.set(message.messageId, {
-                response: responsePayload,
-                timestamp: Date.now()
-            });
-            this.sendResponse(message, responsePayload);
+            // Injection du streamId et sourceWorker pour les handlers
+            let payloadToHandle = message.payload;
+            if (message.streamId && typeof message.payload === 'object' && message.payload !== null) {
+                payloadToHandle = {
+                    ...(message.payload as object),
+                    streamId: message.streamId,
+                    sourceWorker: message.sourceWorker
+                };
+            }
+
+            const responsePayload = await this.requestHandler(payloadToHandle);
+
+            // On n'envoie une réponse formelle que pour les requêtes standard
+            if (message.type === 'request') {
+                // Mettre en cache la réponse en cas de succès
+                this.recentlyProcessedRequests.set(message.messageId, {
+                    response: responsePayload,
+                    timestamp: Date.now()
+                });
+                this.sendResponse(message, responsePayload);
+            }
         } catch (error) {
             const err = error instanceof Error ? error : new Error('Unknown error in request handler');
             const serializedError: SerializedError = {
@@ -136,17 +184,133 @@ export class MessageBus {
                 stack: err.stack,
                 name: err.name,
             };
-            // Mettre en cache la réponse en cas d'erreur
-            this.recentlyProcessedRequests.set(message.messageId, {
-                response: null,
-                error: serializedError,
-                timestamp: Date.now()
-            });
-            this.sendResponse(message, null, serializedError);
+
+            if (message.type === 'request') {
+                // Mettre en cache la réponse en cas d'erreur
+                this.recentlyProcessedRequests.set(message.messageId, {
+                    response: null,
+                    error: serializedError,
+                    timestamp: Date.now()
+                });
+                this.sendResponse(message, null, serializedError);
+            } else if (message.type === 'stream_request' && message.streamId) {
+                // Pour un stream, on signale l'erreur via stream_error
+                this.sendStreamError(message.streamId, err, message.sourceWorker);
+            }
         }
     }
 
-    private sendResponse(originalMessage: KenshoMessage, payload: any, error?: SerializedError): void {
+    private processStreamChunkMessage(message: KenshoMessage): void {
+        if (!message.streamId) return;
+        const stream = this.activeStreams.get(message.streamId);
+        if (stream) {
+            stream.lastActivity = Date.now();
+            stream.callbacks.onChunk(message.payload);
+        }
+    }
+
+    private processStreamEndMessage(message: KenshoMessage): void {
+        if (!message.streamId) return;
+        const stream = this.activeStreams.get(message.streamId);
+        if (stream) {
+            stream.callbacks.onEnd(message.payload);
+            this.activeStreams.delete(message.streamId);
+        }
+    }
+
+    private processStreamErrorMessage(message: KenshoMessage): void {
+        if (!message.streamId || !message.error) return;
+        const stream = this.activeStreams.get(message.streamId);
+        if (stream) {
+            const err = new Error(message.error.message);
+            err.stack = message.error.stack;
+            err.name = message.error.name;
+            stream.callbacks.onError(err);
+            this.activeStreams.delete(message.streamId);
+        }
+    }
+
+    private cleanupStreams(): void {
+        const now = Date.now();
+        let cleanedCount = 0;
+        for (const [streamId, stream] of this.activeStreams.entries()) {
+            if (now - stream.lastActivity > MessageBus.STREAM_TIMEOUT_MS) {
+                console.warn(`[MessageBus] Stream '${streamId}' timed out due to inactivity.`);
+                stream.callbacks.onError(new Error('Stream timed out due to inactivity'));
+                this.activeStreams.delete(streamId);
+                cleanedCount++;
+            }
+        }
+        if (cleanedCount > 0) {
+            console.log(`[MessageBus] Cleaned up ${cleanedCount} timed out streams.`);
+        }
+    }
+
+    public requestStream<TChunk>(
+        target: WorkerName,
+        payload: unknown,
+        callbacks: StreamCallbacks<TChunk>
+    ): string {
+        const traceId = this.currentTraceId || `trace-${crypto.randomUUID()}`;
+        const streamId = `stream-${crypto.randomUUID()}`;
+
+        this.activeStreams.set(streamId, {
+            callbacks,
+            lastActivity: Date.now()
+        });
+
+        this.sendMessage({
+            type: 'stream_request',
+            sourceWorker: this.workerName,
+            targetWorker: target,
+            payload,
+            traceId,
+            streamId,
+        });
+
+        return streamId;
+    }
+
+    public sendStreamChunk(streamId: string, payload: unknown, target: WorkerName): void {
+        this.sendMessage({
+            type: 'stream_chunk',
+            sourceWorker: this.workerName,
+            targetWorker: target,
+            payload,
+            streamId,
+            traceId: this.currentTraceId || `trace-${crypto.randomUUID()}`,
+        });
+    }
+
+    public sendStreamEnd(streamId: string, payload: unknown, target: WorkerName): void {
+        this.sendMessage({
+            type: 'stream_end',
+            sourceWorker: this.workerName,
+            targetWorker: target,
+            payload,
+            streamId,
+            traceId: this.currentTraceId || `trace-${crypto.randomUUID()}`,
+        });
+    }
+
+    public sendStreamError(streamId: string, error: Error, target: WorkerName): void {
+        const serializedError: SerializedError = {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+        };
+        this.sendMessage({
+            type: 'stream_error',
+            sourceWorker: this.workerName,
+            targetWorker: target,
+            payload: null,
+            error: serializedError,
+            streamId,
+            traceId: this.currentTraceId || `trace-${crypto.randomUUID()}`,
+        });
+    }
+
+    private sendResponse(originalMessage: KenshoMessage, payload: unknown, error?: SerializedError): void {
         this.sendMessage({
             type: 'response',
             sourceWorker: this.workerName,
@@ -175,33 +339,31 @@ export class MessageBus {
         this.requestHandler = handler;
     }
 
-    // NOUVEAU : Méthode pour s'abonner au flux de messages
     public subscribeToSystemMessages(callback: (message: KenshoMessage) => void): void {
         this.systemSubscribers.push(callback);
     }
 
-    // NOUVEAU : Méthode pour diffuser un message système à tous
-    public broadcastSystemMessage(type: string, payload: any): void {
+    public broadcastSystemMessage(type: string, payload: unknown): void {
         this.sendMessage({
             type: 'broadcast',
             sourceWorker: this.workerName,
             targetWorker: '*',
-            payload: { systemType: type, ...payload },
+            payload: { systemType: type, ...(payload as object) },
             traceId: `system-trace-${crypto.randomUUID()}`,
         });
     }
 
-    public sendSystemMessage(target: WorkerName, type: string, payload: any): void {
+    public sendSystemMessage(target: WorkerName, type: string, payload: unknown): void {
         this.sendMessage({
             type: 'broadcast',
             sourceWorker: this.workerName,
             targetWorker: target,
-            payload: { systemType: type, ...payload },
+            payload: { systemType: type, ...(payload as object) },
             traceId: `system-trace-${crypto.randomUUID()}`,
         });
     }
 
-    public request<TResponse>(target: WorkerName, payload: any, timeout?: number): Promise<TResponse> {
+    public request<TResponse>(target: WorkerName, payload: unknown, timeout?: number): Promise<TResponse> {
         return new Promise<TResponse>((resolve, reject) => {
             const traceId = this.currentTraceId || `trace-${crypto.randomUUID()}`;
             const actualTimeout = timeout ?? this.defaultTimeout;
@@ -241,7 +403,7 @@ export class MessageBus {
             }, actualTimeout);
 
             this.pendingRequests.set(messageId, {
-                resolve: (value) => { clearTimeout(timeoutId); resolve(value); },
+                resolve: (value) => { clearTimeout(timeoutId); resolve(value as TResponse); },
                 reject: (reason) => { clearTimeout(timeoutId); reject(reason); }
             });
         });
@@ -252,7 +414,7 @@ export class MessageBus {
         originalMessageId: string,
         timeout: number,
         resolve: (value: TResponse) => void,
-        reject: (reason?: any) => void
+        reject: (reason?: unknown) => void
     ): void {
         const startTime = Date.now();
 
@@ -303,9 +465,6 @@ export class MessageBus {
         return this.offlineQueue.getStats();
     }
 
-    /**
-     * NOUVEAU : Nettoyage périodique du cache pour éviter les fuites de mémoire
-     */
     private cleanupRequestCache(): void {
         const now = Date.now();
         let cleanedCount = 0;
@@ -322,9 +481,6 @@ export class MessageBus {
         }
     }
 
-    /**
-     * NOUVEAU : Renvoie un message existant (pour les tests et le flush de queue)
-     */
     public resendMessage(message: KenshoMessage): void {
         this.transport.send(message);
     }
@@ -332,6 +488,7 @@ export class MessageBus {
     public dispose(): void {
         clearInterval(this.cleanupInterval);
         clearInterval(this.cacheCleanupTimer);
+        clearInterval(this.streamCleanupTimer);
         this.transport.dispose();
     }
 }
