@@ -29,6 +29,13 @@ export class MessageBus {
     private knownWorkers = new Set<WorkerName>();
     private cleanupInterval: NodeJS.Timeout;
 
+    // NOUVEAU : Cache pour la détection de doublons
+    private recentlyProcessedRequests = new Map<string, { response: any, error?: SerializedError, timestamp: number }>();
+    private cacheCleanupTimer: NodeJS.Timeout;
+
+    private static readonly CACHE_MAX_AGE_MS = 60000; // 60 secondes
+    private static readonly CACHE_CLEANUP_INTERVAL_MS = 10000; // 10 secondes
+
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
         this.transport = config.transport ?? new BroadcastTransport();
@@ -42,6 +49,11 @@ export class MessageBus {
         this.cleanupInterval = setInterval(() => {
             this.offlineQueue.cleanExpiredMessages();
         }, 30000);
+
+        // Démarrer le nettoyage périodique du cache de détection de doublons
+        this.cacheCleanupTimer = setInterval(() => {
+            this.cleanupRequestCache();
+        }, MessageBus.CACHE_CLEANUP_INTERVAL_MS);
     }
 
     private validateMessage(message: KenshoMessage): boolean {
@@ -87,11 +99,35 @@ export class MessageBus {
     }
 
     private async processRequestMessage(message: KenshoMessage): Promise<void> {
-        if (!this.requestHandler) {
-            return this.sendResponse(message, null, { name: 'NoHandlerError', message: `No request handler registered for worker '${this.workerName}'` });
+        // NOUVEAU : Vérifier le cache de détection de doublons
+        const cachedEntry = this.recentlyProcessedRequests.get(message.messageId);
+        if (cachedEntry) {
+            console.warn(`[MessageBus] Doublon de requête détecté (${message.messageId}). Retour de la réponse mise en cache.`);
+            this.sendResponse(message, cachedEntry.response, cachedEntry.error);
+            return;
         }
+
+        if (!this.requestHandler) {
+            const noHandlerError: SerializedError = {
+                name: 'NoHandlerError',
+                message: `No request handler registered for worker '${this.workerName}'`
+            };
+            // Mettre en cache l'erreur
+            this.recentlyProcessedRequests.set(message.messageId, {
+                response: null,
+                error: noHandlerError,
+                timestamp: Date.now()
+            });
+            return this.sendResponse(message, null, noHandlerError);
+        }
+
         try {
             const responsePayload = await this.requestHandler(message.payload);
+            // Mettre en cache la réponse en cas de succès
+            this.recentlyProcessedRequests.set(message.messageId, {
+                response: responsePayload,
+                timestamp: Date.now()
+            });
             this.sendResponse(message, responsePayload);
         } catch (error) {
             const err = error instanceof Error ? error : new Error('Unknown error in request handler');
@@ -100,6 +136,12 @@ export class MessageBus {
                 stack: err.stack,
                 name: err.name,
             };
+            // Mettre en cache la réponse en cas d'erreur
+            this.recentlyProcessedRequests.set(message.messageId, {
+                response: null,
+                error: serializedError,
+                timestamp: Date.now()
+            });
             this.sendResponse(message, null, serializedError);
         }
     }
@@ -261,8 +303,35 @@ export class MessageBus {
         return this.offlineQueue.getStats();
     }
 
+    /**
+     * NOUVEAU : Nettoyage périodique du cache pour éviter les fuites de mémoire
+     */
+    private cleanupRequestCache(): void {
+        const now = Date.now();
+        let cleanedCount = 0;
+
+        for (const [messageId, entry] of this.recentlyProcessedRequests.entries()) {
+            if ((now - entry.timestamp) > MessageBus.CACHE_MAX_AGE_MS) {
+                this.recentlyProcessedRequests.delete(messageId);
+                cleanedCount++;
+            }
+        }
+
+        if (cleanedCount > 0) {
+            console.log(`[MessageBus] Cache cleanup: ${cleanedCount} entrée(s) expirée(s) supprimée(s).`);
+        }
+    }
+
+    /**
+     * NOUVEAU : Renvoie un message existant (pour les tests et le flush de queue)
+     */
+    public resendMessage(message: KenshoMessage): void {
+        this.transport.send(message);
+    }
+
     public dispose(): void {
         clearInterval(this.cleanupInterval);
+        clearInterval(this.cacheCleanupTimer);
         this.transport.dispose();
     }
 }

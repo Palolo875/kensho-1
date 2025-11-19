@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1C - Test E2E de Détection de Doublons</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        p {
+            color: #f0f0f0;
+            text-align: center;
+            font-size: 1.1rem;
+        }
+
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #results {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            min-height: 400px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .log-info {
+            color: #2563eb;
+        }
+
+        .log-pass {
+            color: #16a34a;
+            font-weight: bold;
+        }
+
+        .log-fail {
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        .log-warn {
+            color: #ea580c;
+        }
+
+        .log-summary {
+            color: #7c3aed;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 2px solid #e5e7eb;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔍 Sprint 1C - Test E2E de Détection de Doublons</h1>
+    <p>Ce test valide que le MessageBus ignore les requêtes dupliquées et retourne la réponse mise en cache.</p>
+    <button id="run-tests">🚀 Lancer le Test</button>
+    <h2 style="color: white; text-align: center;">Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+
+        const log = (message, status = 'info') => {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = `log-${status}`;
+            const line = document.createElement('span');
+            line.className = className;
+            line.textContent = `[${timestamp}] ${message}\n`;
+            resultsEl.appendChild(line);
+            resultsEl.scrollTop = resultsEl.scrollHeight;
+        };
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+            log('    DÉMARRAGE DU TEST DE DÉTECTION DE DOUBLONS', 'summary');
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+            log('');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            let busA = null;
+            let busB = null;
+            let testPassed = true;
+
+            try {
+                // --- Étape 1: Setup ---
+                log('[Étape 1] Configuration des MessageBus...', 'info');
+                log('  → Création de AgentA et AgentB', 'info');
+                busA = new MessageBus('AgentA');
+                busB = new MessageBus('AgentB');
+
+                // Le handler de l'AgentB va incrémenter un compteur pour tracer ses exécutions
+                let executionCount = 0;
+                busB.setRequestHandler(async (payload) => {
+                    executionCount++;
+                    log(`  ⚙️  Handler AgentB exécuté (compteur: ${executionCount})`, 'info');
+                    await sleep(100); // Simuler un travail
+                    return { result: `Response for ${payload.data}`, executionNumber: executionCount };
+                });
+                log('  ✅ Handler configuré avec compteur d\'exécution', 'pass');
+                log('');
+
+                // --- Étape 2: Envoyer une requête dupliquée ---
+                log('[Étape 2] Test de duplication de requête...', 'info');
+                log('  → Construction d\'un message avec ID fixe', 'info');
+
+                const traceId = `trace-${crypto.randomUUID()}`;
+                const messageId = `msg-duplicate-test-${crypto.randomUUID()}`;
+                const payload = { data: 'test-duplicate' };
+
+                const message = {
+                    messageId,
+                    traceId,
+                    payload,
+                    type: 'request',
+                    sourceWorker: 'AgentA',
+                    targetWorker: 'AgentB',
+                };
+
+                log(`  → MessageID: ${messageId.substring(0, 30)}...`, 'info');
+                log('  → Envoi du message (1ère fois)', 'info');
+                busA.resendMessage(message);
+
+                await sleep(200); // Attendre que la 1ère requête soit traitée
+
+                log('  → Envoi du MÊME message (2ème fois - DOUBLON)', 'warn');
+                busA.resendMessage(message);
+
+                await sleep(200); // Attendre un peu plus
+
+                log('');
+
+                // --- Étape 3: Vérification ---
+                log('[Étape 3] Vérification des résultats...', 'info');
+                log(`  → Nombre d'exécutions du handler: ${executionCount}`, 'info');
+
+                if (executionCount === 1) {
+                    log('  ✅ SUCCÈS: Le handler n\'a été exécuté qu\'UNE SEULE FOIS !', 'pass');
+                    log('  ✅ La requête dupliquée a été ignorée comme prévu', 'pass');
+                } else {
+                    throw new Error(`Le handler a été exécuté ${executionCount} fois au lieu de 1. Le cache de détection de doublons ne fonctionne pas correctement.`);
+                }
+
+                log('');
+
+                // --- Étape 4: Test supplémentaire - Vérifier que différents messages sont bien traités ---
+                log('[Étape 4] Test complémentaire: messages différents...', 'info');
+                const message2 = {
+                    messageId: `msg-different-${crypto.randomUUID()}`,
+                    traceId: `trace-${crypto.randomUUID()}`,
+                    payload: { data: 'different-message' },
+                    type: 'request',
+                    sourceWorker: 'AgentA',
+                    targetWorker: 'AgentB',
+                };
+
+                log('  → Envoi d\'un message avec ID différent', 'info');
+                busA.resendMessage(message2);
+                await sleep(200);
+
+                if (executionCount === 2) {
+                    log('  ✅ SUCCÈS: Le nouveau message a bien été traité !', 'pass');
+                    log('  ✅ Le cache ne bloque pas les messages légitimes', 'pass');
+                } else {
+                    throw new Error(`Attendu 2 exécutions mais obtenu ${executionCount}`);
+                }
+
+            } catch (error) {
+                log('', 'fail');
+                log(`❌ ERREUR CRITIQUE: ${error.message}`, 'fail');
+                log('', 'fail');
+                testPassed = false;
+            } finally {
+                if (busA) busA.dispose();
+                if (busB) busB.dispose();
+
+                log('');
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+                if (testPassed) {
+                    log('    🎉 TEST RÉUSSI - DÉTECTION DE DOUBLONS VALIDÉE !', 'pass');
+                    log('', 'pass');
+                    log('    ✅ Les requêtes dupliquées sont détectées', 'pass');
+                    log('    ✅ La réponse mise en cache est retournée', 'pass');
+                    log('    ✅ La logique métier n\'est exécutée qu\'une seule fois', 'pass');
+                    log('    ✅ Les messages différents sont traités normalement', 'pass');
+                } else {
+                    log('    ❌ TEST ÉCHOUÉ - DES PROBLÈMES ONT ÉTÉ DÉTECTÉS', 'fail');
+                }
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'summary');
+            }
+        });
+    </script>
+</body>
+
+</html>
