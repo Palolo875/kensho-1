@@ -1,7 +1,7 @@
 import React from 'react';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 import { Progress } from '@/components/ui/progress';
-import { X, Minimize2, Maximize2 } from 'lucide-react';
+import { X, Minimize2, Maximize2, Pause, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -130,7 +130,42 @@ const InitIcon = ({ className }: { className?: string }) => (
 export function ModelLoadingView() {
     const modelProgress = useKenshoStore(state => state.modelProgress);
     const isMinimized = useKenshoStore(state => state.isLoadingMinimized);
+    const isPaused = useKenshoStore(state => state.isLoadingPaused);
     const setMinimized = useKenshoStore(state => state.setLoadingMinimized);
+    const setPaused = useKenshoStore(state => state.setLoadingPaused);
+
+    // Référence au worker LLM pour contrôler la pause
+    const handlePauseToggle = () => {
+        setPaused(!isPaused);
+        // Envoyer un message au worker pour pause/reprise
+        const workers = (window as any).__kensho_workers || {};
+        const llmWorker = workers['MainLLMAgent'];
+        if (llmWorker) {
+            llmWorker.postMessage({
+                type: isPaused ? 'RESUME_DOWNLOAD' : 'PAUSE_DOWNLOAD'
+            });
+        }
+    };
+
+    // Formater les métriques
+    const formatSpeed = (mbps?: number) => {
+        if (!mbps) return '';
+        return `${mbps.toFixed(2)} MB/s`;
+    };
+
+    const formatETA = (seconds?: number) => {
+        if (!seconds) return '';
+        if (seconds < 60) return `${Math.round(seconds)}s`;
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.round(seconds % 60);
+        return `${minutes}m ${secs}s`;
+    };
+
+    const formatSize = (mb?: number) => {
+        if (!mb) return '';
+        if (mb < 1024) return `${mb.toFixed(1)} MB`;
+        return `${(mb / 1024).toFixed(2)} GB`;
+    };
 
     // Ne rien afficher si le modèle est prêt
     if (modelProgress.phase === 'ready') {
@@ -171,20 +206,31 @@ export function ModelLoadingView() {
     // Version minimisée (petit badge en bas à droite)
     if (isMinimized) {
         return (
-            <div className="fixed bottom-4 right-4 z-50">
+            <div className="fixed bottom-4 right-4 z-50 flex gap-2">
+                {modelProgress.phase === 'downloading' && (
+                    <Button
+                        variant="secondary"
+                        size="icon"
+                        className="shadow-lg"
+                        onClick={handlePauseToggle}
+                    >
+                        {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                    </Button>
+                )}
                 <Button
                     variant="secondary"
                     size="lg"
                     className="shadow-lg gap-3 pr-4"
                     onClick={() => setMinimized(false)}
                 >
-                    <div className="w-6 h-6 animate-spin">
+                    <div className={cn("w-6 h-6", !isPaused && "animate-spin")}>
                         {getIcon()}
                     </div>
                     <div className="flex flex-col items-start text-sm">
                         <span className="font-medium">{getTitle()}</span>
                         <span className="text-xs text-muted-foreground">
                             {Math.round(modelProgress.progress * 100)}%
+                            {modelProgress.speedMBps && ` • ${formatSpeed(modelProgress.speedMBps)}`}
                         </span>
                     </div>
                     <Maximize2 className="w-4 h-4 ml-2" />
@@ -209,17 +255,31 @@ export function ModelLoadingView() {
                                 {modelProgress.text}
                             </DialogDescription>
                         </div>
-                        {modelProgress.phase !== 'error' && (
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                onClick={() => setMinimized(true)}
-                            >
-                                <Minimize2 className="h-4 w-4" />
-                                <span className="sr-only">Minimiser</span>
-                            </Button>
-                        )}
+                        <div className="flex gap-2 shrink-0">
+                            {modelProgress.phase === 'downloading' && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={handlePauseToggle}
+                                    title={isPaused ? "Reprendre" : "Mettre en pause"}
+                                >
+                                    {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                                    <span className="sr-only">{isPaused ? "Reprendre" : "Pause"}</span>
+                                </Button>
+                            )}
+                            {modelProgress.phase !== 'error' && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => setMinimized(true)}
+                                >
+                                    <Minimize2 className="h-4 w-4" />
+                                    <span className="sr-only">Minimiser</span>
+                                </Button>
+                            )}
+                        </div>
                     </div>
                 </DialogHeader>
 
@@ -243,19 +303,48 @@ export function ModelLoadingView() {
                                 value={modelProgress.progress * 100} 
                                 className="h-2"
                             />
-                            <p className="text-center text-sm font-medium tabular-nums">
-                                {Math.round(modelProgress.progress * 100)}%
-                            </p>
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium tabular-nums">
+                                    {Math.round(modelProgress.progress * 100)}%
+                                </span>
+                                <div className="flex gap-3 text-muted-foreground tabular-nums">
+                                    {modelProgress.downloadedMB && modelProgress.totalMB && (
+                                        <span>
+                                            {formatSize(modelProgress.downloadedMB)} / {formatSize(modelProgress.totalMB)}
+                                        </span>
+                                    )}
+                                    {modelProgress.speedMBps && (
+                                        <span>⚡ {formatSpeed(modelProgress.speedMBps)}</span>
+                                    )}
+                                    {modelProgress.etaSeconds && !isPaused && (
+                                        <span>⏱️ {formatETA(modelProgress.etaSeconds)}</span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
 
                     {/* Messages contextuels */}
                     {modelProgress.phase === 'downloading' && (
-                        <div className="rounded-lg border border-border bg-muted/50 p-4">
+                        <div className="rounded-lg border border-border bg-muted/50 p-4 space-y-2">
                             <p className="text-sm text-muted-foreground">
-                                💡 Ce téléchargement ne se fait qu'une seule fois. 
-                                Le modèle sera mis en cache pour les prochaines utilisations.
+                                {modelProgress.isCached ? (
+                                    <>✓ Modèle trouvé en cache - chargement rapide</>
+                                ) : (
+                                    <>💾 Premier téléchargement - le modèle sera conservé en cache</>
+                                )}
                             </p>
+                            {!modelProgress.isCached && (
+                                <p className="text-xs text-muted-foreground">
+                                    Le stockage persistant est activé. Le modèle ne sera plus téléchargé 
+                                    même après un redémarrage du navigateur ou en développement.
+                                </p>
+                            )}
+                            {isPaused && (
+                                <p className="text-sm font-medium text-primary">
+                                    ⏸️ Téléchargement en pause - cliquez sur ▶ pour reprendre
+                                </p>
+                            )}
                         </div>
                     )}
 

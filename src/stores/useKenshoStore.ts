@@ -45,12 +45,14 @@ interface KenshoState {
     mainBus: MessageBus | null;
     isInitialized: boolean;
     isLoadingMinimized: boolean;
+    isLoadingPaused: boolean;
     workerErrors: WorkerError[];
     
     init: () => void;
     sendMessage: (text: string) => void;
     clearMessages: () => void;
     setLoadingMinimized: (minimized: boolean) => void;
+    setLoadingPaused: (paused: boolean) => void;
     loadMessagesFromStorage: () => void;
     clearWorkerErrors: () => void;
 }
@@ -92,6 +94,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
     mainBus: null,
     isInitialized: false,
     isLoadingMinimized: false,
+    isLoadingPaused: false,
     workerErrors: [],
 
     /**
@@ -118,6 +121,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 new URL('../agents/llm/index.ts', import.meta.url),
                 { type: 'module' }
             );
+            
+            // Stocker le worker pour contrôle externe (pause/reprise)
+            (window as any).__kensho_workers = (window as any).__kensho_workers || {};
+            (window as any).__kensho_workers['MainLLMAgent'] = llmWorker;
             
             // Écouter les messages de progression du modèle
             llmWorker.onmessage = (e) => {
@@ -348,6 +355,13 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     setLoadingMinimized: (minimized: boolean) => {
         set({ isLoadingMinimized: minimized });
+    },
+
+    /**
+     * Permet de mettre en pause/reprendre le téléchargement
+     */
+    setLoadingPaused: (paused: boolean) => {
+        set({ isLoadingPaused: paused });
     },
 
     /**
