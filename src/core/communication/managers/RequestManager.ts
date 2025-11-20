@@ -1,12 +1,14 @@
 // src/core/communication/managers/RequestManager.ts
 
 import { KenshoMessage, WorkerName, SerializedError } from '../types';
+import { globalMetrics } from '../../monitoring';
 
 export interface PendingRequest<T = unknown> {
     resolve: (value: T) => void;
     reject: (reason?: unknown) => void;
     timeout: NodeJS.Timeout;
     messageId: string;
+    startTime: number;
 }
 
 /**
@@ -35,8 +37,12 @@ export class RequestManager {
     ): Promise<TResponse> {
         return new Promise((resolve, reject) => {
             const actualTimeout = timeout ?? this.defaultTimeout;
+            const startTime = performance.now();
 
             const timeoutHandle = setTimeout(() => {
+                const latency = performance.now() - startTime;
+                globalMetrics.incrementCounter('request.timeout');
+                globalMetrics.recordTiming('request.timeout.latency_ms', latency);
                 this.cancelRequest(messageId);
                 reject(new Error(`Request ${messageId} timed out after ${actualTimeout}ms`));
             }, actualTimeout);
@@ -45,8 +51,11 @@ export class RequestManager {
                 resolve: resolve as (value: unknown) => void,
                 reject,
                 timeout: timeoutHandle,
-                messageId
+                messageId,
+                startTime: performance.now()
             });
+            
+            globalMetrics.incrementCounter('request.created');
         });
     }
 
@@ -70,12 +79,20 @@ export class RequestManager {
         clearTimeout(pending.timeout);
         this.pendingRequests.delete(messageId);
 
+        // Calculer la latence
+        const latency = performance.now() - pending.startTime;
+        globalMetrics.recordTiming('request.latency_ms', latency);
+
         // Résoudre ou rejeter selon la présence d'une erreur
         if (message.error) {
             const error = new Error(message.error.message || 'Unknown error');
             (error as Error & { code?: string }).code = message.error.code;
+            globalMetrics.incrementCounter('request.failed');
+            globalMetrics.recordTiming('request.failed.latency_ms', latency);
             pending.reject(error);
         } else {
+            globalMetrics.incrementCounter('request.succeeded');
+            globalMetrics.recordTiming('request.succeeded.latency_ms', latency);
             pending.resolve(message.payload);
         }
 
@@ -114,10 +131,30 @@ export class RequestManager {
      * Retourne les statistiques pour l'observabilité.
      */
     public getStats() {
+        globalMetrics.recordGauge('request.pending_count', this.pendingRequests.size);
+        
         return {
             pendingCount: this.pendingRequests.size,
-            pendingRequests: Array.from(this.pendingRequests.keys())
+            pendingRequests: Array.from(this.pendingRequests.keys()),
+            oldestRequest: this.getOldestRequestAge()
         };
+    }
+    
+    /**
+     * Retourne l'âge de la requête la plus ancienne (en ms).
+     */
+    private getOldestRequestAge(): number {
+        let oldest = 0;
+        const now = performance.now();
+        
+        for (const pending of this.pendingRequests.values()) {
+            const age = now - pending.startTime;
+            if (age > oldest) {
+                oldest = age;
+            }
+        }
+        
+        return oldest;
     }
 
     /**

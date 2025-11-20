@@ -1,5 +1,6 @@
 import { KenshoMessage } from '../types';
 import { NetworkTransport } from './NetworkTransport';
+import { globalMetrics } from '../../monitoring';
 
 /**
  * État de la connexion WebSocket
@@ -59,6 +60,12 @@ export class WebSocketTransport implements NetworkTransport {
     
     // Disposed flag
     private isDisposed = false;
+    
+    // Metrics tracking
+    private messagesSent = 0;
+    private messagesReceived = 0;
+    private bytesReceived = 0;
+    private bytesSent = 0;
 
     constructor(config: WebSocketTransportConfig = {}) {
         this.url = config.url || 'ws://localhost:8080';
@@ -87,6 +94,10 @@ export class WebSocketTransport implements NetworkTransport {
                 this.reconnectAttempts = 0; // Reset sur succès
                 this.lastPongReceived = Date.now();
                 
+                // Métriques
+                globalMetrics.incrementCounter('websocket.connections');
+                globalMetrics.recordGauge('websocket.state', 1); // 1 = CONNECTED
+                
                 // Envoyer les messages en queue
                 this.flushMessageQueue();
                 
@@ -95,18 +106,32 @@ export class WebSocketTransport implements NetworkTransport {
             };
 
             this.socket.onmessage = (event) => {
+                const startTime = performance.now();
+                
                 // Gérer les pongs du heartbeat
                 if (event.data === 'pong') {
                     this.lastPongReceived = Date.now();
+                    globalMetrics.recordTiming('websocket.heartbeat.rtt_ms', performance.now() - startTime);
                     return;
                 }
+                
+                // Métriques
+                this.messagesReceived++;
+                const messageSize = typeof event.data === 'string' ? event.data.length : 0;
+                this.bytesReceived += messageSize;
+                globalMetrics.incrementCounter('websocket.messages_received');
+                globalMetrics.incrementCounter('websocket.bytes_received', messageSize);
                 
                 if (this.messageHandler) {
                     try {
                         const data = JSON.parse(event.data as string);
+                        const parseTime = performance.now() - startTime;
+                        globalMetrics.recordTiming('websocket.message.parse_time_ms', parseTime);
                         this.messageHandler(data);
+                        globalMetrics.recordTiming('websocket.message.process_time_ms', performance.now() - startTime);
                     } catch (e) {
                         console.error('[WebSocketTransport] ❌ Failed to parse message:', e);
+                        globalMetrics.incrementCounter('websocket.parse_errors');
                     }
                 }
             };
@@ -123,12 +148,21 @@ export class WebSocketTransport implements NetworkTransport {
                 const reason = event.reason || 'Unknown reason';
                 console.log(`[WebSocketTransport] 🔌 Disconnected (clean: ${wasClean}, reason: ${reason})`);
                 
+                // Métriques
+                globalMetrics.incrementCounter('websocket.disconnections', 1, {
+                    clean: wasClean.toString(),
+                    reason: reason
+                });
+                globalMetrics.recordGauge('websocket.state', 0); // 0 = DISCONNECTED
+                
                 this.state = ConnectionState.DISCONNECTED;
                 this.scheduleReconnect();
             };
 
             this.socket.onerror = (err) => {
                 console.error('[WebSocketTransport] ❌ WebSocket error:', err);
+                // Métriques
+                globalMetrics.incrementCounter('websocket.errors');
                 // L'erreur sera suivie d'un onclose, on gère la reconnexion là-bas
             };
         } catch (error) {
@@ -148,6 +182,8 @@ export class WebSocketTransport implements NetworkTransport {
                 `[WebSocketTransport] 🔴 Circuit breaker OPEN - Max reconnect attempts (${this.maxReconnectAttempts}) reached`
             );
             this.state = ConnectionState.CIRCUIT_OPEN;
+            globalMetrics.incrementCounter('websocket.circuit_breaker_open');
+            globalMetrics.recordGauge('websocket.state', -1); // -1 = CIRCUIT_OPEN
             return;
         }
 
@@ -208,11 +244,24 @@ export class WebSocketTransport implements NetworkTransport {
     }
 
     public send(message: KenshoMessage): void {
+        const startTime = performance.now();
+        
         if (this.socket?.readyState === WebSocket.OPEN) {
             try {
-                this.socket.send(JSON.stringify(message));
+                const messageStr = JSON.stringify(message);
+                const messageSize = messageStr.length;
+                
+                this.socket.send(messageStr);
+                
+                // Métriques
+                this.messagesSent++;
+                this.bytesSent += messageSize;
+                globalMetrics.incrementCounter('websocket.messages_sent');
+                globalMetrics.incrementCounter('websocket.bytes_sent', messageSize);
+                globalMetrics.recordTiming('websocket.message.send_time_ms', performance.now() - startTime);
             } catch (e) {
                 console.error('[WebSocketTransport] ❌ Failed to send message:', e);
+                globalMetrics.incrementCounter('websocket.send_errors');
                 this.queueMessage(message);
             }
         } else {
@@ -225,8 +274,10 @@ export class WebSocketTransport implements NetworkTransport {
         if (this.messageQueue.length >= this.maxQueueSize) {
             console.warn('[WebSocketTransport] ⚠️ Message queue full, dropping oldest message');
             this.messageQueue.shift();
+            globalMetrics.incrementCounter('websocket.messages_dropped');
         }
         this.messageQueue.push(message);
+        globalMetrics.recordGauge('websocket.queue_size', this.messageQueue.length);
         console.log(`[WebSocketTransport] 📦 Message queued (queue size: ${this.messageQueue.length})`);
     }
 
@@ -245,13 +296,25 @@ export class WebSocketTransport implements NetworkTransport {
      * Retourne des statistiques pour l'observabilité
      */
     public getStats() {
+        const now = Date.now();
+        const timeSinceLastPong = now - this.lastPongReceived;
+        
         return {
             state: this.state,
             reconnectAttempts: this.reconnectAttempts,
             queueSize: this.messageQueue.length,
             lastPongReceived: new Date(this.lastPongReceived).toISOString(),
+            timeSinceLastPong: timeSinceLastPong,
             isHealthy: this.state === ConnectionState.CONNECTED && 
-                      (Date.now() - this.lastPongReceived) < this.heartbeatInterval * 2
+                      timeSinceLastPong < this.heartbeatInterval * 2,
+            messagesSent: this.messagesSent,
+            messagesReceived: this.messagesReceived,
+            bytesSent: this.bytesSent,
+            bytesReceived: this.bytesReceived,
+            throughput: {
+                messagesPerSecond: this.messagesReceived / 60, // Approximation sur 1 minute
+                bytesPerSecond: this.bytesReceived / 60
+            }
         };
     }
 
