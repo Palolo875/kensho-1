@@ -52,9 +52,15 @@ describe('MetricsCollector', () => {
 
             const stats = collector.getStats('test.percentile');
             expect(stats).not.toBeNull();
-            expect(stats?.p50).toBeCloseTo(50, 1);
-            expect(stats?.p95).toBeCloseTo(95, 1);
-            expect(stats?.p99).toBeCloseTo(99, 1);
+            
+            // For 100 values [1..100] using linear interpolation:
+            // index = (p/100) * (n-1)
+            // p50: index=49.5 → 50*(1-0.5) + 51*0.5 = 50.5
+            // p95: index=94.05 → 95*(1-0.05) + 96*0.05 = 95.05
+            // p99: index=98.01 → 99*(1-0.01) + 100*0.01 = 99.01
+            expect(stats?.p50).toBeCloseTo(50.5, 2); // ±0.005
+            expect(stats?.p95).toBeCloseTo(95.05, 2); // ±0.005
+            expect(stats?.p99).toBeCloseTo(99.01, 2); // ±0.005
         });
 
         it('should return null for non-existent timing', () => {

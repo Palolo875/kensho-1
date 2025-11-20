@@ -49,12 +49,36 @@ describe('PerformanceMonitor', () => {
         it('should allow restarting', () => {
             const monitor = new PerformanceMonitor('test.restart');
             
+            // Wait a measurable amount before checkpoint
+            const start = performance.now();
+            while (performance.now() - start < 10) {
+                // Wait ~10ms to ensure measurable duration
+            }
+            
             const duration1 = monitor.checkpoint('first');
+            expect(duration1).toBeGreaterThan(5); // Should be ~10ms+
+            
+            // Restart timer - this should reset the internal startTime
             monitor.restart();
+            
+            // Record a new checkpoint immediately after restart
+            const checkpointAfterRestart = monitor.checkpoint('after_restart');
+            
+            // Verify restart actually reset the timer
+            expect(checkpointAfterRestart).toBeLessThan(5); // Should be very small (just restarted)
+            expect(checkpointAfterRestart).toBeLessThan(duration1); // Must be smaller than before restart
+            
+            // End monitoring
             const duration2 = monitor.end();
             
-            // After restart, duration should be small
-            expect(duration2).toBeLessThan(duration1);
+            // Duration2 should also be small since we just restarted
+            expect(duration2).toBeLessThan(duration1); // Must be smaller after restart
+            expect(duration2).toBeGreaterThanOrEqual(0); // But still valid
+            
+            // Verify metrics were recorded for all operations
+            expect(globalMetrics.getStats('test.restart_first_ms')).not.toBeNull();
+            expect(globalMetrics.getStats('test.restart_after_restart_ms')).not.toBeNull();
+            expect(globalMetrics.getStats('test.restart_duration_ms')).not.toBeNull();
         });
     });
 

@@ -85,14 +85,12 @@ export async function monitorAsync<T>(
     const monitor = new PerformanceMonitor(operationName, tags);
     try {
         const result = await fn();
-        const duration = monitor.end();
+        monitor.end();
         globalMetrics.incrementCounter(`${operationName}_success`);
-        console.log(`[PerformanceMonitor] ✅ ${operationName} completed in ${duration.toFixed(2)}ms`);
         return result;
     } catch (error) {
-        const duration = monitor.end();
+        monitor.end();
         globalMetrics.incrementCounter(`${operationName}_error`);
-        console.error(`[PerformanceMonitor] ❌ ${operationName} failed after ${duration.toFixed(2)}ms:`, error);
         throw error;
     }
 }
@@ -108,14 +106,12 @@ export function monitorSync<T>(
     const monitor = new PerformanceMonitor(operationName, tags);
     try {
         const result = fn();
-        const duration = monitor.end();
+        monitor.end();
         globalMetrics.incrementCounter(`${operationName}_success`);
-        console.log(`[PerformanceMonitor] ✅ ${operationName} completed in ${duration.toFixed(2)}ms`);
         return result;
     } catch (error) {
-        const duration = monitor.end();
+        monitor.end();
         globalMetrics.incrementCounter(`${operationName}_error`);
-        console.error(`[PerformanceMonitor] ❌ ${operationName} failed after ${duration.toFixed(2)}ms:`, error);
         throw error;
     }
 }
