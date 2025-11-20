@@ -57,16 +57,47 @@
             log("--- Démarrage du Test de Faisabilité web-llm ---", 'success');
             log("");
 
+            // Capturer l'état initial de la mémoire si disponible
+            let initialMemory = null;
             try {
-                // Vérifier le support WebGPU
+                if (performance.memory) {
+                    initialMemory = {
+                        usedJSHeapSize: performance.memory.usedJSHeapSize,
+                        totalJSHeapSize: performance.memory.totalJSHeapSize,
+                        jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
+                    };
+                    log(`[MÉMOIRE INITIALE] Heap utilisé: ${(initialMemory.usedJSHeapSize / 1024 / 1024).toFixed(2)} MB`, 'info');
+                }
+            } catch (e) {
+                // performance.memory n'est pas disponible dans ce navigateur
+                log(`[INFO] Monitoring de mémoire non disponible dans ce navigateur`, 'info');
+            }
+            log("");
+
+            try {
+                // Vérifier le support WebGPU avec gestion d'erreurs détaillée
                 if (!navigator.gpu) {
                     throw new Error("❌ WebGPU n'est pas supporté par ce navigateur. Veuillez utiliser Chrome/Edge 113+ ou Firefox Nightly.");
                 }
-                log("✓ WebGPU est disponible", 'success');
+                
+                // Tester l'accès à l'adaptateur GPU
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (!adapter) {
+                        throw new Error("❌ Aucun adaptateur GPU n'a pu être obtenu. Votre matériel pourrait ne pas supporter WebGPU.");
+                    }
+                    log("✓ WebGPU est disponible et un adaptateur GPU a été trouvé", 'success');
+                    
+                    // Logger les informations de l'adaptateur
+                    const adapterInfo = await adapter.requestAdapterInfo();
+                    log(`  -> GPU: ${adapterInfo.description || 'Inconnu'}`, 'info');
+                } catch (gpuError) {
+                    throw new Error(`❌ Erreur lors de l'initialisation WebGPU: ${gpuError.message}. Vérifiez que votre navigateur et votre matériel supportent WebGPU.`);
+                }
                 log("");
 
                 // --- Étape 1: Création du Moteur ---
-                log(`[1/3] Création du moteur MLC avec le modèle : ${MODEL_ID}`, 'info');
+                log(`[1/4] Création du moteur MLC avec le modèle : ${MODEL_ID}`, 'info');
                 const startTime = performance.now();
                 
                 const engine = await webllm.CreateMLCEngine(
@@ -80,10 +111,21 @@
                 
                 const loadDuration = ((performance.now() - startTime) / 1000).toFixed(2);
                 log(`[PASS] Moteur chargé et initialisé en ${loadDuration} secondes.`, 'success');
+                
+                // Mesurer la mémoire après chargement si disponible
+                if (initialMemory) {
+                    try {
+                        const memoryAfterLoad = performance.memory.usedJSHeapSize;
+                        const memoryIncrease = (memoryAfterLoad - initialMemory.usedJSHeapSize) / 1024 / 1024;
+                        log(`  -> Mémoire utilisée après chargement: +${memoryIncrease.toFixed(2)} MB`, 'info');
+                    } catch (e) {
+                        // Ignore si performance.memory n'est plus disponible
+                    }
+                }
                 log("");
 
                 // --- Étape 2: Exécution d'une Inférence Simple ---
-                log("[2/3] Exécution d'une inférence de chat simple...", 'info');
+                log("[2/4] Exécution d'une inférence de chat simple...", 'info');
                 const prompt = "Explique la relativité générale en une seule phrase simple.";
                 log(`  > Prompt: "${prompt}"`, 'info');
 
@@ -94,26 +136,79 @@
                 const inferenceDuration = ((performance.now() - inferenceStartTime) / 1000).toFixed(2);
                 
                 log(`[PASS] Inférence terminée en ${inferenceDuration} secondes.`, 'success');
+                
+                // Mesurer la mémoire après inférence si disponible
+                if (initialMemory) {
+                    try {
+                        const memoryAfterInference = performance.memory.usedJSHeapSize;
+                        const currentUsage = (memoryAfterInference / 1024 / 1024).toFixed(2);
+                        log(`  -> Mémoire totale utilisée: ${currentUsage} MB`, 'info');
+                    } catch (e) {
+                        // Ignore si performance.memory n'est plus disponible
+                    }
+                }
                 log("");
                 
                 // --- Étape 3: Vérification de la Réponse ---
-                log("[3/3] Vérification de la réponse...", 'info');
+                log("[3/4] Vérification de la réponse...", 'info');
                 const reply = response.choices[0]?.message?.content;
 
-                if (reply && reply.trim().length > 0) {
-                    log(`  < Réponse reçue: "${reply.trim()}"`, 'info');
-                    log("");
-                    log("[CONCLUSION] ✅ Le test de faisabilité web-llm est un SUCCÈS !", 'success');
-                } else {
+                if (!reply || reply.trim().length === 0) {
                     throw new Error("La réponse du modèle est vide ou invalide.");
                 }
+                
+                log(`  < Réponse reçue: "${reply.trim()}"`, 'info');
+                log("");
+                
+                // --- Étape 4: Validation de la Qualité de la Réponse ---
+                log("[4/4] Validation de la qualité de la réponse...", 'info');
+                
+                // Vérifier la présence de mots-clés pertinents pour la relativité générale
+                const keywords = ['gravit', 'espace', 'temps', 'masse', 'courb', 'einstein', 'relativi'];
+                const lowerReply = reply.toLowerCase();
+                const foundKeywords = keywords.filter(kw => lowerReply.includes(kw));
+                
+                if (foundKeywords.length > 0) {
+                    log(`  ✓ Mots-clés pertinents trouvés: ${foundKeywords.join(', ')}`, 'success');
+                    log(`  ✓ La réponse semble cohérente avec le sujet demandé`, 'success');
+                } else {
+                    log(`  ⚠ Aucun mot-clé pertinent trouvé, mais la réponse est générée`, 'warn');
+                }
+                
+                // Vérifier la longueur de la réponse (une phrase devrait être entre 10 et 200 caractères environ)
+                if (reply.trim().length > 10 && reply.trim().length < 500) {
+                    log(`  ✓ Longueur de réponse appropriée: ${reply.trim().length} caractères`, 'success');
+                } else if (reply.trim().length < 10) {
+                    log(`  ⚠ Réponse très courte: ${reply.trim().length} caractères`, 'warn');
+                } else {
+                    log(`  ⚠ Réponse longue: ${reply.trim().length} caractères`, 'warn');
+                }
+                log("");
+                
+                log("[CONCLUSION] ✅ Le test de faisabilité web-llm est un SUCCÈS !", 'success');
+                log("Le système peut gérer l'inférence on-device sans backend.", 'success');
 
             } catch (error) {
                 log("");
                 log(`[CONCLUSION] ❌ Le test de faisabilité web-llm a ÉCHOUÉ.`, 'error');
                 log(`Erreur: ${error.message}`, 'error');
+                
+                // Classifier les types d'erreurs pour aider au diagnostic
+                if (error.message.includes('WebGPU')) {
+                    log("Type d'erreur: Support WebGPU", 'error');
+                    log("Solution: Utilisez Chrome/Edge 113+ ou activez WebGPU dans les flags du navigateur", 'error');
+                } else if (error.message.includes('GPU') || error.message.includes('adapter')) {
+                    log("Type d'erreur: Matériel GPU", 'error');
+                    log("Solution: Vérifiez que votre carte graphique supporte WebGPU", 'error');
+                } else if (error.message.includes('réseau') || error.message.includes('fetch')) {
+                    log("Type d'erreur: Réseau/Chargement du modèle", 'error');
+                    log("Solution: Vérifiez votre connexion internet", 'error');
+                } else {
+                    log("Type d'erreur: Autre", 'error');
+                }
+                
                 if (error.stack) {
-                    log(`Stack: ${error.stack}`, 'error');
+                    log(`Stack trace: ${error.stack}`, 'error');
                 }
             }
         }

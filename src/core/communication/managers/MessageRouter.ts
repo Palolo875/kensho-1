@@ -11,6 +11,7 @@ export interface MessageHandlers {
     onStreamChunk?: MessageHandler;
     onStreamEnd?: MessageHandler;
     onStreamError?: MessageHandler;
+    onStreamCancel?: MessageHandler;
     onBroadcast?: MessageHandler;
     onUnknown?: MessageHandler;
 }
@@ -98,6 +99,8 @@ export class MessageRouter {
                 return this.handlers.onStreamEnd;
             case 'stream_error':
                 return this.handlers.onStreamError;
+            case 'stream_cancel':
+                return this.handlers.onStreamCancel;
             case 'broadcast':
                 return this.handlers.onBroadcast;
             default:
@@ -132,6 +135,7 @@ export class MessageRouter {
                 streamChunk: !!this.handlers.onStreamChunk,
                 streamEnd: !!this.handlers.onStreamEnd,
                 streamError: !!this.handlers.onStreamError,
+                streamCancel: !!this.handlers.onStreamCancel,
                 broadcast: !!this.handlers.onBroadcast,
                 unknown: !!this.handlers.onUnknown
             },

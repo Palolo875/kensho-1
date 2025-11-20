@@ -22,7 +22,8 @@ export class AgentRuntime {
     public readonly agentName: WorkerName;
     private readonly messageBus: MessageBus;
     private methods = new Map<string, RequestHandler>();
-    private streamRequestHandlers = new Map<string, (payload: unknown, stream: AgentStreamEmitter) => void>();
+    private streamRequestHandlers = new Map<string, (payload: unknown, stream: AgentStreamEmitter<unknown>) => void>();
+    private activeStreamEmitters = new Map<string, AgentStreamEmitter<unknown>>();
     private readonly guardian: OrionGuardian;
     private logBuffer: LogEntry[] = [];
     private flushLogsInterval: NodeJS.Timeout;
@@ -35,6 +36,13 @@ export class AgentRuntime {
         this.guardian = new OrionGuardian(name, this.messageBus);
 
         this.messageBus.setRequestHandler(this.handleRequest.bind(this));
+
+        // Écouter les messages de cancel de stream
+        this.messageBus.subscribeToSystemMessages((msg) => {
+            if (msg.type === 'stream_cancel' && msg.streamId) {
+                this.handleStreamCancellation(msg.streamId, msg.payload as string || 'Stream cancelled by remote');
+            }
+        });
 
         // Annoncer son existence (déplacé dans le Guardian)
         this.guardian.start();
@@ -79,44 +87,127 @@ export class AgentRuntime {
     private async handleRequest(payload: unknown): Promise<unknown> {
         // Validation basique du payload
         if (!payload || typeof payload !== 'object') {
-            throw new Error('Invalid payload: must be an object');
+            const error = new Error('Invalid payload: must be an object');
+            (error as any).code = 'INVALID_PAYLOAD';
+            throw error;
         }
 
         const request = payload as { method: string, args: unknown[], streamId?: string };
 
-        if (!request.method) {
-            throw new Error('Invalid payload: missing method');
+        // Validation de la méthode
+        if (!request.method || typeof request.method !== 'string') {
+            const error = new Error('Invalid payload: missing or invalid method');
+            (error as any).code = 'INVALID_METHOD';
+            throw error;
         }
 
         // Si c'est une requête de stream, on la route vers le bon handler de stream
         if (request.streamId) {
-            const streamHandler = this.streamRequestHandlers.get(request.method);
-            if (streamHandler) {
-                const streamEmitter = new AgentStreamEmitter(request.streamId, this.messageBus, this.agentName);
-                streamHandler(request, streamEmitter);
-                return; // Les streams n'ont pas de réponse de requête directe
+            // Validation supplémentaire pour les streams
+            if (typeof request.streamId !== 'string' || request.streamId.length === 0) {
+                const error = new Error('Invalid payload: streamId must be a non-empty string');
+                (error as any).code = 'INVALID_STREAM_ID';
+                throw error;
             }
-            throw new Error(`Stream method '${request.method}' not found on agent '${this.agentName}'`);
+
+            const streamHandler = this.streamRequestHandlers.get(request.method);
+            if (!streamHandler) {
+                const error = new Error(`Stream method '${request.method}' not found on agent '${this.agentName}'`);
+                (error as any).code = 'METHOD_NOT_FOUND';
+                throw error;
+            }
+
+            const streamEmitter = new AgentStreamEmitter(request.streamId, this.messageBus, this.agentName);
+            
+            // Tracker l'emitter actif pour pouvoir le cancel si nécessaire
+            this.activeStreamEmitters.set(request.streamId, streamEmitter);
+            
+            // Nettoyer quand le stream se termine
+            const cleanup = () => {
+                this.activeStreamEmitters.delete(request.streamId!);
+            };
+            
+            // Wrapper l'emitter pour nettoyer automatiquement
+            const originalEnd = streamEmitter.end.bind(streamEmitter);
+            const originalError = streamEmitter.error.bind(streamEmitter);
+            const originalAbort = streamEmitter.abort.bind(streamEmitter);
+            
+            streamEmitter.end = (finalPayload?: unknown) => {
+                originalEnd(finalPayload);
+                cleanup();
+            };
+            
+            streamEmitter.error = (error: Error) => {
+                originalError(error);
+                cleanup();
+            };
+            
+            streamEmitter.abort = (reason?: string) => {
+                originalAbort(reason);
+                cleanup();
+            };
+            
+            streamHandler(request, streamEmitter);
+            return; // Les streams n'ont pas de réponse de requête directe
         }
 
+        // Handler pour requête standard
         const handler = this.methods.get(request.method);
-        if (handler) {
-            // Appeler la méthode enregistrée avec les arguments fournis
-            // Note: on passe args tel quel, le handler doit savoir quoi en faire
-            return await handler(request.args);
+        if (!handler) {
+            const error = new Error(`Method '${request.method}' not found on agent '${this.agentName}'`);
+            (error as any).code = 'METHOD_NOT_FOUND';
+            throw error;
         }
-        throw new Error(`Method '${request.method}' not found on agent '${this.agentName}'`);
+
+        // Appeler la méthode enregistrée avec les arguments fournis
+        return await handler(request.args);
     }
 
-    public registerStreamMethod(name: string, handler: (payload: unknown, stream: AgentStreamEmitter) => void): void {
+    /**
+     * Enregistre une méthode qui peut émettre des données en streaming.
+     * @param name - Nom de la méthode
+     * @param handler - Fonction qui traite la requête et utilise le stream emitter
+     * 
+     * Note: Les erreurs non catchées dans les handlers async seront automatiquement
+     * envoyées au stream via emitter.error(), mais le handler doit appeler
+     * emitter.end() ou emitter.error() explicitement pour terminer le stream.
+     */
+    public registerStreamMethod<TChunk = unknown>(
+        name: string,
+        handler: (payload: unknown, stream: AgentStreamEmitter<TChunk>) => void | Promise<void>
+    ): void {
         if (this.streamRequestHandlers.has(name)) {
             console.warn(`[AgentRuntime] Stream method '${name}' on agent '${this.agentName}' is already registered and will be overwritten.`);
         }
-        this.streamRequestHandlers.set(name, handler);
+        // Wrapper pour gérer async/sync handlers
+        this.streamRequestHandlers.set(name, (payload, emitter) => {
+            try {
+                const result = handler(payload, emitter as AgentStreamEmitter<TChunk>);
+                if (result && typeof (result as any).catch === 'function') {
+                    // C'est une Promise, gérer les erreurs
+                    (result as Promise<void>).catch((error) => {
+                        // Si le stream est toujours actif, envoyer l'erreur et terminer
+                        if (emitter.active) {
+                            console.error(`[AgentRuntime] Uncaught error in async stream handler '${name}':`, error);
+                            emitter.error(error);
+                        }
+                    });
+                }
+            } catch (error) {
+                // Erreur synchrone - envoyer immédiatement
+                if (emitter.active) {
+                    console.error(`[AgentRuntime] Error in stream handler '${name}':`, error);
+                    emitter.error(error as Error);
+                }
+            }
+        });
     }
 
-    // API pour appeler un stream sur un autre agent
-    public callAgentStream<TChunk>(
+    /**
+     * Appelle une méthode de stream sur un autre agent.
+     * @returns L'ID du stream créé
+     */
+    public callAgentStream<TChunk = unknown>(
         targetAgent: WorkerName,
         method: string,
         args: unknown[],
@@ -127,6 +218,18 @@ export class AgentRuntime {
             { method, args },
             callbacks
         );
+    }
+
+    /**
+     * Annule un stream actif (côté consommateur).
+     * Ceci arrête la réception de nouveaux chunks et appelle le callback onError.
+     * 
+     * @param streamId - L'ID du stream à annuler
+     * @param reason - Raison optionnelle de l'annulation
+     * @returns true si le stream a été annulé, false s'il n'existait pas
+     */
+    public cancelStream(streamId: string, reason?: string): boolean {
+        return this.messageBus.cancelStream(streamId, reason);
     }
 
     public registerMethod(name: string, handler: RequestHandler): void {
@@ -188,9 +291,31 @@ export class AgentRuntime {
         return this.guardian.workerRegistry.getActiveWorkers();
     }
 
+    /**
+     * Gère l'annulation d'un stream par le côté distant.
+     */
+    private handleStreamCancellation(streamId: string, reason: string): void {
+        const emitter = this.activeStreamEmitters.get(streamId);
+        if (emitter && emitter.active) {
+            console.log(`[AgentRuntime] Stream ${streamId} cancelled by remote: ${reason}`);
+            // Marquer l'emitter comme inactif pour empêcher d'autres émissions
+            (emitter as any).isActive = false;
+            this.activeStreamEmitters.delete(streamId);
+        }
+    }
+
     public dispose(): void {
         this.flushLogs(); // S'assurer que tous les logs sont envoyés avant de mourir
         clearInterval(this.flushLogsInterval);
+        
+        // Abortir tous les streams actifs
+        this.activeStreamEmitters.forEach((emitter, streamId) => {
+            if (emitter.active) {
+                emitter.abort('Agent disposing');
+            }
+        });
+        this.activeStreamEmitters.clear();
+        
         this.messageBus.dispose();
         this.guardian.dispose();
     }
@@ -199,23 +324,102 @@ export class AgentRuntime {
 /**
  * NOUVELLE CLASSE HELPER
  * Fournit une API simple pour un agent pour émettre des données sur un stream.
+ * 
+ * @example
+ * // Dans un stream handler
+ * registerStreamMethod('generateText', (payload, emitter) => {
+ *   try {
+ *     for (const chunk of generateTokens()) {
+ *       emitter.chunk(chunk);
+ *     }
+ *     emitter.end({ tokensGenerated: 100 });
+ *   } catch (error) {
+ *     emitter.error(error);
+ *   }
+ * });
  */
-export class AgentStreamEmitter {
+export class AgentStreamEmitter<TChunk = unknown> {
+    private isActive = true;
+    private chunkCount = 0;
+
     constructor(
         private readonly streamId: string,
         private readonly messageBus: MessageBus,
         private readonly selfName: WorkerName
     ) { }
 
-    public chunk(data: unknown): void {
+    /**
+     * Envoie un chunk de données au stream.
+     * @throws Error si le stream a été terminé ou annulé
+     */
+    public chunk(data: TChunk): void {
+        if (!this.isActive) {
+            throw new Error(`Cannot send chunk: stream ${this.streamId} is no longer active`);
+        }
+        this.chunkCount++;
         this.messageBus.sendStreamChunk(this.streamId, data, this.selfName);
     }
 
+    /**
+     * Termine le stream avec un payload final optionnel.
+     */
     public end(finalPayload?: unknown): void {
+        if (!this.isActive) {
+            console.warn(`Stream ${this.streamId} already ended or aborted`);
+            return;
+        }
+        this.isActive = false;
         this.messageBus.sendStreamEnd(this.streamId, finalPayload, this.selfName);
     }
 
+    /**
+     * Signale une erreur et termine le stream.
+     */
     public error(error: Error): void {
+        if (!this.isActive) {
+            console.warn(`Stream ${this.streamId} already ended or aborted`);
+            return;
+        }
+        this.isActive = false;
         this.messageBus.sendStreamError(this.streamId, error, this.selfName);
+    }
+
+    /**
+     * Annule le stream immédiatement.
+     * Envoie une erreur STREAM_ABORTED au consommateur et termine le stream localement.
+     * 
+     * Note: Ceci termine le stream du côté producteur. Le consommateur recevra
+     * un message stream_error avec le code STREAM_ABORTED.
+     */
+    public abort(reason?: string): void {
+        if (!this.isActive) {
+            console.warn(`Stream ${this.streamId} already ended or aborted`);
+            return;
+        }
+        this.isActive = false;
+        const error = new Error(reason || 'Stream aborted by producer');
+        (error as any).code = 'STREAM_ABORTED';
+        this.messageBus.sendStreamError(this.streamId, error, this.selfName);
+    }
+
+    /**
+     * Retourne si le stream est toujours actif.
+     */
+    public get active(): boolean {
+        return this.isActive;
+    }
+
+    /**
+     * Retourne le nombre de chunks envoyés.
+     */
+    public get chunksEmitted(): number {
+        return this.chunkCount;
+    }
+
+    /**
+     * Retourne l'ID du stream.
+     */
+    public get id(): string {
+        return this.streamId;
     }
 }

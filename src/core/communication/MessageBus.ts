@@ -78,6 +78,12 @@ export class MessageBus {
             onStreamChunk: (msg) => { this.streamManager.handleChunk(msg); },
             onStreamEnd: (msg) => { this.streamManager.handleEnd(msg); },
             onStreamError: (msg) => { this.streamManager.handleError(msg); },
+            onStreamCancel: (msg) => { 
+                // Gérer côté consommateur
+                this.streamManager.handleCancel(msg); 
+                // Notifier les subscribers système (pour les producteurs)
+                this.notifySystemSubscribers(msg);
+            },
             onBroadcast: (msg) => this.handleBroadcast(msg),
             onUnknown: (msg) => {
                 // System messages might fall here if they don't fit standard types, 
@@ -174,7 +180,13 @@ export class MessageBus {
     }
 
     private handleBroadcast(message: KenshoMessage): void {
-        // Notifier les abonnés aux messages système
+        this.notifySystemSubscribers(message);
+    }
+
+    /**
+     * Notifie les abonnés aux messages système.
+     */
+    private notifySystemSubscribers(message: KenshoMessage): void {
         this.systemMessageSubscribers.forEach(callback => {
             try {
                 callback(message);
@@ -326,6 +338,44 @@ export class MessageBus {
             }
         };
         this.sendMessage(message);
+    }
+
+    /**
+     * Envoie un message de cancel de stream au producteur ou consommateur distant.
+     */
+    public sendStreamCancel(streamId: string, reason: string, target: WorkerName): void {
+        const message: KenshoMessage = {
+            messageId: this.generateMessageId(),
+            traceId: this.currentTraceId,
+            sourceWorker: this.workerName,
+            targetWorker: target,
+            type: 'stream_cancel',
+            streamId,
+            payload: reason
+        };
+        this.sendMessage(message);
+    }
+
+    /**
+     * Annule un stream du côté consommateur et notifie le producteur distant.
+     * Ceci envoie un message stream_cancel au producteur pour qu'il arrête d'émettre.
+     * 
+     * @param streamId - L'ID du stream à annuler
+     * @param reason - Raison optionnelle de l'annulation
+     * @param targetWorker - Le worker producteur à notifier (optionnel, sera détecté depuis le stream)
+     * @returns true si le stream a été annulé localement, false s'il n'existait pas
+     */
+    public cancelStream(streamId: string, reason?: string, targetWorker?: WorkerName): boolean {
+        const stream = (this.streamManager as any).activeStreams?.get(streamId);
+        const target = targetWorker || stream?.target;
+        
+        // Envoyer le message de cancel au producteur distant si on a la cible
+        if (target) {
+            this.sendStreamCancel(streamId, reason || 'Stream cancelled by consumer', target);
+        }
+        
+        // Nettoyer localement
+        return this.streamManager.cancelStream(streamId, reason);
     }
 
     public setRequestHandler(handler: RequestHandler): void {

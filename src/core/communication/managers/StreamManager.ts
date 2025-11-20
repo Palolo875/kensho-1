@@ -6,6 +6,7 @@ export interface StreamCallbacks<TChunk = unknown> {
     onChunk: (chunk: TChunk) => void;
     onEnd: (finalPayload?: unknown) => void;
     onError: (error: Error) => void;
+    timeout?: number; // Timeout en millisecondes pour ce stream spécifique
 }
 
 interface ActiveStream<TChunk = unknown> {
@@ -13,6 +14,8 @@ interface ActiveStream<TChunk = unknown> {
     lastActivity: number;
     streamId: string;
     target: WorkerName;
+    timeout: number; // Timeout pour ce stream (par défaut ou personnalisé)
+    createdAt: number; // Timestamp de création pour tracking
 }
 
 /**
@@ -44,12 +47,18 @@ export class StreamManager {
         callbacks: StreamCallbacks<TChunk>
     ): string {
         const streamId = `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const now = Date.now();
+        
+        // Utiliser le timeout personnalisé du callback ou le timeout par défaut
+        const timeout = callbacks.timeout ?? StreamManager.STREAM_TIMEOUT_MS;
 
         this.activeStreams.set(streamId, {
             callbacks: callbacks as StreamCallbacks,
-            lastActivity: Date.now(),
+            lastActivity: now,
+            createdAt: now,
             streamId,
-            target
+            target,
+            timeout
         });
 
         return streamId;
@@ -139,9 +148,11 @@ export class StreamManager {
     }
 
     /**
-     * Annule un stream manuellement.
+     * Annule un stream manuellement (côté consommateur).
+     * @param streamId - L'ID du stream à annuler
+     * @param reason - Raison optionnelle de l'annulation
      */
-    public cancelStream(streamId: string): boolean {
+    public cancelStream(streamId: string, reason?: string): boolean {
         const stream = this.activeStreams.get(streamId);
         if (!stream) {
             return false;
@@ -149,13 +160,28 @@ export class StreamManager {
 
         // Notifier l'erreur d'annulation
         try {
-            stream.callbacks.onError(new Error('Stream cancelled'));
+            const error = new Error(reason || 'Stream cancelled');
+            (error as any).code = 'STREAM_CANCELLED';
+            stream.callbacks.onError(error);
         } catch (error) {
             console.error(`[StreamManager] Error in onError callback:`, error);
         }
 
         this.activeStreams.delete(streamId);
         return true;
+    }
+
+    /**
+     * Gère un message de cancel de stream entrant (du producteur ou consommateur).
+     * Ceci nettoie le stream et appelle le callback onError.
+     */
+    public handleCancel(message: KenshoMessage): boolean {
+        if (!message.streamId) {
+            return false;
+        }
+
+        const reason = message.payload as string || 'Stream cancelled by remote';
+        return this.cancelStream(message.streamId, reason);
     }
 
     /**
@@ -167,11 +193,14 @@ export class StreamManager {
 
         this.activeStreams.forEach((stream, streamId) => {
             const inactiveDuration = now - stream.lastActivity;
-            if (inactiveDuration > StreamManager.STREAM_TIMEOUT_MS) {
-                console.log(`[StreamManager] Stream ${streamId} timed out after ${inactiveDuration}ms of inactivity`);
+            // Utiliser le timeout spécifique du stream au lieu du timeout global
+            if (inactiveDuration > stream.timeout) {
+                console.log(`[StreamManager] Stream ${streamId} timed out after ${inactiveDuration}ms of inactivity (timeout: ${stream.timeout}ms)`);
 
                 try {
-                    stream.callbacks.onError(new Error(`Stream timeout: no activity for ${inactiveDuration}ms`));
+                    const error = new Error(`Stream timeout: no activity for ${inactiveDuration}ms`);
+                    (error as any).code = 'STREAM_TIMEOUT';
+                    stream.callbacks.onError(error);
                 } catch (error) {
                     console.error(`[StreamManager] Error in onError callback:`, error);
                 }
@@ -204,12 +233,16 @@ export class StreamManager {
      * Retourne les statistiques pour l'observabilité.
      */
     public getStats() {
+        const now = Date.now();
         return {
             activeCount: this.activeStreams.size,
             activeStreams: Array.from(this.activeStreams.entries()).map(([streamId, stream]) => ({
                 streamId,
                 target: stream.target,
-                inactiveDuration: Date.now() - stream.lastActivity
+                inactiveDuration: now - stream.lastActivity,
+                totalDuration: now - stream.createdAt,
+                timeout: stream.timeout,
+                timeoutRemaining: Math.max(0, stream.timeout - (now - stream.lastActivity))
             }))
         };
     }

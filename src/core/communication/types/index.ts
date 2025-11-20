@@ -31,7 +31,7 @@ export interface KenshoMessage<T = unknown> {
   /** Le nom du worker destinataire. */
   readonly targetWorker: WorkerName;
   /** Le type de message, qui détermine comment il est traité. */
-  readonly type: 'request' | 'response' | 'broadcast' | 'stream_request' | 'stream_chunk' | 'stream_end' | 'stream_error';
+  readonly type: 'request' | 'response' | 'broadcast' | 'stream_request' | 'stream_chunk' | 'stream_end' | 'stream_error' | 'stream_cancel';
   /** La charge utile (payload) du message. */
   readonly payload: T;
   /** Pour les réponses, l'ID du message de la requête originale (correlation ID). */
