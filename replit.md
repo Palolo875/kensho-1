@@ -95,6 +95,31 @@ Distributed coordination layer providing:
   - Progress phases: checking_gpu, downloading, compiling, ready, error
   - Static `getSystemCapabilities()` for introspection
 
+### Chat Interface V1 (Sprint 2+)
+- **Zustand Store (useKenshoStore)**: Enhanced state management
+  - LocalStorage persistence for conversation history (max 100 messages)
+  - Comprehensive worker error tracking (WorkerError interface for LLM, OIE, Telemetry)
+  - Emoji-annotated logging for visibility (📤 send, 📥 chunk, ✅ complete, ❌ error, 🗑️ clear)
+  - Auto-save on every chunk received during streaming
+  - Methods: `init()`, `sendMessage()`, `clearMessages()`, `loadMessagesFromStorage()`, `clearWorkerErrors()`
+- **ChatInput Component**: User input with validation
+  - Enter key support for message submission (without Shift)
+  - 2000 character limit with visual counter (>80% threshold)
+  - Dynamic placeholder based on state (modelReady, isKenshoWriting)
+  - Disabled state management for better UX
+  - Toast notifications for character limit exceeded
+- **ChatView (Index.tsx)**: Message display with auto-scroll
+  - Automatic scroll-to-bottom during message streaming
+  - useRef + useEffect for smooth scrolling behavior
+  - "Kensho réfléchit..." indicator for empty responses
+  - Responsive layout with mobile support
+- **ModelLoadingView Component**: Enhanced loading UX
+  - Phase-specific icons (downloading, compiling, checking GPU, error)
+  - Minimizable interface (badge in bottom-right corner)
+  - Contextual hints for user education (caching, WebGPU benefits)
+  - Error recovery with refresh button
+  - Progress bar with percentage display
+
 ### Testing Infrastructure
 - **Vitest Configuration**: Unit tests for core components (MessageBus, OfflineQueue, OrionGuardian, Managers, Monitoring) with 61+ test cases
 - **Monitoring Tests**: 20 comprehensive tests for MetricsCollector and PerformanceMonitor
