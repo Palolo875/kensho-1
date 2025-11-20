@@ -68,6 +68,33 @@ Distributed coordination layer providing:
 - **Telemetry Agent**: Centralized log collection with batching (10 logs or 500ms flush)
 - **Observatory UI**: Real-time visualization of agent constellation, leader status, epoch tracking, and log streaming with severity-based coloring
 
+### AI Agent Orchestration (Sprint 2)
+- **OIEAgent (Orchestration Intelligence Engine)**: Central orchestrator for multi-agent AI system
+  - Receives user queries and plans task execution
+  - Dynamic routing to specialized agents (CodeAgent, VisionAgent, MainLLMAgent)
+  - Configuration-based agent availability (AVAILABLE_AGENTS set)
+  - Graceful fallback when agents unavailable
+  - Exposes `getAvailableAgents()` for introspection
+- **TaskPlanner**: Intelligent keyword-based routing system
+  - Multi-keyword detection with normalization (accents support)
+  - Prioritization: VisionAgent > CodeAgent > MainLLMAgent
+  - Confidence scoring and metadata (detected keywords)
+  - Configurable agent availability and defaults
+  - **19 unit tests covering routing, edge cases, configuration**
+- **MainLLMAgent**: WebGPU-accelerated LLM inference via web-llm
+  - TinyLlama-1.1B-Chat model for Sprint 2
+  - Streaming response generation with chunked delivery
+  - Configurable parameters: temperature, max_tokens, top_p
+  - Intelligent system prompts (multi-language support)
+  - Parameter validation and error handling
+  - Methods: `generateResponse`, `getSystemCapabilities`, `resetEngine`, `getModelStats`
+- **ModelLoader**: Robust model loading with resilience
+  - WebGPU availability check with CPU fallback
+  - Retry logic (3 attempts, configurable delay)
+  - Persistent storage request for model caching
+  - Progress phases: checking_gpu, downloading, compiling, ready, error
+  - Static `getSystemCapabilities()` for introspection
+
 ### Testing Infrastructure
 - **Vitest Configuration**: Unit tests for core components (MessageBus, OfflineQueue, OrionGuardian, Managers, Monitoring) with 61+ test cases
 - **Monitoring Tests**: 20 comprehensive tests for MetricsCollector and PerformanceMonitor
@@ -83,6 +110,13 @@ Distributed coordination layer providing:
   - Tests model loading and initialization (TinyLlama-1.1B)
   - Verifies inference capabilities with progress monitoring
   - Run with: `npm run test:poc:webllm`
+- **Sprint 2 E2E Test** (tests/browser/sprint2-e2e.html): Complete OIE + LLM integration test
+  - Tests full flow: UI → OIE → LLM → streaming response
+  - Worker monitoring (OIE, LLM status)
+  - Model loading progress visualization
+  - Parameter configuration UI (temperature, max_tokens)
+  - System logs and metadata display
+  - Run with: `npm run test:e2e:sprint2`
 
 ## External Dependencies
 
