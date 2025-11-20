@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Sidebar, { SidebarTrigger } from "@/components/Sidebar";
 import ChatInput from "@/components/ChatInput";
 import TimeBasedGreeting from "@/components/TimeBasedGreeting";
@@ -21,6 +21,7 @@ const Index = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [showObservatory, setShowObservatory] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { workers, leader, epoch, logs, isEnabled, startObservatory, killWorker } = useObservatory();
 
@@ -28,10 +29,18 @@ const Index = () => {
   const messages = useKenshoStore(state => state.messages);
   const clearMessages = useKenshoStore(state => state.clearMessages);
   const modelReady = useKenshoStore(state => state.modelProgress.phase === 'ready');
+  const isKenshoWriting = useKenshoStore(state => state.isKenshoWriting);
 
   useEffect(() => {
     init();
   }, [init]);
+
+  // Auto-scroll vers le bas quand les messages changent (streaming)
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, isKenshoWriting]);
 
   const handleOpenObservatory = () => {
     if (!isEnabled) {
@@ -96,10 +105,12 @@ const Index = () => {
                   <AIResponse
                     key={msg.id}
                     content={msg.text}
-                    thinking=""
+                    thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
                   />
                 )
               )}
+              {/* Élément invisible pour auto-scroll */}
+              <div ref={messagesEndRef} />
             </div>
           )}
         </div>

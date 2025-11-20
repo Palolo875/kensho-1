@@ -1,7 +1,7 @@
 import { Plus, Mic, Paperclip, FileText, Image as ImageIcon, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState, useRef, FormEvent } from "react";
+import { useState, useRef, FormEvent, KeyboardEvent } from "react";
 import {
   Popover,
   PopoverContent,
@@ -17,6 +17,8 @@ import { useKenshoStore } from "@/stores/useKenshoStore";
 interface ChatInputProps {
   showSuggestions?: boolean;
 }
+
+const MAX_MESSAGE_LENGTH = 2000;
 
 const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
   const isMobile = useIsMobile();
@@ -37,6 +39,30 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
     if (message.trim() && modelReady && !isKenshoWriting) {
       sendMessage(message);
       setMessage("");
+    }
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Soumettre avec Enter (sans Shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (message.trim() && modelReady && !isKenshoWriting) {
+        sendMessage(message);
+        setMessage("");
+      }
+    }
+  };
+
+  const handleMessageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    if (newValue.length <= MAX_MESSAGE_LENGTH) {
+      setMessage(newValue);
+    } else {
+      toast({
+        title: "Message trop long",
+        description: `Le message ne peut pas dépasser ${MAX_MESSAGE_LENGTH} caractères`,
+        variant: "destructive",
+      });
     }
   };
 
@@ -184,13 +210,24 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
                 />
               ) : (
                 <form onSubmit={handleSubmit} className="flex items-center gap-2 sm:gap-3 flex-1">
-                  <Input
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder={modelReady ? "Envoyer un message..." : "Chargement du modèle..."}
-                    disabled={!modelReady || isKenshoWriting}
-                    className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/70 font-light"
-                  />
+                  <div className="flex-1 relative">
+                    <Input
+                      value={message}
+                      onChange={handleMessageChange}
+                      onKeyDown={handleKeyDown}
+                      placeholder={modelReady ? (isKenshoWriting ? "Kensho écrit..." : "Envoyer un message...") : "Chargement du modèle..."}
+                      disabled={!modelReady || isKenshoWriting}
+                      className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/70 font-light pr-12"
+                    />
+                    {message.length > MAX_MESSAGE_LENGTH * 0.8 && (
+                      <span className={cn(
+                        "absolute right-2 top-1/2 -translate-y-1/2 text-xs",
+                        message.length >= MAX_MESSAGE_LENGTH ? "text-destructive" : "text-muted-foreground"
+                      )}>
+                        {message.length}/{MAX_MESSAGE_LENGTH}
+                      </span>
+                    )}
+                  </div>
 
                   {message ? (
                     <Button

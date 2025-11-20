@@ -11,16 +11,30 @@
  * - L'état de conversation (messages)
  * - L'état de chargement du modèle
  * - La communication avec les workers via MessageBus
+ * 
+ * Améliorations Sprint 2+:
+ * - Persistence localStorage pour l'historique des conversations
+ * - Gestion d'erreurs améliorée pour les workers
+ * - État d'erreur dédié pour meilleure UX
  */
 
 import { create } from 'zustand';
 import { MessageBus } from '../core/communication/MessageBus';
 import { ModelLoaderProgress } from '../core/models/ModelLoader';
 
+const STORAGE_KEY = 'kensho_conversation_history';
+const MAX_STORED_MESSAGES = 100;
+
 export interface Message {
     id: string;
     text: string;
     author: 'user' | 'kensho';
+    timestamp: number;
+}
+
+export interface WorkerError {
+    worker: 'llm' | 'oie' | 'telemetry';
+    message: string;
     timestamp: number;
 }
 
@@ -31,20 +45,54 @@ interface KenshoState {
     mainBus: MessageBus | null;
     isInitialized: boolean;
     isLoadingMinimized: boolean;
+    workerErrors: WorkerError[];
     
     init: () => void;
     sendMessage: (text: string) => void;
     clearMessages: () => void;
     setLoadingMinimized: (minimized: boolean) => void;
+    loadMessagesFromStorage: () => void;
+    clearWorkerErrors: () => void;
 }
 
+/**
+ * Charge l'historique des messages depuis localStorage
+ */
+const loadMessagesFromLocalStorage = (): Message[] => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            const messages = JSON.parse(stored);
+            console.log(`[KenshoStore] ${messages.length} messages chargés depuis localStorage`);
+            return messages;
+        }
+    } catch (error) {
+        console.error('[KenshoStore] Erreur lors du chargement des messages:', error);
+    }
+    return [];
+};
+
+/**
+ * Sauvegarde l'historique des messages dans localStorage
+ */
+const saveMessagesToLocalStorage = (messages: Message[]) => {
+    try {
+        // Limiter le nombre de messages stockés pour éviter d'excéder les quotas
+        const messagesToStore = messages.slice(-MAX_STORED_MESSAGES);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesToStore));
+    } catch (error) {
+        console.error('[KenshoStore] Erreur lors de la sauvegarde des messages:', error);
+    }
+};
+
 export const useKenshoStore = create<KenshoState>((set, get) => ({
-    messages: [],
+    messages: loadMessagesFromLocalStorage(),
     modelProgress: { phase: 'idle', progress: 0, text: 'Initialisation...' },
     isKenshoWriting: false,
     mainBus: null,
     isInitialized: false,
     isLoadingMinimized: false,
+    workerErrors: [],
 
     /**
      * Initialise le système Kensho
@@ -90,25 +138,37 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
 
             llmWorker.onerror = (error) => {
                 console.error('[KenshoStore] Erreur du LLM Worker:', error);
-                set({
+                const workerError: WorkerError = {
+                    worker: 'llm',
+                    message: 'Erreur lors du démarrage du worker LLM',
+                    timestamp: Date.now()
+                };
+                set(state => ({
                     modelProgress: {
                         phase: 'error',
                         progress: 0,
-                        text: 'Erreur lors du démarrage du worker LLM'
-                    }
-                });
+                        text: workerError.message
+                    },
+                    workerErrors: [...state.workerErrors, workerError]
+                }));
             };
 
             console.log('[KenshoStore] LLM Worker démarré');
         } catch (error) {
             console.error('[KenshoStore] Erreur lors du démarrage du LLM Worker:', error);
-            set({
+            const workerError: WorkerError = {
+                worker: 'llm',
+                message: error instanceof Error ? error.message : 'Impossible de démarrer le worker LLM',
+                timestamp: Date.now()
+            };
+            set(state => ({
                 modelProgress: {
                     phase: 'error',
                     progress: 0,
-                    text: 'Impossible de démarrer le worker LLM'
-                }
-            });
+                    text: workerError.message
+                },
+                workerErrors: [...state.workerErrors, workerError]
+            }));
         }
 
         // Démarrer l'OIE Worker
@@ -120,11 +180,27 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             
             oieWorker.onerror = (error) => {
                 console.error('[KenshoStore] Erreur du OIE Worker:', error);
+                const workerError: WorkerError = {
+                    worker: 'oie',
+                    message: 'Erreur du worker OIE - orchestration indisponible',
+                    timestamp: Date.now()
+                };
+                set(state => ({
+                    workerErrors: [...state.workerErrors, workerError]
+                }));
             };
 
             console.log('[KenshoStore] OIE Worker démarré');
         } catch (error) {
             console.error('[KenshoStore] Erreur lors du démarrage du OIE Worker:', error);
+            const workerError: WorkerError = {
+                worker: 'oie',
+                message: error instanceof Error ? error.message : 'Impossible de démarrer le worker OIE',
+                timestamp: Date.now()
+            };
+            set(state => ({
+                workerErrors: [...state.workerErrors, workerError]
+            }));
         }
 
         // Optionnel: Démarrer le Telemetry Worker pour les logs
@@ -136,6 +212,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             console.log('[KenshoStore] Telemetry Worker démarré');
         } catch (error) {
             console.warn('[KenshoStore] Telemetry Worker non disponible:', error);
+            // Telemetry n'est pas critique, on ne stocke pas l'erreur
         }
     },
 
@@ -179,13 +256,15 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             timestamp: Date.now() + 1
         };
 
-        // Ajouter les messages à l'état
+        // Ajouter les messages à l'état et sauvegarder
+        const newMessages = [...messages, userMessage, kenshoResponsePlaceholder];
         set({ 
-            messages: [...messages, userMessage, kenshoResponsePlaceholder],
+            messages: newMessages,
             isKenshoWriting: true 
         });
+        saveMessagesToLocalStorage(newMessages);
 
-        console.log('[KenshoStore] Envoi du message:', text.substring(0, 50) + '...');
+        console.log('[KenshoStore] 📤 Envoi du message:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
 
         // Lancer le stream vers l'OIE Agent
         // Le payload doit être au format { method, args } pour AgentRuntime
@@ -195,31 +274,41 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             {
                 onChunk: (chunk: any) => {
                     // Mettre à jour le dernier message de Kensho avec le nouveau texte
-                    set(state => ({
-                        messages: state.messages.map(msg => 
+                    console.log('[KenshoStore] 📥 Chunk reçu:', chunk.text?.substring(0, 30) + (chunk.text?.length > 30 ? '...' : ''));
+                    set(state => {
+                        const updatedMessages = state.messages.map(msg => 
                             msg.id === kenshoResponsePlaceholder.id 
                                 ? { ...msg, text: msg.text + (chunk.text || '') }
                                 : msg
-                        )
-                    }));
+                        );
+                        saveMessagesToLocalStorage(updatedMessages);
+                        return { messages: updatedMessages };
+                    });
                 },
                 onEnd: (finalPayload) => {
-                    console.log('[KenshoStore] Stream terminé:', finalPayload);
-                    set({ isKenshoWriting: false });
+                    console.log('[KenshoStore] ✅ Stream terminé:', finalPayload);
+                    set(state => {
+                        saveMessagesToLocalStorage(state.messages);
+                        return { isKenshoWriting: false };
+                    });
                 },
                 onError: (error) => {
-                    console.error('[KenshoStore] Erreur de stream:', error);
-                    set(state => ({
-                        messages: state.messages.map(msg => 
+                    console.error('[KenshoStore] ❌ Erreur de stream:', error);
+                    set(state => {
+                        const updatedMessages = state.messages.map(msg => 
                             msg.id === kenshoResponsePlaceholder.id 
                                 ? { 
                                     ...msg, 
                                     text: `Désolé, une erreur est survenue: ${error.message}` 
                                 }
                                 : msg
-                        ),
-                        isKenshoWriting: false
-                    }));
+                        );
+                        saveMessagesToLocalStorage(updatedMessages);
+                        return {
+                            messages: updatedMessages,
+                            isKenshoWriting: false
+                        };
+                    });
                 }
             }
         );
@@ -230,6 +319,8 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     clearMessages: () => {
         set({ messages: [] });
+        localStorage.removeItem(STORAGE_KEY);
+        console.log('[KenshoStore] 🗑️ Conversation effacée');
     },
 
     /**
@@ -237,5 +328,20 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     setLoadingMinimized: (minimized: boolean) => {
         set({ isLoadingMinimized: minimized });
+    },
+
+    /**
+     * Charge les messages depuis localStorage
+     */
+    loadMessagesFromStorage: () => {
+        const messages = loadMessagesFromLocalStorage();
+        set({ messages });
+    },
+
+    /**
+     * Efface les erreurs des workers
+     */
+    clearWorkerErrors: () => {
+        set({ workerErrors: [] });
     }
 }));
