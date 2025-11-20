@@ -1,7 +1,7 @@
 import { Plus, Mic, Paperclip, FileText, Image as ImageIcon, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState, useRef } from "react";
+import { useState, useRef, FormEvent } from "react";
 import {
   Popover,
   PopoverContent,
@@ -12,6 +12,7 @@ import VoiceRecorderInline from "./VoiceRecorderInline";
 import VoiceWaveformBar from "./VoiceWaveformBar";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useKenshoStore } from "@/stores/useKenshoStore";
 
 interface ChatInputProps {
   showSuggestions?: boolean;
@@ -26,6 +27,18 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  
+  const sendMessage = useKenshoStore(state => state.sendMessage);
+  const modelReady = useKenshoStore(state => state.modelProgress.phase === 'ready');
+  const isKenshoWriting = useKenshoStore(state => state.isKenshoWriting);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (message.trim() && modelReady && !isKenshoWriting) {
+      sendMessage(message);
+      setMessage("");
+    }
+  };
 
   const handleFileUpload = (type: "file" | "image") => {
     const inputRef = type === "file" ? fileInputRef : imageInputRef;
@@ -170,32 +183,37 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
                   }}
                 />
               ) : (
-                <>
+                <form onSubmit={handleSubmit} className="flex items-center gap-2 sm:gap-3 flex-1">
                   <Input
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Envoyer un message..."
+                    placeholder={modelReady ? "Envoyer un message..." : "Chargement du modèle..."}
+                    disabled={!modelReady || isKenshoWriting}
                     className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/70 font-light"
                   />
 
                   {message ? (
                     <Button
+                      type="submit"
                       size="icon"
-                      className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full shrink-0 bg-foreground text-background hover:bg-foreground/90 transition-all duration-200"
+                      disabled={!modelReady || isKenshoWriting}
+                      className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full shrink-0 bg-foreground text-background hover:bg-foreground/90 transition-all duration-200 disabled:opacity-50"
                     >
                       <Send className="h-5 w-5 sm:h-5.5 sm:w-5.5 md:h-6 md:w-6" />
                     </Button>
                   ) : (
                     <Button
+                      type="button"
                       variant="ghost"
                       size="icon"
                       onClick={() => { setSamples([]); setIsRecording(true); }}
-                      className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full hover:bg-accent/50 shrink-0 transition-colors"
+                      disabled={!modelReady}
+                      className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full hover:bg-accent/50 shrink-0 transition-colors disabled:opacity-50"
                     >
                       <Mic className="h-5 w-5 sm:h-5.5 sm:w-5.5 md:h-6 md:w-6" />
                     </Button>
                   )}
-                </>
+                </form>
               )}
             </div>
           </div>

@@ -165,12 +165,57 @@ export class AgentRuntime {
 
     /**
      * Enregistre une méthode qui peut émettre des données en streaming.
-     * @param name - Nom de la méthode
-     * @param handler - Fonction qui traite la requête et utilise le stream emitter
+     * 
+     * Les méthodes de streaming permettent à un agent d'envoyer des données
+     * progressivement au lieu d'attendre la fin du traitement. Ceci est essentiel
+     * pour les opérations longues comme la génération de texte par un LLM.
+     * 
+     * Le handler reçoit:
+     * 1. payload: Les données de la requête (typiquement { method, args })
+     * 2. stream: Un AgentStreamEmitter pour émettre les chunks
+     * 
+     * Responsabilités du handler:
+     * - Valider le payload
+     * - Émettre des chunks via stream.chunk(data)
+     * - TOUJOURS terminer le stream via stream.end() ou stream.error()
+     * - Gérer les erreurs correctement
+     * 
+     * @template TChunk - Type des données émises dans chaque chunk
+     * @param name - Nom unique de la méthode (ex: 'generateResponse')
+     * @param handler - Fonction asynchrone ou synchrone qui traite la requête
      * 
      * Note: Les erreurs non catchées dans les handlers async seront automatiquement
-     * envoyées au stream via emitter.error(), mais le handler doit appeler
-     * emitter.end() ou emitter.error() explicitement pour terminer le stream.
+     * envoyées au stream via emitter.error(), mais il est préférable de gérer
+     * les erreurs explicitement pour un meilleur contrôle.
+     * 
+     * @example
+     * ```typescript
+     * // Enregistrer une méthode de génération de texte
+     * runtime.registerStreamMethod(
+     *   'generateResponse',
+     *   async (payload: any, stream: AgentStreamEmitter) => {
+     *     const [prompt] = payload.args;
+     *     
+     *     try {
+     *       // Valider
+     *       if (!prompt) {
+     *         stream.error(new Error('Prompt requis'));
+     *         return;
+     *       }
+     *       
+     *       // Générer et émettre progressivement
+     *       for await (const chunk of llmEngine.generate(prompt)) {
+     *         stream.chunk({ text: chunk });
+     *       }
+     *       
+     *       // Terminer
+     *       stream.end({ totalChunks: 42 });
+     *     } catch (error) {
+     *       stream.error(error);
+     *     }
+     *   }
+     * );
+     * ```
      */
     public registerStreamMethod<TChunk = unknown>(
         name: string,
@@ -205,7 +250,45 @@ export class AgentRuntime {
 
     /**
      * Appelle une méthode de stream sur un autre agent.
-     * @returns L'ID du stream créé
+     * 
+     * Cette méthode permet à un agent d'appeler une méthode de streaming
+     * sur un autre agent et de traiter les chunks de données au fur et à mesure.
+     * 
+     * Workflow typique:
+     * 1. L'agent appelant utilise callAgentStream()
+     * 2. L'agent cible reçoit la requête via sa méthode enregistrée avec registerStreamMethod()
+     * 3. L'agent cible émet des chunks via AgentStreamEmitter.chunk()
+     * 4. L'agent appelant reçoit chaque chunk via le callback onChunk()
+     * 5. Le stream se termine via AgentStreamEmitter.end() ou .error()
+     * 
+     * @template TChunk - Type des données dans chaque chunk
+     * @param targetAgent - Nom de l'agent cible
+     * @param method - Nom de la méthode de streaming à appeler sur l'agent cible
+     * @param args - Arguments à passer à la méthode
+     * @param callbacks - Callbacks de gestion du stream (onChunk, onEnd, onError)
+     * @returns L'ID du stream créé (pour annulation éventuelle via cancelStream())
+     * 
+     * @example
+     * ```typescript
+     * // Dans l'OIE Agent qui veut appeler le LLM Agent
+     * runtime.callAgentStream(
+     *   'MainLLMAgent',
+     *   'generateResponse',
+     *   [userQuery],
+     *   {
+     *     onChunk: (chunk) => {
+     *       // Relayer le chunk au client
+     *       stream.chunk(chunk);
+     *     },
+     *     onEnd: (finalPayload) => {
+     *       stream.end(finalPayload);
+     *     },
+     *     onError: (error) => {
+     *       stream.error(error);
+     *     }
+     *   }
+     * );
+     * ```
      */
     public callAgentStream<TChunk = unknown>(
         targetAgent: WorkerName,

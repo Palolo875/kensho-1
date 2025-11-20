@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar, { SidebarTrigger } from "@/components/Sidebar";
 import ChatInput from "@/components/ChatInput";
 import TimeBasedGreeting from "@/components/TimeBasedGreeting";
@@ -7,7 +7,9 @@ import AIResponse from "@/components/AIResponse";
 import SettingsModal from "@/components/SettingsModal";
 import SearchModal from "@/components/SearchModal";
 import { ObservatoryModal } from "@/components/ObservatoryModal";
+import { ModelLoadingView } from "@/components/ModelLoadingView";
 import { useObservatory } from "@/contexts/ObservatoryContext";
+import { useKenshoStore } from "@/stores/useKenshoStore";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,15 @@ const Index = () => {
 
   const { workers, leader, epoch, logs, isEnabled, startObservatory, killWorker } = useObservatory();
 
+  const init = useKenshoStore(state => state.init);
+  const messages = useKenshoStore(state => state.messages);
+  const clearMessages = useKenshoStore(state => state.clearMessages);
+  const modelReady = useKenshoStore(state => state.modelProgress.phase === 'ready');
+
+  useEffect(() => {
+    init();
+  }, [init]);
+
   const handleOpenObservatory = () => {
     if (!isEnabled) {
       startObservatory();
@@ -29,40 +40,23 @@ const Index = () => {
     setShowObservatory(true);
   };
 
-  // Demo messages
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      isUser: false,
-      content: "Bienvenue ! Je suis votre assistant IA. Comment puis-je vous aider aujourd'hui ?",
-      thinking: "Analyse de la requête utilisateur... Identification du contexte... Préparation de la réponse optimale basée sur les informations disponibles et l'historique de la conversation.",
-    },
-    {
-      id: 2,
-      isUser: true,
-      content: "Peux-tu m'aider à comprendre les concepts de base de React ?",
-    },
-    {
-      id: 3,
-      isUser: false,
-      content: "Bien sûr ! React est une bibliothèque JavaScript pour créer des interfaces utilisateur. Les concepts clés incluent les composants, les props, le state et les hooks. Voulez-vous que j'explique l'un de ces concepts en détail ?",
-      thinking: "Évaluation de la complexité de la question... Structuration de la réponse pour être claire et concise... Proposition de suivi pour approfondir le sujet.",
-    },
-  ]);
-
   const handleNewConversation = () => {
-    setMessages([]);
+    clearMessages();
   };
 
   return (
     <div className="min-h-screen relative bg-background">
+      {/* Model Loading Overlay */}
+      <ModelLoadingView />
+
       {/* Top bar with new conversation button and sidebar trigger */}
       <div className="fixed top-4 left-4 right-4 z-50 flex justify-between items-center pointer-events-none">
         <Button
           onClick={handleNewConversation}
           variant="ghost"
           size="icon"
-          className="pointer-events-auto hover:bg-accent/80 backdrop-blur-sm"
+          disabled={!modelReady}
+          className="pointer-events-auto hover:bg-accent/80 backdrop-blur-sm disabled:opacity-50"
         >
           <Plus className="h-6 w-6" />
         </Button>
@@ -92,17 +86,17 @@ const Index = () => {
           ) : (
             <div className="space-y-1">
               {messages.map((msg) =>
-                msg.isUser ? (
+                msg.author === 'user' ? (
                   <MessageBubble
                     key={msg.id}
-                    content={msg.content}
-                    isUser={msg.isUser}
+                    content={msg.text}
+                    isUser={true}
                   />
                 ) : (
                   <AIResponse
                     key={msg.id}
-                    content={msg.content}
-                    thinking={msg.thinking}
+                    content={msg.text}
+                    thinking=""
                   />
                 )
               )}

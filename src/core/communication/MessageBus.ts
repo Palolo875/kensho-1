@@ -270,7 +270,41 @@ export class MessageBus {
     }
 
     /**
-     * Initie un stream vers une cible.
+     * Initie un stream vers une cible et retourne l'ID du stream.
+     * 
+     * Cette méthode permet de recevoir des données en continu depuis un worker distant.
+     * Les callbacks permettent de traiter les données au fur et à mesure de leur arrivée.
+     * 
+     * Cycle de vie d'un stream:
+     * 1. Appel de requestStream() → création du stream et envoi de la requête initiale
+     * 2. Le worker distant traite la requête et émet des chunks via AgentStreamEmitter
+     * 3. Chaque chunk déclenche le callback onChunk()
+     * 4. Le stream se termine via onEnd() (succès) ou onError() (échec)
+     * 
+     * @template TChunk - Type des données reçues dans chaque chunk
+     * @param target - Nom du worker cible qui traitera le stream
+     * @param payload - Données de la requête (typiquement { method: string, args: any[] })
+     * @param callbacks - Callbacks pour gérer les événements du stream:
+     *   - onChunk: Appelé pour chaque morceau de données reçu
+     *   - onEnd: Appelé quand le stream se termine avec succès
+     *   - onError: Appelé en cas d'erreur durant le stream
+     * @returns L'ID unique du stream créé (utile pour cancelStream())
+     * 
+     * @example
+     * ```typescript
+     * const streamId = messageBus.requestStream(
+     *   'MainLLMAgent',
+     *   { method: 'generateResponse', args: ['Bonjour!'] },
+     *   {
+     *     onChunk: (chunk) => console.log('Reçu:', chunk.text),
+     *     onEnd: () => console.log('Stream terminé'),
+     *     onError: (err) => console.error('Erreur:', err)
+     *   }
+     * );
+     * 
+     * // Optionnel: annuler le stream
+     * messageBus.cancelStream(streamId);
+     * ```
      */
     public requestStream<TChunk>(
         target: WorkerName,
