@@ -137,8 +137,8 @@ export class MessageBus {
         }
 
         try {
-            // Appeler le handler avec tous les arguments attendus
-            const result = await this.requestHandler(message.payload, message.sourceWorker, message.streamId);
+            // Appeler le handler avec le payload
+            const result = await this.requestHandler(message.payload);
 
             // 3. Envoyer la réponse (seulement si ce n'est pas une requête de stream qui gère ses propres réponses via chunks)
             // NOTE: Dans l'implémentation précédente, on envoyait une réponse même pour stream_request 

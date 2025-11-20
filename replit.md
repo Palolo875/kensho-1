@@ -78,6 +78,11 @@ Distributed coordination layer providing:
   - Async/sync monitoring helpers
 - **E2E Test Suite**: Browser-based validation for communication patterns, resilience (chaos testing), persistence, streaming, and multi-transport scenarios
 - **Chaos Testing**: Automated kill/restart cycles to validate system self-healing
+- **web-llm POC Test** (tests/poc/test-webllm.html): Browser-based validation test for @mlc-ai/web-llm integration
+  - Validates WebGPU availability
+  - Tests model loading and initialization (TinyLlama-1.1B)
+  - Verifies inference capabilities with progress monitoring
+  - Run with: `npm run test:poc:webllm`
 
 ## External Dependencies
 
@@ -101,6 +106,8 @@ Distributed coordination layer providing:
 ### Testing
 - **Vitest**: Unit test runner with happy-dom browser environment simulation
 - **esbuild**: Used by Vite for agent bundling (builds to dist/test-agents/)
+- **@mlc-ai/web-llm**: WebGPU-based LLM inference library for browser-based AI capabilities
+- **tsx**: TypeScript execution tool for Node.js scripts
 
 ### Build & Development
 - **ESLint**: Code linting with TypeScript support
