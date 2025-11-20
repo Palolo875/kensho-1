@@ -23,8 +23,19 @@ export interface MessageHandlers {
  * - Router selon le type de message
  * - Gérer les messages inconnus
  */
+export interface MessageRouterConfig {
+    /** Mode strict : rejette les messages inconnus au lieu de juste les logger (défaut: false) */
+    strictMode?: boolean;
+}
+
 export class MessageRouter {
     private handlers: MessageHandlers = {};
+    private readonly strictMode: boolean;
+    private unknownMessageCount = 0;
+
+    constructor(config: MessageRouterConfig = {}) {
+        this.strictMode = config.strictMode || false;
+    }
 
     /**
      * Configure les handlers pour chaque type de message.
@@ -44,8 +55,13 @@ export class MessageRouter {
 
         const handler = this.getHandlerForMessage(message);
         if (!handler) {
+            this.unknownMessageCount++;
+            
             if (this.handlers.onUnknown) {
                 this.handlers.onUnknown(message);
+            } else if (this.strictMode) {
+                console.error(`[MessageRouter] STRICT MODE: Rejecting unknown message type: ${message.type}`, message);
+                throw new Error(`Unknown message type: ${message.type}`);
             } else {
                 console.warn(`[MessageRouter] No handler for message type: ${message.type}`, message);
             }
@@ -118,7 +134,9 @@ export class MessageRouter {
                 streamError: !!this.handlers.onStreamError,
                 broadcast: !!this.handlers.onBroadcast,
                 unknown: !!this.handlers.onUnknown
-            }
+            },
+            strictMode: this.strictMode,
+            unknownMessageCount: this.unknownMessageCount
         };
     }
 }

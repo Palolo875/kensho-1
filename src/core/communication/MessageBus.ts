@@ -12,6 +12,7 @@ import {
     MessageRouter,
     StreamCallbacks
 } from './managers';
+import { MetricsCollector } from '../metrics';
 
 // Re-export StreamCallbacks for public API compatibility
 export type { StreamCallbacks };
@@ -20,6 +21,7 @@ export interface MessageBusConfig {
     defaultTimeout?: number;
     transport?: NetworkTransport;
     storage?: StorageAdapter;
+    enableMetrics?: boolean;
 }
 
 /**
@@ -39,6 +41,8 @@ export class MessageBus {
     private readonly streamManager: StreamManager;
     private readonly duplicateDetector: DuplicateDetector;
     private readonly messageRouter: MessageRouter;
+    private readonly metricsCollector: MetricsCollector;
+    private readonly metricsEnabled: boolean;
 
     private currentTraceId: string | null = null;
     private systemMessageSubscribers: Set<(message: KenshoMessage) => void> = new Set();
@@ -46,12 +50,14 @@ export class MessageBus {
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
         this.transport = config.transport || new BroadcastTransport(name);
+        this.metricsEnabled = config.enableMetrics !== false; // Enabled by default
 
         // Initialize Managers
         this.requestManager = new RequestManager(config.defaultTimeout);
         this.streamManager = new StreamManager();
         this.duplicateDetector = new DuplicateDetector();
         this.messageRouter = new MessageRouter();
+        this.metricsCollector = new MetricsCollector();
 
         // Initialize OfflineQueue
         this.offlineQueue = new OfflineQueue(config.storage);
@@ -121,13 +127,17 @@ export class MessageBus {
 
         // 2. Traitement
         if (!this.requestHandler) {
-            const error = { message: `No handler for request in ${this.workerName}`, code: 'NO_HANDLER' };
+            const error: SerializedError = { 
+                message: `No handler for request in ${this.workerName}`, 
+                code: 'NO_HANDLER',
+                name: 'NoHandlerError'
+            };
             this.sendResponse(message, null, error);
             return;
         }
 
         try {
-            // Appeler le handler (supporte streamId si présent)
+            // Appeler le handler avec tous les arguments attendus
             const result = await this.requestHandler(message.payload, message.sourceWorker, message.streamId);
 
             // 3. Envoyer la réponse (seulement si ce n'est pas une requête de stream qui gère ses propres réponses via chunks)
@@ -147,13 +157,19 @@ export class MessageBus {
                 this.sendResponse(message, result);
             }
         } catch (error: any) {
-            const serializedError = {
+            const serializedError: SerializedError = {
                 message: error.message || 'Unknown error',
+                name: error.name || 'Error',
                 code: error.code || 'INTERNAL_ERROR',
                 stack: error.stack
             };
             // En cas d'erreur, on l'envoie toujours, même pour un stream (init failed)
             this.sendResponse(message, null, serializedError);
+            
+            // Collecter métrique d'erreur
+            if (this.metricsEnabled) {
+                this.metricsCollector.recordError(serializedError.code || 'UNKNOWN');
+            }
         }
     }
 
@@ -200,6 +216,7 @@ export class MessageBus {
         timeout?: number
     ): Promise<TResponse> {
         const messageId = this.generateMessageId();
+        const startTime = performance.now();
 
         // Créer la promesse gérée par RequestManager
         const promise = this.requestManager.createRequest<TResponse>(messageId, timeout);
@@ -216,7 +233,28 @@ export class MessageBus {
         // Envoyer le message
         this.sendMessage(message);
 
-        return promise;
+        // Collecter les métriques
+        try {
+            const result = await promise;
+            
+            // Métrique: latence
+            if (this.metricsEnabled) {
+                const latency = performance.now() - startTime;
+                this.metricsCollector.recordLatency(latency, { target, type: 'request' });
+                this.metricsCollector.recordMessage({ target, type: 'request', status: 'success' });
+            }
+            
+            return result;
+        } catch (error) {
+            // Métrique: erreur
+            if (this.metricsEnabled) {
+                const latency = performance.now() - startTime;
+                this.metricsCollector.recordLatency(latency, { target, type: 'request', status: 'error' });
+                this.metricsCollector.recordError((error as any).code || 'UNKNOWN', { target });
+                this.metricsCollector.recordMessage({ target, type: 'request', status: 'error' });
+            }
+            throw error;
+        }
     }
 
     /**
@@ -283,6 +321,7 @@ export class MessageBus {
             payload: null,
             error: {
                 message: error.message,
+                name: error.name || 'Error',
                 code: (error as any).code || 'STREAM_ERROR'
             }
         };
@@ -329,7 +368,8 @@ export class MessageBus {
 
     public notifyWorkerOnline(workerName: WorkerName): void {
         // Flush offline queue for this worker
-        this.offlineQueue.flush(workerName, (msg) => {
+        const messages = this.offlineQueue.flush(workerName);
+        messages.forEach(msg => {
             this.transport.send(msg);
         });
     }
@@ -343,13 +383,49 @@ export class MessageBus {
     }
 
     public getStats() {
-        return {
+        const baseStats = {
             queue: this.offlineQueue.getStats(),
             requests: this.requestManager.getStats(),
             streams: this.streamManager.getStats(),
             duplicates: this.duplicateDetector.getStats(),
             router: this.messageRouter.getStats()
         };
+
+        // Ajouter les métriques si activées
+        if (this.metricsEnabled) {
+            const queueStats = this.offlineQueue.getStats();
+            const totalQueued = queueStats.reduce((sum, stat) => sum + stat.queueSize, 0);
+            
+            return {
+                ...baseStats,
+                metrics: this.metricsCollector.getSystemStats(
+                    this.requestManager.getPendingCount(),
+                    totalQueued,
+                    (this.transport as any).getStats?.()
+                )
+            };
+        }
+
+        return baseStats;
+    }
+
+    /**
+     * Retourne un rapport formaté des métriques
+     */
+    public getMetricsReport(): string {
+        if (!this.metricsEnabled) {
+            return 'Metrics are disabled';
+        }
+        return this.metricsCollector.generateReport();
+    }
+
+    /**
+     * Réinitialise la fenêtre de métriques
+     */
+    public resetMetricsWindow(): void {
+        if (this.metricsEnabled) {
+            this.metricsCollector.resetWindow();
+        }
     }
 
     public cleanupRequestCache(): void {

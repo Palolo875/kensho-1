@@ -34,7 +34,9 @@ export interface KenshoMessage<T = unknown> {
   readonly type: 'request' | 'response' | 'broadcast' | 'stream_request' | 'stream_chunk' | 'stream_end' | 'stream_error';
   /** La charge utile (payload) du message. */
   readonly payload: T;
-  /** Pour les réponses, l'ID du message de la requête originale. */
+  /** Pour les réponses, l'ID du message de la requête originale (correlation ID). */
+  readonly correlationId?: string;
+  /** @deprecated Utiliser correlationId à la place. Conservé pour compatibilité. */
   readonly responseFor?: string;
   /** Pour les messages de stream, l'ID unique du flux de données. */
   readonly streamId?: string;

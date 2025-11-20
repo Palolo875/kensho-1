@@ -18,7 +18,7 @@ export class HybridTransport implements NetworkTransport {
 
     constructor(wsUrl?: string) {
         this.localTransport = new BroadcastTransport();
-        this.remoteTransport = new WebSocketTransport(wsUrl);
+        this.remoteTransport = new WebSocketTransport({ url: wsUrl });
 
         this.localTransport.onMessage(this.handleMessage.bind(this));
         this.remoteTransport.onMessage(this.handleMessage.bind(this));
@@ -52,8 +52,26 @@ export class HybridTransport implements NetworkTransport {
         this.messageHandler = handler;
     }
 
+    /**
+     * Retourne les statistiques combinées des deux transports
+     */
+    public getStats() {
+        return {
+            remote: this.remoteTransport.getStats(),
+            processedMessageCount: this.processedMessageIds.size
+        };
+    }
+
+    /**
+     * Réinitialise le circuit breaker du transport WebSocket
+     */
+    public resetCircuitBreaker(): void {
+        this.remoteTransport.resetCircuitBreaker();
+    }
+
     public dispose(): void {
         this.localTransport.dispose();
         this.remoteTransport.dispose();
+        this.processedMessageIds.clear();
     }
 }
