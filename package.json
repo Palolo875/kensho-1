@@ -11,6 +11,7 @@
     "build:remote-agents": "vite build --config vite.remote-agent.config.ts",
     "relay": "node server/relay.js",
     "test:e2e": "npm run build:test-agents && vite dev --open tests/browser/sprint1a-e2e.html",
+    "test:e2e:sprint2": "npm run build:test-agents && vite dev --open tests/browser/sprint2-e2e.html",
     "test:websocket": "npm run build:remote-agents && vite dev --open tests/browser/websocket-transport-demo.html",
     "test:poc:webllm": "vite dev --open tests/poc/test-webllm.html",
     "lint": "eslint .",

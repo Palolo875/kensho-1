@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 2 E2E Test - OIE + LLM Streaming</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background: #e9ecef;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 80px;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .params-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        input[type="number"], input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        input[type="range"] {
+            padding: 0;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .response {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .response.streaming {
+            border: 2px solid #667eea;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { border-color: #667eea; }
+            50% { border-color: #764ba2; }
+        }
+        .logs {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 4px;
+            border-left: 3px solid #666;
+            padding-left: 8px;
+        }
+        .log-entry.info { border-left-color: #4CAF50; }
+        .log-entry.warn { border-left-color: #FFC107; }
+        .log-entry.error { border-left-color: #F44336; }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .metadata {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Sprint 2 E2E Test - OIE + LLM Streaming</h1>
+        
+        <div class="card">
+            <h2>📊 État du Système</h2>
+            <div id="oie-status" class="status loading">
+                <div class="spinner"></div>
+                <span>Initialisation de l'OIE Agent...</span>
+            </div>
+            <div id="llm-status" class="status loading">
+                <div class="spinner"></div>
+                <span>Initialisation du LLM Agent...</span>
+            </div>
+            <div id="model-progress" style="display: none;">
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill">0%</div>
+                </div>
+                <div id="progress-text" style="margin-top: 8px; font-size: 13px; color: #666;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>💬 Tester l'OIE</h2>
+            <div class="input-group">
+                <label for="query">Requête (testez différents mots-clés: code, image, etc.)</label>
+                <textarea id="query" placeholder="Ex: Explique-moi la relativité d'Einstein...">Explique-moi brièvement ce qu'est l'intelligence artificielle.</textarea>
+            </div>
+
+            <div class="params-grid">
+                <div>
+                    <label>Temperature: <span id="temp-value">0.7</span></label>
+                    <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                </div>
+                <div>
+                    <label>Max Tokens: <span id="tokens-value">1024</span></label>
+                    <input type="number" id="max_tokens" min="50" max="2048" value="1024">
+                </div>
+            </div>
+
+            <button id="send-btn" disabled>
+                <span id="btn-text">En attente du chargement...</span>
+            </button>
+
+            <div id="plan-info" class="metadata" style="display: none;"></div>
+        </div>
+
+        <div class="card">
+            <h2>📝 Réponse du LLM</h2>
+            <div id="response" class="response">En attente d'une requête...</div>
+            <div id="response-meta" class="metadata" style="display: none;"></div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 Logs du Système</h2>
+            <div id="logs" class="logs">
+                <div class="log-entry info">[System] Démarrage du test E2E...</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // État global
+        let oieWorker = null;
+        let llmWorker = null;
+        let systemReady = false;
+        let isStreaming = false;
+
+        // Éléments DOM
+        const queryInput = document.getElementById('query');
+        const sendBtn = document.getElementById('send-btn');
+        const btnText = document.getElementById('btn-text');
+        const responseDiv = document.getElementById('response');
+        const logsDiv = document.getElementById('logs');
+        const oieStatus = document.getElementById('oie-status');
+        const llmStatus = document.getElementById('llm-status');
+        const modelProgress = document.getElementById('model-progress');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+        const planInfo = document.getElementById('plan-info');
+        const responseMeta = document.getElementById('response-meta');
+        const temperatureInput = document.getElementById('temperature');
+        const maxTokensInput = document.getElementById('max_tokens');
+        const tempValue = document.getElementById('temp-value');
+        const tokensValue = document.getElementById('tokens-value');
+
+        // Update param displays
+        temperatureInput.addEventListener('input', (e) => {
+            tempValue.textContent = e.target.value;
+        });
+        maxTokensInput.addEventListener('input', (e) => {
+            tokensValue.textContent = e.target.value;
+        });
+
+        // Fonction pour logger
+        function log(level, message) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logsDiv.appendChild(entry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        // Charger les workers
+        async function initializeWorkers() {
+            log('info', 'Chargement des agents...');
+
+            // Charger OIE
+            oieWorker = new Worker('/dist/test-agents/oie.agent.js', { type: 'module' });
+            oieWorker.addEventListener('message', (e) => {
+                if (e.data.type === 'READY') {
+                    log('info', 'OIE Agent prêt!');
+                    oieStatus.className = 'status ready';
+                    oieStatus.innerHTML = '✅ <span>OIE Agent - Prêt</span>';
+                    checkSystemReady();
+                }
+            });
+
+            // Charger LLM
+            llmWorker = new Worker('/dist/test-agents/llm.agent.js', { type: 'module' });
+            llmWorker.addEventListener('message', (e) => {
+                if (e.data.type === 'READY') {
+                    log('info', 'LLM Agent prêt!');
+                    llmStatus.className = 'status ready';
+                    llmStatus.innerHTML = '✅ <span>LLM Agent - Prêt</span>';
+                    checkSystemReady();
+                } else if (e.data.type === 'MODEL_PROGRESS') {
+                    modelProgress.style.display = 'block';
+                    const { phase, progress, text } = e.data.payload;
+                    const percent = Math.round(progress * 100);
+                    progressFill.style.width = `${percent}%`;
+                    progressFill.textContent = `${percent}%`;
+                    progressText.textContent = `${phase}: ${text}`;
+                    log('info', `Model: ${phase} - ${percent}%`);
+                } else if (e.data.type === 'MODEL_ERROR') {
+                    llmStatus.className = 'status error';
+                    llmStatus.innerHTML = '❌ <span>Erreur de chargement du modèle</span>';
+                    log('error', `Model Error: ${e.data.payload.message}`);
+                }
+            });
+        }
+
+        function checkSystemReady() {
+            // On vérifie que les deux workers sont prêts
+            if (oieStatus.classList.contains('ready') && llmStatus.classList.contains('ready')) {
+                systemReady = true;
+                sendBtn.disabled = false;
+                btnText.textContent = '🚀 Envoyer la requête';
+                log('info', 'Système prêt! Vous pouvez envoyer des requêtes.');
+            }
+        }
+
+        // Fonction pour envoyer une requête via OIE
+        async function sendQuery() {
+            if (!systemReady || isStreaming) return;
+
+            const query = queryInput.value.trim();
+            if (!query) {
+                alert('Veuillez entrer une requête');
+                return;
+            }
+
+            isStreaming = true;
+            sendBtn.disabled = true;
+            btnText.textContent = '⏳ Traitement en cours...';
+            responseDiv.textContent = '';
+            responseDiv.classList.add('streaming');
+            responseMeta.style.display = 'none';
+            planInfo.style.display = 'none';
+
+            log('info', `Envoi de la requête: "${query.substring(0, 50)}..."`);
+
+            const params = {
+                temperature: parseFloat(temperatureInput.value),
+                max_tokens: parseInt(maxTokensInput.value)
+            };
+
+            log('info', `Paramètres: temp=${params.temperature}, max_tokens=${params.max_tokens}`);
+
+            // Simuler l'appel via MessageBus
+            // En réalité, ceci devrait passer par le MessageBus
+            // Pour ce test, on simule le flux complet
+            
+            setTimeout(() => {
+                responseDiv.textContent = '✨ Simulation du streaming en cours...\n\nDans une implémentation complète, ceci afficherait les chunks en temps réel du LLM.\n\nLe flux serait:\n1. UI envoie requête à OIE via MessageBus\n2. OIE analyse et planifie (TaskPlanner)\n3. OIE appelle MainLLMAgent via stream\n4. LLM génère et stream les chunks\n5. Chunks remontent à l\'UI via OIE\n\nPour tester réellement, il faudrait:\n- Intégrer MessageBus dans cette page\n- Ou créer un composant React complet\n- Ou utiliser l\'UI principale de l\'application';
+                
+                isStreaming = false;
+                sendBtn.disabled = false;
+                btnText.textContent = '🚀 Envoyer la requête';
+                responseDiv.classList.remove('streaming');
+                
+                planInfo.style.display = 'block';
+                planInfo.innerHTML = `<strong>Plan détecté:</strong> MainLLMAgent (confidence simulée)`;
+                
+                responseMeta.style.display = 'block';
+                responseMeta.innerHTML = `<strong>Statistiques:</strong> Durée simulée: 2.5s | Chunks: ~50`;
+                
+                log('info', 'Génération terminée (simulation)');
+            }, 2000);
+        }
+
+        // Event listeners
+        sendBtn.addEventListener('click', sendQuery);
+        queryInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                sendQuery();
+            }
+        });
+
+        // Initialiser
+        initializeWorkers();
+    </script>
+</body>
+</html>
