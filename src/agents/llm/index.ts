@@ -30,6 +30,15 @@ let engine: webllm.MLCEngine | null = null;
 // Le ModelLoader enverra ses mises à jour au thread principal via postMessage
 const modelLoader = new ModelLoader((progress) => {
     self.postMessage({ type: 'MODEL_PROGRESS', payload: progress });
+}, { allowPause: true });
+
+// Gérer les messages de pause/reprise du téléchargement
+self.addEventListener('message', (event) => {
+    if (event.data.type === 'PAUSE_DOWNLOAD') {
+        modelLoader.pause();
+    } else if (event.data.type === 'RESUME_DOWNLOAD') {
+        modelLoader.resume();
+    }
 });
 
 // Charger le modèle dès le démarrage du worker
