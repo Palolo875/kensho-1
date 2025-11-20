@@ -36,6 +36,11 @@ const modelLoader = new ModelLoader((progress) => {
 modelLoader.loadModel(MODEL_ID).then(() => {
     engine = modelLoader.getEngine();
     console.log('[MainLLMAgent] Moteur LLM prêt.');
+    // Poster un message final indiquant que le modèle est prêt
+    self.postMessage({ 
+        type: 'MODEL_PROGRESS', 
+        payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' } 
+    });
 }).catch((error) => {
     console.error('[MainLLMAgent] Échec du chargement du modèle:', error);
     self.postMessage({ 

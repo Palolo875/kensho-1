@@ -185,9 +185,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
         console.log('[KenshoStore] Envoi du message:', text.substring(0, 50) + '...');
 
         // Lancer le stream vers l'OIE Agent
+        // Le payload doit être au format { method, args } pour AgentRuntime
         mainBus.requestStream(
             'OIEAgent',
-            { query: text.trim() },
+            { method: 'executeQuery', args: [{ query: text.trim() }] },
             {
                 onChunk: (chunk: any) => {
                     // Mettre à jour le dernier message de Kensho avec le nouveau texte
