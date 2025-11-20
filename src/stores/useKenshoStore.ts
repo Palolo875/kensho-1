@@ -30,10 +30,12 @@ interface KenshoState {
     isKenshoWriting: boolean;
     mainBus: MessageBus | null;
     isInitialized: boolean;
+    isLoadingMinimized: boolean;
     
     init: () => void;
     sendMessage: (text: string) => void;
     clearMessages: () => void;
+    setLoadingMinimized: (minimized: boolean) => void;
 }
 
 export const useKenshoStore = create<KenshoState>((set, get) => ({
@@ -42,6 +44,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
     isKenshoWriting: false,
     mainBus: null,
     isInitialized: false,
+    isLoadingMinimized: false,
 
     /**
      * Initialise le système Kensho
@@ -227,5 +230,12 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     clearMessages: () => {
         set({ messages: [] });
+    },
+
+    /**
+     * Permet de minimiser/maximiser l'interface de chargement
+     */
+    setLoadingMinimized: (minimized: boolean) => {
+        set({ isLoadingMinimized: minimized });
     }
 }));
