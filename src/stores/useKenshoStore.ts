@@ -205,14 +205,34 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
 
         // Optionnel: Démarrer le Telemetry Worker pour les logs
         try {
-            new Worker(
+            const telemetryWorker = new Worker(
                 new URL('../agents/telemetry/index.ts', import.meta.url),
                 { type: 'module' }
             );
+            
+            telemetryWorker.onerror = (error) => {
+                console.error('[KenshoStore] Erreur du Telemetry Worker:', error);
+                const workerError: WorkerError = {
+                    worker: 'telemetry',
+                    message: 'Erreur du worker Telemetry - logging indisponible',
+                    timestamp: Date.now()
+                };
+                set(state => ({
+                    workerErrors: [...state.workerErrors, workerError]
+                }));
+            };
+
             console.log('[KenshoStore] Telemetry Worker démarré');
         } catch (error) {
             console.warn('[KenshoStore] Telemetry Worker non disponible:', error);
-            // Telemetry n'est pas critique, on ne stocke pas l'erreur
+            const workerError: WorkerError = {
+                worker: 'telemetry',
+                message: error instanceof Error ? error.message : 'Impossible de démarrer le worker Telemetry',
+                timestamp: Date.now()
+            };
+            set(state => ({
+                workerErrors: [...state.workerErrors, workerError]
+            }));
         }
     },
 
