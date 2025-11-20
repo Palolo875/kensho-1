@@ -33,20 +33,19 @@ export class ModelLoader {
             await this.requestPersistentStorage();
 
             // Étape 2: Créer le moteur avec le callback de progression
-            this.engine = await webllm.CreateMLCEngine(
-                modelId,
-                { 
-                    init: (progress: any) => {
-                        // Traduire le progrès de web-llm en notre propre format
-                        const phase: ModelLoaderPhase = progress.text.includes('compiling') ? 'compiling' : 'downloading';
-                        this.progressCallback({
-                            phase: phase,
-                            progress: progress.progress,
-                            text: progress.text,
-                        });
-                    }
+            const config: any = {
+                initProgressCallback: (progress: any) => {
+                    // Traduire le progrès de web-llm en notre propre format
+                    const phase: ModelLoaderPhase = progress.text.includes('compiling') ? 'compiling' : 'downloading';
+                    this.progressCallback({
+                        phase: phase,
+                        progress: progress.progress,
+                        text: progress.text,
+                    });
                 }
-            );
+            };
+
+            this.engine = await webllm.CreateMLCEngine(modelId, config);
 
             this.progressCallback({ phase: 'ready', progress: 1, text: 'Modèle prêt.' });
             console.log('[ModelLoader] Modèle chargé avec succès.');

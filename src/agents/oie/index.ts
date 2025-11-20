@@ -25,9 +25,9 @@ runAgent({
                 
                 // On appelle l'agent LLM en mode stream et on relaie les chunks.
                 runtime.callAgentStream(
-                    plan.agent,
+                    plan.agent as any,
                     'generateResponse', // La méthode que l'agent LLM exposera
-                    { args: [plan.prompt] }, // Les arguments pour la méthode
+                    [plan.prompt], // Les arguments pour la méthode
                     {
                         onChunk: (chunk: any) => {
                             // Relayer chaque morceau reçu du LLM vers l'UI
