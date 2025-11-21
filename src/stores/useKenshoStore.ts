@@ -18,7 +18,7 @@
  * - État d'erreur dédié pour meilleure UX
  */
 
-import { create } from 'zustand';
+import { create, StoreApi } from 'zustand';
 import { MessageBus } from '../core/communication/MessageBus';
 import { ModelLoaderProgress } from '../core/models/ModelLoader';
 
@@ -54,7 +54,7 @@ interface KenshoState {
     isLoadingPaused: boolean;
     workerErrors: WorkerError[];
     workersReady: WorkerStatus;
-    
+
     init: () => void;
     sendMessage: (text: string) => void;
     clearMessages: () => void;
@@ -94,6 +94,161 @@ const saveMessagesToLocalStorage = (messages: Message[]) => {
     }
 };
 
+/**
+ * Démarre la constellation de workers (LLM, OIE, Telemetry)
+ */
+const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
+    // Démarrer le LLM Worker
+    try {
+        const llmWorker = new Worker(
+            new URL('../agents/llm/index.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        // Stocker le worker pour contrôle externe (pause/reprise)
+        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
+        (window as any).__kensho_workers['MainLLMAgent'] = llmWorker;
+
+        // Écouter les messages de progression du modèle
+        llmWorker.onmessage = (e) => {
+            if (e.data.type === 'READY') {
+                console.log('[KenshoStore] ✅ LLM Worker prêt');
+                set(state => ({
+                    workersReady: { ...state.workersReady, llm: true }
+                }));
+            } else if (e.data.type === 'MODEL_PROGRESS') {
+                console.log('[KenshoStore] Progression du modèle:', e.data.payload);
+                set({ modelProgress: e.data.payload });
+            } else if (e.data.type === 'MODEL_ERROR') {
+                console.error('[KenshoStore] Erreur de chargement du modèle:', e.data.payload);
+                set({
+                    modelProgress: {
+                        phase: 'error',
+                        progress: 0,
+                        text: `Erreur: ${e.data.payload.message}`
+                    }
+                });
+            }
+        };
+
+        llmWorker.onerror = (error) => {
+            console.error('[KenshoStore] Erreur du LLM Worker:', error);
+            const workerError: WorkerError = {
+                worker: 'llm',
+                message: 'Erreur lors du démarrage du worker LLM',
+                timestamp: Date.now()
+            };
+            set(state => ({
+                modelProgress: {
+                    phase: 'error',
+                    progress: 0,
+                    text: workerError.message
+                },
+                workerErrors: [...state.workerErrors, workerError]
+            }));
+        };
+
+        console.log('[KenshoStore] LLM Worker démarré');
+    } catch (error) {
+        console.error('[KenshoStore] Erreur lors du démarrage du LLM Worker:', error);
+        const workerError: WorkerError = {
+            worker: 'llm',
+            message: error instanceof Error ? error.message : 'Impossible de démarrer le worker LLM',
+            timestamp: Date.now()
+        };
+        set(state => ({
+            modelProgress: {
+                phase: 'error',
+                progress: 0,
+                text: workerError.message
+            },
+            workerErrors: [...state.workerErrors, workerError]
+        }));
+    }
+
+    // Démarrer l'OIE Worker
+    try {
+        const oieWorker = new Worker(
+            new URL('../agents/oie/index.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        oieWorker.onmessage = (e) => {
+            if (e.data.type === 'READY') {
+                console.log('[KenshoStore] ✅ OIE Worker prêt');
+                set(state => ({
+                    workersReady: { ...state.workersReady, oie: true }
+                }));
+            }
+        };
+
+        oieWorker.onerror = (error) => {
+            console.error('[KenshoStore] Erreur du OIE Worker:', error);
+            const workerError: WorkerError = {
+                worker: 'oie',
+                message: 'Erreur du worker OIE - orchestration indisponible',
+                timestamp: Date.now()
+            };
+            set(state => ({
+                workerErrors: [...state.workerErrors, workerError]
+            }));
+        };
+
+        console.log('[KenshoStore] OIE Worker démarré');
+    } catch (error) {
+        console.error('[KenshoStore] Erreur lors du démarrage du OIE Worker:', error);
+        const workerError: WorkerError = {
+            worker: 'oie',
+            message: error instanceof Error ? error.message : 'Impossible de démarrer le worker OIE',
+            timestamp: Date.now()
+        };
+        set(state => ({
+            workerErrors: [...state.workerErrors, workerError]
+        }));
+    }
+
+    // Optionnel: Démarrer le Telemetry Worker pour les logs
+    try {
+        const telemetryWorker = new Worker(
+            new URL('../agents/telemetry/index.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        telemetryWorker.onmessage = (e) => {
+            if (e.data.type === 'READY') {
+                console.log('[KenshoStore] ✅ Telemetry Worker prêt');
+                set(state => ({
+                    workersReady: { ...state.workersReady, telemetry: true }
+                }));
+            }
+        };
+
+        telemetryWorker.onerror = (error) => {
+            console.error('[KenshoStore] Erreur du Telemetry Worker:', error);
+            const workerError: WorkerError = {
+                worker: 'telemetry',
+                message: 'Erreur du worker Telemetry - logging indisponible',
+                timestamp: Date.now()
+            };
+            set(state => ({
+                workerErrors: [...state.workerErrors, workerError]
+            }));
+        };
+
+        console.log('[KenshoStore] Telemetry Worker démarré');
+    } catch (error) {
+        console.warn('[KenshoStore] Telemetry Worker non disponible:', error);
+        const workerError: WorkerError = {
+            worker: 'telemetry',
+            message: error instanceof Error ? error.message : 'Impossible de démarrer le worker Telemetry',
+            timestamp: Date.now()
+        };
+        set(state => ({
+            workerErrors: [...state.workerErrors, workerError]
+        }));
+    }
+};
+
 export const useKenshoStore = create<KenshoState>((set, get) => ({
     messages: loadMessagesFromLocalStorage(),
     modelProgress: { phase: 'idle', progress: 0, text: 'Initialisation...' },
@@ -119,159 +274,12 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
         }
 
         console.log('[KenshoStore] Initialisation...');
-        
+
         const mainBus = new MessageBus('MainThread');
         set({ mainBus, isInitialized: true });
 
-        // Démarrer le LLM Worker
-        try {
-            const llmWorker = new Worker(
-                new URL('../agents/llm/index.ts', import.meta.url),
-                { type: 'module' }
-            );
-            
-            // Stocker le worker pour contrôle externe (pause/reprise)
-            (window as any).__kensho_workers = (window as any).__kensho_workers || {};
-            (window as any).__kensho_workers['MainLLMAgent'] = llmWorker;
-            
-            // Écouter les messages de progression du modèle
-            llmWorker.onmessage = (e) => {
-                if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ LLM Worker prêt');
-                    set(state => ({
-                        workersReady: { ...state.workersReady, llm: true }
-                    }));
-                } else if (e.data.type === 'MODEL_PROGRESS') {
-                    console.log('[KenshoStore] Progression du modèle:', e.data.payload);
-                    set({ modelProgress: e.data.payload });
-                } else if (e.data.type === 'MODEL_ERROR') {
-                    console.error('[KenshoStore] Erreur de chargement du modèle:', e.data.payload);
-                    set({
-                        modelProgress: {
-                            phase: 'error',
-                            progress: 0,
-                            text: `Erreur: ${e.data.payload.message}`
-                        }
-                    });
-                }
-            };
-
-            llmWorker.onerror = (error) => {
-                console.error('[KenshoStore] Erreur du LLM Worker:', error);
-                const workerError: WorkerError = {
-                    worker: 'llm',
-                    message: 'Erreur lors du démarrage du worker LLM',
-                    timestamp: Date.now()
-                };
-                set(state => ({
-                    modelProgress: {
-                        phase: 'error',
-                        progress: 0,
-                        text: workerError.message
-                    },
-                    workerErrors: [...state.workerErrors, workerError]
-                }));
-            };
-
-            console.log('[KenshoStore] LLM Worker démarré');
-        } catch (error) {
-            console.error('[KenshoStore] Erreur lors du démarrage du LLM Worker:', error);
-            const workerError: WorkerError = {
-                worker: 'llm',
-                message: error instanceof Error ? error.message : 'Impossible de démarrer le worker LLM',
-                timestamp: Date.now()
-            };
-            set(state => ({
-                modelProgress: {
-                    phase: 'error',
-                    progress: 0,
-                    text: workerError.message
-                },
-                workerErrors: [...state.workerErrors, workerError]
-            }));
-        }
-
-        // Démarrer l'OIE Worker
-        try {
-            const oieWorker = new Worker(
-                new URL('../agents/oie/index.ts', import.meta.url),
-                { type: 'module' }
-            );
-            
-            oieWorker.onmessage = (e) => {
-                if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ OIE Worker prêt');
-                    set(state => ({
-                        workersReady: { ...state.workersReady, oie: true }
-                    }));
-                }
-            };
-            
-            oieWorker.onerror = (error) => {
-                console.error('[KenshoStore] Erreur du OIE Worker:', error);
-                const workerError: WorkerError = {
-                    worker: 'oie',
-                    message: 'Erreur du worker OIE - orchestration indisponible',
-                    timestamp: Date.now()
-                };
-                set(state => ({
-                    workerErrors: [...state.workerErrors, workerError]
-                }));
-            };
-
-            console.log('[KenshoStore] OIE Worker démarré');
-        } catch (error) {
-            console.error('[KenshoStore] Erreur lors du démarrage du OIE Worker:', error);
-            const workerError: WorkerError = {
-                worker: 'oie',
-                message: error instanceof Error ? error.message : 'Impossible de démarrer le worker OIE',
-                timestamp: Date.now()
-            };
-            set(state => ({
-                workerErrors: [...state.workerErrors, workerError]
-            }));
-        }
-
-        // Optionnel: Démarrer le Telemetry Worker pour les logs
-        try {
-            const telemetryWorker = new Worker(
-                new URL('../agents/telemetry/index.ts', import.meta.url),
-                { type: 'module' }
-            );
-            
-            telemetryWorker.onmessage = (e) => {
-                if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ Telemetry Worker prêt');
-                    set(state => ({
-                        workersReady: { ...state.workersReady, telemetry: true }
-                    }));
-                }
-            };
-            
-            telemetryWorker.onerror = (error) => {
-                console.error('[KenshoStore] Erreur du Telemetry Worker:', error);
-                const workerError: WorkerError = {
-                    worker: 'telemetry',
-                    message: 'Erreur du worker Telemetry - logging indisponible',
-                    timestamp: Date.now()
-                };
-                set(state => ({
-                    workerErrors: [...state.workerErrors, workerError]
-                }));
-            };
-
-            console.log('[KenshoStore] Telemetry Worker démarré');
-        } catch (error) {
-            console.warn('[KenshoStore] Telemetry Worker non disponible:', error);
-            const workerError: WorkerError = {
-                worker: 'telemetry',
-                message: error instanceof Error ? error.message : 'Impossible de démarrer le worker Telemetry',
-                timestamp: Date.now()
-            };
-            set(state => ({
-                workerErrors: [...state.workerErrors, workerError]
-            }));
-        }
+        // Démarrer la constellation de workers
+        startConstellation(set);
     },
 
     /**
@@ -283,7 +291,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     sendMessage: (text) => {
         const { mainBus, messages, modelProgress, workersReady } = get();
-        
+
         // Vérifications
         if (!mainBus) {
             console.error('[KenshoStore] ❌ MessageBus non initialisé');
@@ -327,9 +335,9 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
 
         // Ajouter les messages à l'état et sauvegarder
         const newMessages = [...messages, userMessage, kenshoResponsePlaceholder];
-        set({ 
+        set({
             messages: newMessages,
-            isKenshoWriting: true 
+            isKenshoWriting: true
         });
         saveMessagesToLocalStorage(newMessages);
 
@@ -346,8 +354,8 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                     // Mettre à jour le dernier message de Kensho avec le nouveau texte
                     console.log('[KenshoStore] 📥 Chunk reçu:', chunk.text?.substring(0, 30) + (chunk.text?.length > 30 ? '...' : ''));
                     set(state => {
-                        const updatedMessages = state.messages.map(msg => 
-                            msg.id === kenshoResponsePlaceholder.id 
+                        const updatedMessages = state.messages.map(msg =>
+                            msg.id === kenshoResponsePlaceholder.id
                                 ? { ...msg, text: msg.text + (chunk.text || '') }
                                 : msg
                         );
@@ -365,11 +373,11 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 onError: (error) => {
                     console.error('[KenshoStore] ❌ Erreur de stream:', error);
                     set(state => {
-                        const updatedMessages = state.messages.map(msg => 
-                            msg.id === kenshoResponsePlaceholder.id 
-                                ? { 
-                                    ...msg, 
-                                    text: `Désolé, une erreur est survenue: ${error.message}` 
+                        const updatedMessages = state.messages.map(msg =>
+                            msg.id === kenshoResponsePlaceholder.id
+                                ? {
+                                    ...msg,
+                                    text: `Désolé, une erreur est survenue: ${error.message}`
                                 }
                                 : msg
                         );
@@ -382,7 +390,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 }
             }
         );
-        
+
         console.log('[KenshoStore] 🆔 Stream créé avec ID:', streamId);
     },
 
