@@ -1,0 +1,37 @@
+# Dependencies
+node_modules
+package-lock.json
+bun.lockb
+bun.lock
+
+# Build outputs
+dist
+dist-ssr
+build
+.next
+.turbo
+
+# Coverage
+coverage
+.nyc_output
+
+# Environment files
+.env
+.env.*
+
+# Cache
+.cache
+.parcel-cache
+.eslintcache
+
+# Logs
+*.log
+logs
+
+# Generated files
+*.min.js
+*.min.css
+
+# Documentation builds
+docs/.vitepress/dist
+docs/.vitepress/cache
