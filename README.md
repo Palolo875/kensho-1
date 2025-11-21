@@ -1,18 +1,26 @@
-# Welcome to your Lovable project
+# 🚀 Kensho - Distributed Multi-Agent System
 
-## Project info
+A sophisticated **browser-based multi-agent communication system** with WebGPU-powered LLM inference and specialized calculator agent. Implements advanced distributed systems patterns: leader election, failure detection, message persistence, and multi-transport communication.
 
-**URL**: https://lovable.dev/projects/74a7a0c8-6d5c-4c99-ac3b-3ba7a53cdd75
+## ⚡ Quick Start
 
-## What is Kensho?
+```bash
+# Install dependencies
+bun install
 
-Kensho est bien plus qu'une simple application React : c'est un **système distribué complet** qui s'exécute directement dans le navigateur. Il implémente :
+# Start development server (http://localhost:5000)
+bun run dev
+```
 
-- 🧠 **Agents autonomes** (via Web Workers) avec communication RPC
-- 📡 **MessageBus** multi-transport (BroadcastChannel, WebSocket, Hybride)
-- 👑 **Élection de leader** avec détection de pannes
-- 🔄 **Auto-réparation** et résilience du système
-- 🌐 **Communication inter-appareils** via WebSocket
+## 🎯 Key Features
+
+- 🧠 **Autonomous Agents**: Web Workers with RPC communication
+- 📡 **Multi-Transport**: BroadcastChannel (local <1ms), WebSocket (network), Hybrid
+- 👑 **Leader Election**: Distributed consensus with automatic failover
+- 🔄 **Resilience**: Circuit breaker, exponential backoff, offline queuing
+- 🧮 **CalculatorAgent**: Secure math expression evaluation
+- 🤖 **LLM Agent**: WebGPU-accelerated inference (Phi-3-mini)
+- 📊 **Observability**: Real-time metrics, telemetry, monitoring
 
 ## 🚀 Nouveau : Support Multi-Transport
 

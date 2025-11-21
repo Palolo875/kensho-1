@@ -1,7 +1,10 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "kensho",
+  "description": "Distributed Multi-Agent System for Browser-based AI - WebGPU-powered LLM with CalculatorAgent",
+  "author": "Kensho Contributors",
+  "license": "MIT",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
