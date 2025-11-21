@@ -37,16 +37,17 @@ export class OrionGuardian {
         this.messageBus.notifyWorkerOnline(message.sourceWorker);
         this.workerRegistry.update(message.sourceWorker);
 
-        if (message.payload && message.payload.systemType) {
-            switch (message.payload.systemType) {
+        const payload = message.payload as any;
+        if (payload && payload.systemType) {
+            switch (payload.systemType) {
                 case 'ELECTION':
-                    this.leaderElection.handleElectionMessage(message.payload.candidateId);
+                    this.leaderElection.handleElectionMessage(payload.candidateId);
                     break;
                 case 'ALIVE':
                     this.leaderElection.handleAliveMessage();
                     break;
                 case 'NEW_LEADER':
-                    this.handleNewLeader(message.payload.leaderId);
+                    this.handleNewLeader(payload.leaderId);
                     break;
                 case 'HEARTBEAT':
                     // Si on reçoit un heartbeat, on réinitialise notre détecteur de panne.

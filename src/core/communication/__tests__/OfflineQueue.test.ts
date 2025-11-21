@@ -120,18 +120,15 @@ describe('OfflineQueue', () => {
 
             const stats = queue.getStats();
 
-            expect(stats.totalQueues).toBe(2);
-            expect(stats.totalMessages).toBe(3);
-            expect(stats.queueDetails['Agent1']).toBe(2);
-            expect(stats.queueDetails['Agent2']).toBe(1);
+            expect(stats).toHaveLength(2);
+            expect(stats.find(s => s.target === 'Agent1')?.queueSize).toBe(2);
+            expect(stats.find(s => s.target === 'Agent2')?.queueSize).toBe(1);
         });
 
-        it('should return zero stats for empty queue', () => {
+        it('should return empty array for empty queue', () => {
             const stats = queue.getStats();
 
-            expect(stats.totalQueues).toBe(0);
-            expect(stats.totalMessages).toBe(0);
-            expect(Object.keys(stats.queueDetails)).toHaveLength(0);
+            expect(stats).toHaveLength(0);
         });
     });
 });

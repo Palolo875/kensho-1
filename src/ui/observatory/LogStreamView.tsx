@@ -80,7 +80,7 @@ const styles = {
         marginBottom: '0.5rem',
         paddingLeft: '0.5rem',
         borderLeftWidth: '3px',
-        borderLeftStyle: 'solid'
+        borderLeftStyle: 'solid' as const
     },
     timestamp: {
         color: '#6b7280',

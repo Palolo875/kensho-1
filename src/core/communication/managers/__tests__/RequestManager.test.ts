@@ -78,6 +78,7 @@ describe('RequestManager', () => {
                 correlationId: 'msg-error',
                 payload: null,
                 error: {
+                    name: 'AgentError',
                     message: 'Something went wrong',
                     code: 'ERR_AGENT_FAILED'
                 }

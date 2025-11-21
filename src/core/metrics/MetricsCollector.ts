@@ -159,7 +159,8 @@ export class MetricsCollector {
             };
         }
 
-        const sorted = [...this.latencies].sort((a, b) => a - b);
+        const values = this.latencies.map(entry => entry.value);
+        const sorted = [...values].sort((a, b) => a - b);
         const count = sorted.length;
         const sum = sorted.reduce((acc, val) => acc + val, 0);
 
