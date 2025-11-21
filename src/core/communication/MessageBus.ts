@@ -101,7 +101,8 @@ export class MessageBus {
     private handleIncomingMessage(message: KenshoMessage): void {
         // 1. Validation avec PayloadValidator (Zod)
         if (!payloadValidator.validate(message)) {
-            console.warn(`[MessageBus] Invalid message rejected from ${message?.sourceWorker || 'unknown'}`);
+            const sourceWorker = (message as any)?.sourceWorker || 'unknown';
+            console.warn(`[MessageBus] Invalid message rejected from ${sourceWorker}`);
             return;
         }
 
