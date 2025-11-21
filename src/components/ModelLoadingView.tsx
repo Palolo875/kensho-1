@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 import { Progress } from '@/components/ui/progress';
-import { X, Minimize2, Maximize2, Pause, Play } from 'lucide-react';
+import { X, Minimize2, Maximize2, Pause, Play, HardDrive, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -11,6 +11,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 /**
  * Icône SVG personnalisée pour le téléchargement
@@ -124,6 +129,68 @@ const InitIcon = ({ className }: { className?: string }) => (
 );
 
 /**
+ * Hook pour récupérer les statistiques de stockage
+ */
+function useStorageStats() {
+    const [stats, setStats] = useState<{
+        used?: number;
+        quota?: number;
+        isPersisted?: boolean;
+        hasWebGPU?: boolean;
+    }>({});
+    const [hasWebGPUCached, setHasWebGPUCached] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        // Vérifier WebGPU une seule fois au montage
+        const checkWebGPU = async () => {
+            if (hasWebGPUCached !== null) return;
+            
+            const nav = navigator as any;
+            let hasWebGPU = false;
+            if (nav.gpu) {
+                try {
+                    const adapter = await nav.gpu.requestAdapter();
+                    hasWebGPU = !!adapter;
+                } catch {
+                    hasWebGPU = false;
+                }
+            }
+            setHasWebGPUCached(hasWebGPU);
+        };
+
+        checkWebGPU();
+    }, [hasWebGPUCached]);
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                // Vérifier le stockage
+                if (navigator.storage && navigator.storage.estimate) {
+                    const estimate = await navigator.storage.estimate();
+                    const isPersisted = await navigator.storage.persisted?.();
+                    
+                    setStats({
+                        used: estimate.usage,
+                        quota: estimate.quota,
+                        isPersisted: isPersisted || false,
+                        hasWebGPU: hasWebGPUCached ?? false,
+                    });
+                }
+            } catch (error) {
+                console.warn('[StorageStats] Erreur lors de la récupération des stats:', error);
+            }
+        };
+
+        fetchStats();
+        // Rafraîchir toutes les 5 secondes pendant le téléchargement
+        const interval = setInterval(fetchStats, 5000);
+        return () => clearInterval(interval);
+    }, [hasWebGPUCached]);
+
+    return stats;
+}
+
+/**
  * Composant affichant l'état de chargement du modèle LLM
  * Peut être minimisé pour ne pas bloquer l'utilisation
  */
@@ -133,6 +200,8 @@ export function ModelLoadingView() {
     const isPaused = useKenshoStore(state => state.isLoadingPaused);
     const setMinimized = useKenshoStore(state => state.setLoadingMinimized);
     const setPaused = useKenshoStore(state => state.setLoadingPaused);
+    const [showDetails, setShowDetails] = useState(false);
+    const storageStats = useStorageStats();
 
     // Référence au worker LLM pour contrôler la pause
     const handlePauseToggle = () => {
@@ -324,27 +393,103 @@ export function ModelLoadingView() {
                         </div>
                     )}
 
-                    {/* Messages contextuels */}
+                    {/* Messages contextuels et statistiques détaillées */}
                     {modelProgress.phase === 'downloading' && (
-                        <div className="rounded-lg border border-border bg-muted/50 p-4 space-y-2">
-                            <p className="text-sm text-muted-foreground">
-                                {modelProgress.isCached ? (
-                                    <>✓ Modèle trouvé en cache - chargement rapide</>
-                                ) : (
-                                    <>💾 Premier téléchargement - le modèle sera conservé en cache</>
-                                )}
-                            </p>
-                            {!modelProgress.isCached && (
+                        <div className="space-y-3">
+                            {/* Statut du cache */}
+                            <div className="rounded-lg border border-border bg-muted/50 p-4 space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <Database className="w-4 h-4 text-primary" />
+                                    <p className="text-sm font-medium">
+                                        {modelProgress.isCached ? (
+                                            <>✓ Modèle trouvé en cache - chargement accéléré</>
+                                        ) : (
+                                            <>Premier téléchargement en cours</>
+                                        )}
+                                    </p>
+                                </div>
+                                
                                 <p className="text-xs text-muted-foreground">
-                                    Le stockage persistant est activé. Le modèle ne sera plus téléchargé 
-                                    même après un redémarrage du navigateur ou en développement.
+                                    {storageStats.isPersisted ? (
+                                        <>💾 Stockage persistant actif - Le modèle ne sera jamais supprimé automatiquement</>
+                                    ) : (
+                                        <>📦 IndexedDB actif - Le modèle est conservé en cache entre les sessions (dev/tests/production)</>
+                                    )}
                                 </p>
-                            )}
-                            {isPaused && (
-                                <p className="text-sm font-medium text-primary">
-                                    ⏸️ Téléchargement en pause - cliquez sur ▶ pour reprendre
-                                </p>
-                            )}
+                                
+                                {isPaused && (
+                                    <p className="text-sm font-medium text-primary mt-2">
+                                        ⏸️ Téléchargement en pause - cliquez sur ▶ pour reprendre
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Statistiques de stockage détaillées */}
+                            <Collapsible open={showDetails} onOpenChange={setShowDetails}>
+                                <div className="rounded-lg border border-border bg-muted/50 p-4">
+                                    <CollapsibleTrigger className="w-full">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <HardDrive className="w-4 h-4 text-primary" />
+                                                <span className="text-sm font-medium">Statistiques de stockage</span>
+                                            </div>
+                                            <span className="text-xs text-muted-foreground">
+                                                {showDetails ? '▼ Masquer' : '▶ Afficher'}
+                                            </span>
+                                        </div>
+                                    </CollapsibleTrigger>
+                                    
+                                    <CollapsibleContent className="mt-3 space-y-2">
+                                        {storageStats.used !== undefined && storageStats.quota !== undefined && storageStats.quota > 0 ? (
+                                            <>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-muted-foreground">Espace utilisé:</span>
+                                                    <span className="font-mono">{formatSize(storageStats.used / (1024 * 1024))}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-muted-foreground">Espace disponible:</span>
+                                                    <span className="font-mono">{formatSize(storageStats.quota / (1024 * 1024))}</span>
+                                                </div>
+                                                <Progress 
+                                                    value={(storageStats.used / storageStats.quota) * 100} 
+                                                    className="h-1 mt-2"
+                                                />
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    {((storageStats.used / storageStats.quota) * 100).toFixed(1)}% utilisé
+                                                </p>
+                                            </>
+                                        ) : (
+                                            <div className="text-xs text-muted-foreground">
+                                                <p>Informations de stockage indisponibles</p>
+                                                <p className="text-xs mt-1">(mode privé ou non supporté par le navigateur)</p>
+                                            </div>
+                                        )}
+                                        
+                                        <div className="flex justify-between text-xs mt-3 pt-3 border-t">
+                                            <span className="text-muted-foreground">Stockage persistant:</span>
+                                            <span className={storageStats.isPersisted ? "text-green-600" : "text-orange-600"}>
+                                                {storageStats.isPersisted ? '✓ Actif' : '⚠ Non actif'}
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-muted-foreground">Accélération WebGPU:</span>
+                                            <span className={storageStats.hasWebGPU ? "text-green-600" : "text-orange-600"}>
+                                                {storageStats.hasWebGPU ? '✓ Disponible' : '⚠ CPU uniquement'}
+                                            </span>
+                                        </div>
+
+                                        <div className="mt-3 p-2 bg-background/50 rounded text-xs text-muted-foreground">
+                                            <p className="font-medium mb-1">ℹ️ À propos du cache:</p>
+                                            <p>
+                                                Les modèles sont stockés localement dans IndexedDB. 
+                                                Une fois téléchargés, ils sont réutilisés automatiquement en dev, 
+                                                tests et production, éliminant les téléchargements répétés.
+                                            </p>
+                                        </div>
+                                    </CollapsibleContent>
+                                </div>
+                            </Collapsible>
                         </div>
                     )}
 
