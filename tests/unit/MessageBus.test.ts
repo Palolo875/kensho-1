@@ -51,7 +51,7 @@ describe('MessageBus Core (Sprint 1A - Durci)', () => {
     });
 
     it('devrait réussir une requête simple et recevoir une réponse', async () => {
-        busB.setRequestHandler(payload => `response to: ${payload.data}`);
+        busB.setRequestHandler(payload => `response to: ${(payload as any).data}`);
         const response = await busA.request('AgentB', { data: 'ping' });
         expect(response).toBe('response to: ping');
     });

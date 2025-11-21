@@ -37,7 +37,7 @@ describe('AgentRuntime Communication (Sprint 1A - Durci)', () => {
 
         // Simuler ce que `defineAgent` ferait
         pingRuntime = new AgentRuntime('PingAgent');
-        pingRuntime.registerMethod('ping', async (message: string) => `pong: ${message}`);
+        pingRuntime.registerMethod('ping', async (payload: unknown) => `pong: ${payload}`);
 
         pongRuntime = new AgentRuntime('PongAgent');
         // Pas de méthode enregistrée pour PongAgent dans ce test de base
