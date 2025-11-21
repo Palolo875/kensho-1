@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 3 - Jour 1: Validation Phi-3</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #667eea;
+            margin-top: 30px;
+        }
+
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #bee5eb;
+        }
+
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+
+        .log-container {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+
+        .log-entry {
+            margin: 3px 0;
+            padding: 3px 0;
+        }
+
+        .log-entry.info {
+            color: #00ff00;
+        }
+
+        .log-entry.user {
+            color: #3498db;
+        }
+
+        .log-entry.kensho {
+            color: #f39c12;
+        }
+
+        .log-entry.error {
+            color: #e74c3c;
+        }
+
+        .log-entry.success {
+            color: #2ecc71;
+        }
+
+        .timestamp {
+            color: #888;
+            margin-right: 10px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s;
+            margin: 5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #667eea;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .response-box {
+            background: #fff;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            min-height: 100px;
+            white-space: pre-wrap;
+            font-family: 'Segoe UI', sans-serif;
+            line-height: 1.6;
+        }
+
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+
+        .checklist li {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #667eea;
+        }
+
+        .checklist li::before {
+            content: "⏳ ";
+            margin-right: 10px;
+        }
+
+        .checklist li.passed::before {
+            content: "✅ ";
+        }
+
+        .checklist li.failed::before {
+            content: "❌ ";
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧠 Sprint 3 - Jour 1: Validation Phi-3</h1>
+        <p><strong>Objectif:</strong> Valider que l'upgrade vers Phi-3-mini fonctionne correctement et améliore la qualité des réponses.</p>
+
+        <div class="test-section">
+            <h2>📋 Critères de Validation</h2>
+            <ul class="checklist" id="checklist">
+                <li id="check-model">Modèle Phi-3-mini-4k-instruct-q4f32_1-MLC chargé</li>
+                <li id="check-download">Téléchargement/Cache du modèle réussi</li>
+                <li id="check-response">Réponse à "Bonjour, qui es-tu ?" reçue</li>
+                <li id="check-streaming">Streaming fonctionnel (chunks reçus)</li>
+                <li id="check-quality">Qualité de réponse supérieure à TinyLlama</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 Test de la Démo "Hello, World!"</h2>
+            <div id="status" class="status info">⏳ En attente du lancement du test...</div>
+            
+            <button id="startTestBtn" onclick="startTest()">🚀 Lancer le Test Phi-3</button>
+            <button onclick="clearLog()">🧹 Effacer les Logs</button>
+        </div>
+
+        <div class="metrics" id="metrics">
+            <div class="metric-card">
+                <div class="metric-value" id="chunkCount">0</div>
+                <div class="metric-label">Chunks Reçus</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="responseTime">0ms</div>
+                <div class="metric-label">Temps de Réponse</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="responseLength">0</div>
+                <div class="metric-label">Caractères</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="modelStatus">⏳</div>
+                <div class="metric-label">Statut du Modèle</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>💬 Réponse de Phi-3</h2>
+            <div class="response-box" id="responseBox">Aucune réponse pour le moment...</div>
+        </div>
+
+        <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <script type="module">
+        import { MessageBus } from '/src/core/communication/MessageBus.ts';
+
+        const logContainer = document.getElementById('logContainer');
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('startTestBtn');
+        const responseBox = document.getElementById('responseBox');
+
+        let chunkCount = 0;
+        let startTime = 0;
+        let responseText = "";
+
+        function log(msg, type = 'info') {
+            const el = document.createElement('div');
+            el.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString('fr-FR');
+            el.innerHTML = `<span class="timestamp">[${timestamp}]</span>${msg}`;
+            logContainer.appendChild(el);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(msg);
+        }
+
+        function updateMetric(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function markCheck(id, passed) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.className = passed ? 'passed' : 'failed';
+            }
+        }
+
+        function clearLog() {
+            logContainer.innerHTML = '';
+            log('🧹 Logs effacés');
+        }
+
+        window.startTest = async function() {
+            startBtn.disabled = true;
+            responseText = "";
+            chunkCount = 0;
+            responseBox.textContent = "";
+            
+            updateMetric('chunkCount', 0);
+            updateMetric('responseTime', '0ms');
+            updateMetric('responseLength', 0);
+            updateMetric('modelStatus', '⏳');
+
+            statusDiv.textContent = '🚀 Test en cours...';
+            statusDiv.className = 'status info';
+
+            try {
+                log('════════════════════════════════════════════', 'info');
+                log('🧪 SPRINT 3 - JOUR 1: VALIDATION PHI-3', 'success');
+                log('════════════════════════════════════════════', 'info');
+                log('🚀 Démarrage du test de validation Phi-3...', 'info');
+
+                // 1. Initialize MessageBus
+                const bus = new MessageBus('Sprint3TestClient');
+                log('✅ MessageBus initialisé', 'success');
+
+                // 2. Start Workers
+                log('🔄 Démarrage des Workers...', 'info');
+                const llmWorker = new Worker('/dist/test-agents/llm.agent.js', { type: 'module' });
+                const oieWorker = new Worker('/dist/test-agents/oie.agent.js', { type: 'module' });
+
+                // Listen for model loading progress
+                llmWorker.addEventListener('message', (event) => {
+                    if (event.data.type === 'MODEL_PROGRESS') {
+                        const progress = event.data.payload;
+                        log(`📦 Progression modèle: ${progress.phase} (${Math.round(progress.progress * 100)}%)`, 'info');
+                        
+                        if (progress.phase === 'ready') {
+                            markCheck('check-model', true);
+                            markCheck('check-download', true);
+                            updateMetric('modelStatus', '✅');
+                        }
+                    }
+                });
+
+                // Wait for workers to be ready
+                await new Promise(r => setTimeout(r, 3000));
+                log('✅ Workers démarrés', 'success');
+
+                // 3. Send Test Query
+                const query = "Bonjour, qui es-tu ?";
+                log(`────────────────────────────────────────`, 'info');
+                log(`📤 QUESTION TEST: "${query}"`, 'user');
+                log(`────────────────────────────────────────`, 'info');
+
+                startTime = Date.now();
+
+                await new Promise((resolve, reject) => {
+                    const streamId = bus.requestStream(
+                        'OIEAgent',
+                        { method: 'executeQuery', args: [{ query }] },
+                        {
+                            onChunk: (chunk) => {
+                                if (chunk.text) {
+                                    chunkCount++;
+                                    responseText += chunk.text;
+                                    
+                                    if (chunkCount === 1) {
+                                        log(`📥 Premier chunk reçu! Streaming fonctionnel ✅`, 'success');
+                                        markCheck('check-streaming', true);
+                                    }
+                                    
+                                    log(`📥 Chunk #${chunkCount}: "${chunk.text}"`, 'kensho');
+                                    
+                                    updateMetric('chunkCount', chunkCount);
+                                    updateMetric('responseLength', responseText.length);
+                                    responseBox.textContent = responseText;
+                                }
+                            },
+                            onEnd: () => {
+                                const elapsed = Date.now() - startTime;
+                                updateMetric('responseTime', `${elapsed}ms`);
+                                
+                                log(`────────────────────────────────────────`, 'info');
+                                log(`✅ Stream terminé`, 'success');
+                                log(`📊 Statistiques:`, 'info');
+                                log(`   - Chunks reçus: ${chunkCount}`, 'info');
+                                log(`   - Temps total: ${elapsed}ms`, 'info');
+                                log(`   - Caractères: ${responseText.length}`, 'info');
+                                log(`────────────────────────────────────────`, 'info');
+                                
+                                resolve();
+                            },
+                            onError: (err) => {
+                                log(`❌ Erreur de stream: ${err.message}`, 'error');
+                                reject(err);
+                            }
+                        }
+                    );
+                    log(`🆔 Stream démarré (ID: ${streamId})`, 'info');
+                });
+
+                // 4. Verify Response Quality
+                log(`📝 RÉPONSE COMPLÈTE:`, 'kensho');
+                log(`"${responseText}"`, 'kensho');
+                log(`────────────────────────────────────────`, 'info');
+
+                markCheck('check-response', true);
+
+                // Quality checks
+                const qualityChecks = {
+                    minLength: responseText.length > 50,
+                    hasGreeting: /bonjour|salut|hello/i.test(responseText),
+                    hasIdentity: /assistant|ia|kensho|phi-3|aide/i.test(responseText),
+                    coherent: chunkCount > 5 && responseText.length > 100
+                };
+
+                log('🔍 Analyse de la qualité de la réponse:', 'info');
+                log(`   - Longueur suffisante (>50 car): ${qualityChecks.minLength ? '✅' : '❌'}`, qualityChecks.minLength ? 'success' : 'error');
+                log(`   - Contient une salutation: ${qualityChecks.hasGreeting ? '✅' : '❌'}`, qualityChecks.hasGreeting ? 'success' : 'error');
+                log(`   - S'identifie: ${qualityChecks.hasIdentity ? '✅' : '❌'}`, qualityChecks.hasIdentity ? 'success' : 'error');
+                log(`   - Réponse cohérente et détaillée: ${qualityChecks.coherent ? '✅' : '❌'}`, qualityChecks.coherent ? 'success' : 'error');
+
+                const qualityScore = Object.values(qualityChecks).filter(Boolean).length;
+                const qualityPassed = qualityScore >= 3;
+
+                markCheck('check-quality', qualityPassed);
+
+                if (qualityPassed) {
+                    log('════════════════════════════════════════════', 'success');
+                    log('🎉 TEST RÉUSSI! Phi-3 fonctionne parfaitement!', 'success');
+                    log(`📊 Score de qualité: ${qualityScore}/4`, 'success');
+                    log('════════════════════════════════════════════', 'success');
+                    
+                    statusDiv.textContent = '✅ TEST RÉUSSI: Phi-3 validé avec succès!';
+                    statusDiv.className = 'status success';
+                } else {
+                    throw new Error(`Qualité insuffisante (${qualityScore}/4 critères passés)`);
+                }
+
+            } catch (error) {
+                log('════════════════════════════════════════════', 'error');
+                log(`❌ TEST ÉCHOUÉ: ${error.message}`, 'error');
+                log('════════════════════════════════════════════', 'error');
+                
+                statusDiv.textContent = `❌ TEST ÉCHOUÉ: ${error.message}`;
+                statusDiv.className = 'status error';
+            } finally {
+                startBtn.disabled = false;
+            }
+        };
+
+        log('🎯 Prêt pour le test de validation Phi-3', 'success');
+        log('💡 Cliquez sur "Lancer le Test Phi-3" pour commencer', 'info');
+    </script>
+</body>
+
+</html>
