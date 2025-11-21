@@ -18,9 +18,12 @@
  * - État d'erreur dédié pour meilleure UX
  */
 
+
 import { create, StoreApi } from 'zustand';
 import { MessageBus } from '../core/communication/MessageBus';
 import { ModelLoaderProgress } from '../core/models/ModelLoader';
+import { toast } from 'sonner';
+
 
 const STORAGE_KEY = 'kensho_conversation_history';
 const MAX_STORED_MESSAGES = 100;
@@ -121,6 +124,10 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
                 set({ modelProgress: e.data.payload });
             } else if (e.data.type === 'MODEL_ERROR') {
                 console.error('[KenshoStore] Erreur de chargement du modèle:', e.data.payload);
+                toast.error('Erreur de chargement du modèle', {
+                    description: e.data.payload.message,
+                    duration: 8000
+                });
                 set({
                     modelProgress: {
                         phase: 'error',
@@ -138,6 +145,10 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
                 message: 'Erreur lors du démarrage du worker LLM',
                 timestamp: Date.now()
             };
+            toast.error('❌ Worker LLM indisponible', {
+                description: 'Le moteur d\'IA n\'a pas pu démarrer',
+                duration: 8000
+            });
             set(state => ({
                 modelProgress: {
                     phase: 'error',
@@ -372,14 +383,17 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 },
                 onError: (error) => {
                     console.error('[KenshoStore] ❌ Erreur de stream:', error);
+
+                    // Afficher un toast d'erreur
+                    toast.error('Erreur de communication', {
+                        description: error.message || 'Impossible de contacter l\'agent',
+                        duration: 6000
+                    });
+
                     set(state => {
-                        const updatedMessages = state.messages.map(msg =>
-                            msg.id === kenshoResponsePlaceholder.id
-                                ? {
-                                    ...msg,
-                                    text: `Désolé, une erreur est survenue: ${error.message}`
-                                }
-                                : msg
+                        // Supprimer le placeholder de réponse
+                        const updatedMessages = state.messages.filter(msg =>
+                            msg.id !== kenshoResponsePlaceholder.id
                         );
                         saveMessagesToLocalStorage(updatedMessages);
                         return {

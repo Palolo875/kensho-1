@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { Toaster } from "sonner";
+
 
 const Index = () => {
   const isMobile = useIsMobile();
@@ -133,6 +135,9 @@ const Index = () => {
         logs={logs}
         onKillWorker={killWorker}
       />
+
+      {/* Toast Notifications */}
+      <Toaster position="top-right" richColors closeButton />
     </div>
   );
 };

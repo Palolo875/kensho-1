@@ -16,10 +16,10 @@
     "test:poc:webllm": "vite dev --open tests/poc/test-webllm.html",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest",
-    "test:unit": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest watch",
+    "test": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs",
+    "test:unit": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run",
+    "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --coverage",
+    "test:watch": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs watch",
     "type-check": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
@@ -81,6 +81,9 @@
     "@eslint/js": "^9.32.0",
     "@mlc-ai/web-llm": "^0.2.79",
     "@tailwindcss/typography": "^0.5.16",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
@@ -102,7 +105,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
-    "vitest": "^4.0.8"
+    "vitest": "^3.2.4"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

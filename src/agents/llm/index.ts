@@ -4,7 +4,7 @@ import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentR
 import { ModelLoader } from '../../core/models/ModelLoader';
 import * as webllm from '@mlc-ai/web-llm';
 
-const MODEL_ID = 'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC'; // Notre modèle pour le Sprint 2
+const MODEL_ID = 'Phi-3-mini-4k-instruct-q4f32_1-MLC'; // Upgrade Sprint 3 : Phi-3 pour une meilleure qualité
 
 // Paramètres de génération par défaut
 const DEFAULT_GENERATION_PARAMS = {
@@ -47,15 +47,15 @@ modelLoader.loadModel(MODEL_ID).then(() => {
     engine = modelLoader.getEngine();
     console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
     // Poster un message final indiquant que le modèle est prêt
-    self.postMessage({ 
-        type: 'MODEL_PROGRESS', 
-        payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' } 
+    self.postMessage({
+        type: 'MODEL_PROGRESS',
+        payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
     });
 }).catch((error) => {
     console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
-    self.postMessage({ 
-        type: 'MODEL_ERROR', 
-        payload: { message: error.message } 
+    self.postMessage({
+        type: 'MODEL_ERROR',
+        payload: { message: error.message }
     });
 });
 
@@ -76,9 +76,9 @@ runAgent({
             'generateResponse',
             async (payload: any, stream: AgentStreamEmitter) => {
                 console.log('[MainLLMAgent] 📨 Requête de génération reçue:', payload);
-                
+
                 const [prompt, customParams] = payload.args || [payload, {}];
-                
+
                 if (!engine) {
                     const error = new Error('Le moteur LLM n\'est pas encore prêt. Veuillez patienter...');
                     console.error('[MainLLMAgent] ❌ Moteur non prêt');
@@ -86,7 +86,7 @@ runAgent({
                     stream.error(error);
                     return;
                 }
-                
+
                 console.log('[MainLLMAgent] ✅ Moteur disponible');
 
                 // Valider le prompt
@@ -97,7 +97,7 @@ runAgent({
                     stream.error(error);
                     return;
                 }
-                
+
                 console.log('[MainLLMAgent] ✅ Prompt valide:', prompt.substring(0, 50) + '...');
 
                 // Fusionner les paramètres par défaut avec les paramètres personnalisés
@@ -126,7 +126,7 @@ runAgent({
                 try {
                     console.log('[MainLLMAgent] 🔄 Début de la génération...');
                     runtime.log('info', `Début de la génération pour le prompt: "${String(prompt).substring(0, 50)}..." (temp: ${params.temperature}, max_tokens: ${params.max_tokens})`);
-                    
+
                     // Construire les messages avec le system prompt
                     const messages: any[] = [
                         { role: 'system', content: params.system_prompt },
