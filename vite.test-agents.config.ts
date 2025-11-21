@@ -12,12 +12,12 @@ export default defineConfig({
       input: {
         // Each entry corresponds to a worker we want to build.
         // The key ('ping') will be the output file name.
-        ping: resolve(__dirname, 'src/agents/ping/index.ts'),
-        pong: resolve(__dirname, 'src/agents/pong/index.ts'),
-        telemetry: resolve(__dirname, 'src/agents/telemetry/index.ts'),
-        state: resolve(__dirname, 'src/agents/test/state-agent.ts'),
-        oie: resolve(__dirname, 'src/agents/oie/index.ts'),
-        llm: resolve(__dirname, 'src/agents/llm/index.ts'),
+        // ping: resolve(__dirname, 'src/agents/ping/index.ts'),
+        // pong: resolve(__dirname, 'src/agents/pong/index.ts'),
+        // telemetry: resolve(__dirname, 'src/agents/telemetry/index.ts'),
+        // state: resolve(__dirname, 'src/agents/test/state-agent.ts'),
+        // oie: resolve(__dirname, 'src/agents/oie/index.ts'),
+        llm: resolve(__dirname, 'src/agents/llm/mock.ts'),
       },
       output: {
         // Specify where and how the files are generated.

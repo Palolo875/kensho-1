@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 2: Chat Flow E2E Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .log {
+            background: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #ddd;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+        }
+
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .user {
+            color: blue;
+        }
+
+        .kensho {
+            color: green;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Sprint 2: Chat Flow E2E Test</h1>
+    <div id="status" class="status">Initializing...</div>
+    <div id="chat-log" class="log"></div>
+
+    <script type="module">
+        import { MessageBus } from '/src/core/communication/MessageBus.ts';
+
+        const logDiv = document.getElementById('chat-log');
+        const statusDiv = document.getElementById('status');
+
+        function log(msg, type = 'info') {
+            const el = document.createElement('div');
+            el.className = `message ${type}`;
+            el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logDiv.appendChild(el);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        async function runTest() {
+            try {
+                log('🚀 Starting Chat Flow Test...');
+
+                // 1. Initialize MessageBus
+                const bus = new MessageBus('TestClient');
+                log('✅ MessageBus initialized');
+
+                // 2. Start Workers
+                log('🔄 Starting Workers...');
+
+                const llmWorker = new Worker('/dist/test-agents/llm.agent.js', { type: 'module' });
+                const oieWorker = new Worker('/dist/test-agents/oie.agent.js', { type: 'module' });
+
+                // Wait for workers to be ready (simple timeout for now, or listen for READY)
+                await new Promise(r => setTimeout(r, 2000));
+                log('✅ Workers started (assumed ready)');
+
+                // 3. Send Message
+                const query = "Bonjour Kensho !";
+                log(`📤 Sending query: "${query}"`);
+
+                let responseText = "";
+                let chunkCount = 0;
+
+                await new Promise((resolve, reject) => {
+                    const streamId = bus.requestStream(
+                        'OIEAgent',
+                        { method: 'executeQuery', args: [{ query }] },
+                        {
+                            onChunk: (chunk) => {
+                                chunkCount++;
+                                if (chunk.text) {
+                                    responseText += chunk.text;
+                                    log(`📥 Chunk #${chunkCount}: "${chunk.text}"`, 'kensho');
+                                }
+                            },
+                            onEnd: () => {
+                                log('✅ Stream ended');
+                                resolve();
+                            },
+                            onError: (err) => {
+                                log(`❌ Stream error: ${err.message}`, 'error');
+                                reject(err);
+                            }
+                        }
+                    );
+                    log(`🆔 Stream started with ID: ${streamId}`);
+                });
+
+                // 4. Verify Response
+                log(`📝 Full Response: "${responseText}"`);
+
+                if (responseText.includes("Mock") && chunkCount > 0) {
+                    statusDiv.textContent = '✅ TEST PASSED: Streaming works!';
+                    statusDiv.className = 'status success';
+                    log('🎉 TEST PASSED!');
+                } else {
+                    throw new Error('Response did not contain expected content or no chunks received');
+                }
+
+            } catch (error) {
+                statusDiv.textContent = `❌ TEST FAILED: ${error.message}`;
+                statusDiv.className = 'status error';
+                log(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        runTest();
+    </script>
+</body>
+
+</html>
