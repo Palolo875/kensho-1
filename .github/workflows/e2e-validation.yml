@@ -1,0 +1,73 @@
+name: E2E Validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run E2E tests every day at 2am UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  e2e-checklist:
+    name: E2E Manual Validation Checklist
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build test agents
+        run: npm run build:test-agents
+      
+      - name: Build remote agents
+        run: npm run build:remote-agents
+      
+      - name: Create validation report
+        run: |
+          echo "# E2E Tests Validation Report" > e2e-report.md
+          echo "" >> e2e-report.md
+          echo "**Date**: $(date)" >> e2e-report.md
+          echo "**Commit**: ${{ github.sha }}" >> e2e-report.md
+          echo "" >> e2e-report.md
+          echo "## Tests to Validate Manually" >> e2e-report.md
+          echo "" >> e2e-report.md
+          echo "- [ ] sprint1a-e2e.html - Basic Ping/Pong + Stress Test" >> e2e-report.md
+          echo "- [ ] sprint1b-election-e2e.html - Leader Election" >> e2e-report.md
+          echo "- [ ] sprint1b-registry-e2e.html - Worker Discovery" >> e2e-report.md
+          echo "- [ ] sprint1b-resilience-e2e.html - Failure Recovery" >> e2e-report.md
+          echo "- [ ] sprint1c-chaos-monkey-e2e.html - Chaos Testing" >> e2e-report.md
+          echo "- [ ] sprint1c-duplicate-detection-e2e.html - Idempotency" >> e2e-report.md
+          echo "- [ ] sprint2-streaming-e2e.html - Streaming Support" >> e2e-report.md
+          echo "- [ ] sprint3-persistence-e2e.html - IndexedDB Persistence" >> e2e-report.md
+          echo "- [ ] sprint3-agent-state-e2e.html - Agent State Management" >> e2e-report.md
+          echo "- [ ] websocket-transport-demo.html - WebSocket Communication" >> e2e-report.md
+          echo "" >> e2e-report.md
+          echo "## Instructions" >> e2e-report.md
+          echo "" >> e2e-report.md
+          echo "1. Run: \`npm run dev\`" >> e2e-report.md
+          echo "2. Open each test file in browser" >> e2e-report.md
+          echo "3. Click 'Run Tests' button" >> e2e-report.md
+          echo "4. Verify all tests pass (✅)" >> e2e-report.md
+          echo "5. Check for errors in console" >> e2e-report.md
+          echo "" >> e2e-report.md
+          echo "## Build Status" >> e2e-report.md
+          echo "" >> e2e-report.md
+          echo "- ✅ Test agents built successfully" >> e2e-report.md
+          echo "- ✅ Remote agents built successfully" >> e2e-report.md
+          
+          cat e2e-report.md
+      
+      - name: Upload validation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-validation-report
+          path: e2e-report.md
+          retention-days: 30

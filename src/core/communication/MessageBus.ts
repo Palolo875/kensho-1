@@ -13,6 +13,7 @@ import {
     StreamCallbacks
 } from './managers';
 import { MetricsCollector } from '../metrics';
+import { payloadValidator } from './validation';
 
 // Re-export StreamCallbacks for public API compatibility
 export type { StreamCallbacks };
@@ -78,9 +79,9 @@ export class MessageBus {
             onStreamChunk: (msg) => { this.streamManager.handleChunk(msg); },
             onStreamEnd: (msg) => { this.streamManager.handleEnd(msg); },
             onStreamError: (msg) => { this.streamManager.handleError(msg); },
-            onStreamCancel: (msg) => { 
+            onStreamCancel: (msg) => {
                 // Gérer côté consommateur
-                this.streamManager.handleCancel(msg); 
+                this.streamManager.handleCancel(msg);
                 // Notifier les subscribers système (pour les producteurs)
                 this.notifySystemSubscribers(msg);
             },
@@ -98,8 +99,9 @@ export class MessageBus {
      * Point d'entrée pour tous les messages entrants.
      */
     private handleIncomingMessage(message: KenshoMessage): void {
-        // 1. Validation basique
-        if (!this.validateMessage(message)) {
+        // 1. Validation avec PayloadValidator (Zod)
+        if (!payloadValidator.validate(message)) {
+            console.warn(`[MessageBus] Invalid message rejected from ${message?.sourceWorker || 'unknown'}`);
             return;
         }
 
@@ -110,10 +112,6 @@ export class MessageBus {
 
         // 3. Router le message
         this.messageRouter.route(message);
-    }
-
-    private validateMessage(message: KenshoMessage): boolean {
-        return !!(message && message.messageId && message.type);
     }
 
     /**
@@ -133,8 +131,8 @@ export class MessageBus {
 
         // 2. Traitement
         if (!this.requestHandler) {
-            const error: SerializedError = { 
-                message: `No handler for request in ${this.workerName}`, 
+            const error: SerializedError = {
+                message: `No handler for request in ${this.workerName}`,
                 code: 'NO_HANDLER',
                 name: 'NoHandlerError'
             };
@@ -147,18 +145,6 @@ export class MessageBus {
             const result = await this.requestHandler(message.payload);
 
             // 3. Envoyer la réponse (seulement si ce n'est pas une requête de stream qui gère ses propres réponses via chunks)
-            // NOTE: Dans l'implémentation précédente, on envoyait une réponse même pour stream_request 
-            // pour acquitter la réception, sauf si le handler s'en occupait.
-            // Regardons la logique précédente : "Only send response if it's a standard request (not a stream request)"
-            // Mais wait, le code précédent disait: 
-            // "if (message.type === 'request' && !message.streamId) { sendResponse... }"
-            // OR "if (message.type === 'stream_request') { ... }" -> actually stream_request was handled as type='request' with streamId.
-
-            // Si c'est une requête standard (pas de streamId), on envoie la réponse.
-            // Si c'est un stream (streamId présent), le handler est responsable d'envoyer les chunks/end/error via le streamEmitter.
-            // MAIS, il est parfois utile d'envoyer une réponse initiale "OK, stream started".
-            // Pour l'instant, conservons la logique : réponse automatique seulement si pas de streamId.
-
             if (!message.streamId) {
                 this.sendResponse(message, result);
             }
@@ -171,7 +157,7 @@ export class MessageBus {
             };
             // En cas d'erreur, on l'envoie toujours, même pour un stream (init failed)
             this.sendResponse(message, null, serializedError);
-            
+
             // Collecter métrique d'erreur
             if (this.metricsEnabled) {
                 this.metricsCollector.recordError(serializedError.code || 'UNKNOWN');
@@ -248,14 +234,14 @@ export class MessageBus {
         // Collecter les métriques
         try {
             const result = await promise;
-            
+
             // Métrique: latence
             if (this.metricsEnabled) {
                 const latency = performance.now() - startTime;
                 this.metricsCollector.recordLatency(latency, { target, type: 'request' });
                 this.metricsCollector.recordMessage({ target, type: 'request', status: 'success' });
             }
-            
+
             return result;
         } catch (error) {
             // Métrique: erreur
@@ -402,12 +388,12 @@ export class MessageBus {
     public cancelStream(streamId: string, reason?: string, targetWorker?: WorkerName): boolean {
         const stream = (this.streamManager as any).activeStreams?.get(streamId);
         const target = targetWorker || stream?.target;
-        
+
         // Envoyer le message de cancel au producteur distant si on a la cible
         if (target) {
             this.sendStreamCancel(streamId, reason || 'Stream cancelled by consumer', target);
         }
-        
+
         // Nettoyer localement
         return this.streamManager.cancelStream(streamId, reason);
     }
@@ -479,7 +465,7 @@ export class MessageBus {
         if (this.metricsEnabled) {
             const queueStats = this.offlineQueue.getStats();
             const totalQueued = queueStats.reduce((sum, stat) => sum + stat.queueSize, 0);
-            
+
             return {
                 ...baseStats,
                 metrics: this.metricsCollector.getSystemStats(
