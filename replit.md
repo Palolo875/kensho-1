@@ -68,7 +68,16 @@ Distributed coordination layer providing:
 - **Telemetry Agent**: Centralized log collection with batching (10 logs or 500ms flush)
 - **Observatory UI**: Real-time visualization of agent constellation, leader status, epoch tracking, and log streaming with severity-based coloring
 
-### AI Agent Orchestration (Sprint 2)
+### AI Agent Orchestration (Sprint 2 + 3)
+- **CalculatorAgent** (Sprint 3): Specialized agent for precise mathematical calculations
+  - Uses mathjs library for secure expression evaluation
+  - Supports: arithmetic (+, -, *, /, ^), functions (sqrt, sin, cos, abs, min, max, etc.), constants (pi, e)
+  - Security: Rejects matrices, complex numbers, unit conversions, function definitions
+  - Standardized error messages (all start with "Expression invalide")
+  - Guarantees number-only output (no mathjs objects)
+  - Build: `bun run build:test-agents` → dist/test-agents/calculator.agent.js (~1.3 MB)
+  - Tests: 16 manual tests (tests/manual-test-calculator.ts) + E2E browser test
+  - Documentation: docs/CALCULATOR_AGENT.md
 - **OIEAgent (Orchestration Intelligence Engine)**: Central orchestrator for multi-agent AI system
   - Receives user queries and plans task execution
   - Dynamic routing to specialized agents (CodeAgent, VisionAgent, MainLLMAgent)
@@ -122,6 +131,8 @@ Distributed coordination layer providing:
 
 ### Testing Infrastructure
 - **Vitest Configuration**: Unit tests for core components (MessageBus, OfflineQueue, OrionGuardian, Managers, Monitoring) with 61+ test cases
+  - **Known limitation**: Vitest 3.2.4 has a deserialization error with tinypool/child_process in Replit environment
+  - Affects all Vitest tests; manual/E2E tests used as workaround
 - **Monitoring Tests**: 20 comprehensive tests for MetricsCollector and PerformanceMonitor
   - Counters with tags
   - Timing statistics with precise percentile validation (±0.005 tolerance)
@@ -142,6 +153,9 @@ Distributed coordination layer providing:
   - Parameter configuration UI (temperature, max_tokens)
   - System logs and metadata display
   - Run with: `npm run test:e2e:sprint2`
+- **Sprint 3 Manual Tests** (tests/manual-test-calculator.ts): 16 comprehensive tests for CalculatorAgent
+  - Run with: `bun run tests/manual-test-calculator.ts`
+  - 100% pass rate (calculs, sécurité, normalisation)
 
 ## External Dependencies
 
