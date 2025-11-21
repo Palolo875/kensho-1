@@ -1,0 +1,245 @@
+Exécution : Sprint 1B-Core - Tâche des Jours 8-9
+Objectif : Implémenter l'OrionObservatory V1
+Philosophie : "Ce que l'on ne peut pas voir, on ne peut pas le déboguer." L'Observatory est notre fenêtre sur l'âme du système. La V1 doit être simple mais fonctionnelle, fournissant les informations critiques : Qui est en vie ? Qui est le chef ? Et que se disent-ils ?
+Sous-Étape 1 : Le TelemetryWorker (Batching des Logs)
+Avant de construire l'UI, nous devons avoir un point de collecte pour les logs. Nous allons créer ce worker spécialisé et mettre à jour l'AgentRuntime pour qu'il lui envoie les logs par lots.
+1. Création du TelemetryWorker :
+TypeScript
+
+// src/agents/telemetry/index.ts
+import { runAgent } from '../../core/agent-system/defineAgent';
+
+// Ce worker est très simple pour l'instant. Son seul rôle est de recevoir
+// des lots de logs et de les transmettre au thread principal (l'UI).
+runAgent({
+    name: 'TelemetryWorker',
+    init: (runtime) => {
+        runtime.registerMethod('logBatch', (logBatch: any[]) => {
+            // Transférer le lot de logs au thread principal pour affichage.
+            self.postMessage({ type: 'LOG_BATCH', payload: logBatch });
+        });
+    }
+});
+
+    Action : Ajouter 'telemetry': resolve(__dirname, 'src/agents/telemetry/index.ts') à la configuration vite.test-agents.config.ts et re-builder.
+
+2. Mise à Jour de l' AgentRuntime pour le Batching :
+TypeScript
+
+// src/core/agent-system/AgentRuntime.ts
+// ...
+export class AgentRuntime {
+    // ...
+    private logBuffer: any[] = [];
+    private flushLogsInterval: any;
+
+    constructor(name: WorkerName) {
+        // ...
+        // Démarrer le flush périodique des logs
+        this.flushLogsInterval = setInterval(() => this.flushLogs(), 500);
+        
+        // Ajouter un logger interne pour le runtime lui-même
+        this.log('info', `Agent ${name} initialisé.`);
+    }
+
+    // NOUVEAU : Méthode de logging avec buffer
+    public log(level: 'info' | 'warn' | 'error', message: string, data?: any): void {
+        this.logBuffer.push({
+            timestamp: Date.now(),
+            agent: this.agentName,
+            level,
+            message,
+            data,
+        });
+
+        if (this.logBuffer.length >= 10) {
+            this.flushLogs();
+        }
+    }
+
+    private flushLogs(): void {
+        if (this.logBuffer.length === 0) return;
+        
+        // Utiliser callAgent pour envoyer le lot au TelemetryWorker.
+        // C'est un appel "fire-and-forget", donc on n'attend pas la réponse.
+        this.callAgent('TelemetryWorker', 'logBatch', [this.logBuffer]);
+        this.logBuffer = [];
+    }
+
+    public dispose(): void {
+        this.flushLogs(); // S'assurer que tous les logs sont envoyés avant de mourir
+        clearInterval(this.flushLogsInterval);
+        this.messageBus.dispose();
+        // ...
+    }
+    // ...
+}
+
+    Commentaire : Cette implémentation réduit considérablement le nombre de messages sur le bus. Au lieu d'un message par log, nous en avons un par lot.
+
+Sous-Étape 2 : Création des Composants UI de l'Observatory
+Nous allons créer un composant principal OrionObservatory qui contiendra nos deux vues : ConstellationView et LogStreamView.
+1. OrionObservatory.tsx (Le Conteneur) :
+TypeScript
+
+// src/ui/observatory/OrionObservatory.tsx
+import React, { useState } from 'react';
+import { ConstellationView } from './ConstellationView';
+import { LogStreamView } from './LogStreamView';
+
+interface OrionObservatoryProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function OrionObservatory({ isOpen, onClose }: OrionObservatoryProps) {
+    if (!isOpen) return null;
+
+    return (
+        <div style={styles.overlay}>
+            <div style={styles.panel}>
+                <div style={styles.header}>
+                    <h1>Orion Observatory</h1>
+                    <button onClick={onClose} style={styles.closeButton}>&times;</button>
+                </div>
+                <div style={styles.content}>
+                    <ConstellationView />
+                    <LogStreamView />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Styles (pour la simplicité, ils sont in-line ici)
+const styles = { /* ... CSS pour un panneau modal ... */ };
+
+2. ConstellationView.tsx (La Vue des Workers) :
+TypeScript
+
+// src/ui/observatory/ConstellationView.tsx
+import React from 'react';
+// On suppose qu'on a un hook `useConstellationStatus` qui nous donne l'état.
+// Ce hook sera implémenté dans notre store principal (Zustand).
+
+export function ConstellationView() {
+    const { workers, leader, epoch } = useConstellationStatus();
+
+    const killWorker = (workerName: string) => {
+        // Logique pour envoyer un message au worker pour qu'il se termine,
+        // ou directement via l'instance du worker si on la garde dans le thread principal.
+        console.log(`[Observatory] Demande de terminaison pour ${workerName}`);
+        // ... à implémenter
+    };
+
+    return (
+        <div style={styles.container}>
+            <h2>Constellation Status (Epoch: {epoch})</h2>
+            <div style={styles.workerGrid}>
+                {workers.map(worker => (
+                    <div key={worker.name} style={styles.workerCard}>
+                        <span>{worker.name === leader ? '👑' : '⚙️'} {worker.name}</span>
+                        <button onClick={() => killWorker(worker.name)} style={styles.killButton}>Kill</button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+const styles = { /* ... CSS pour les cartes et la grille ... */ };
+
+3. LogStreamView.tsx (La Vue des Logs) :
+TypeScript
+
+// src/ui/observatory/LogStreamView.tsx
+import React from 'react';
+// On suppose un hook `useLogStream` qui nous donne les derniers logs.
+
+export function LogStreamView() {
+    const { logs } = useLogStream(); // Affiche les 100 derniers logs
+
+    return (
+        <div style={styles.container}>
+            <h2>Log Stream</h2>
+            <pre style={styles.logArea}>
+                {logs.map(log => (
+                    <div key={log.timestamp + log.message}>
+                        <span style={styles.timestamp}>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        <span style={styles.agent}>[{log.agent}]</span>
+                        <span style={styles.message}>{log.message}</span>
+                    </div>
+                ))}
+            </pre>
+        </div>
+    );
+}
+
+const styles = { /* ... CSS pour la zone de log ... */ };
+
+Sous-Étape 3 : Intégration et Logique de Données
+Objectif : Connecter l'UI à notre système de workers.
+1. Logique dans le Thread Principal (main.tsx ou un orchestrateur) :
+TypeScript
+
+// Dans le fichier principal de l'application
+// ...
+const workers = {}; // Un objet pour garder une référence à nos instances de workers
+
+// Démarrer tous les workers nécessaires
+const agentFiles = ['ping.agent.js', 'pong.agent.js', 'telemetry.agent.js'];
+agentFiles.forEach(file => {
+    const worker = new Worker(`/dist/test-agents/${file}`);
+    const name = file.split('.')[0].toUpperCase() + 'Agent';
+    workers[name] = worker;
+
+    // Écouter les lots de logs venant du TelemetryWorker
+    if (name === 'TelemetryWorker') {
+        worker.onmessage = (e) => {
+            if (e.data.type === 'LOG_BATCH') {
+                // Mettre à jour le store Zustand avec les nouveaux logs
+                useLogStore.getState().addLogs(e.data.payload);
+            }
+        };
+    }
+});
+
+// Logique pour mettre à jour périodiquement l'état de la constellation
+setInterval(async () => {
+    const mainBus = useMainBus.getState().bus;
+    const agentNames = Object.keys(workers);
+    const statuses = await Promise.all(
+        agentNames.map(name => mainBus.request(name, { method: 'getGuardianStatus', args: [] }))
+    );
+    // Mettre à jour le store Zustand avec les nouveaux statuts
+    useConstellationStore.getState().updateStatuses(statuses);
+}, 2000); // Mettre à jour toutes les 2 secondes
+
+2. Logique de killWorker :
+La façon la plus simple de l'implémenter pour la démo est de garder les instances de worker dans le thread principal.
+TypeScript
+
+// Dans ConstellationView.tsx, on passe les instances de worker en props
+// ou on appelle une fonction globale
+function killWorker(workerName: string) {
+    const workerInstance = window.kensho.workers[workerName];
+    if (workerInstance) {
+        workerInstance.terminate();
+        // On pourrait aussi notifier le système que le worker a été tué manuellement
+    }
+}
+
+Conclusion de la Tâche
+Nous avons maintenant tous les éléments pour la "Démo du Cerveau Résilient".
+Processus de Validation Final :
+
+    Exécuter npm run build:test-agents.
+    Lancer l'application de test qui charge tous les workers et l'UI de l'Observatory.
+    Ouvrir l'Observatory (ex: avec un raccourci clavier).
+    Vérifier : La vue Constellation affiche tous les workers et un seul a l'icône 👑. La vue Logs affiche les messages d'initialisation.
+    Action : Cliquer sur le bouton "Kill" du worker Leader.
+    Vérifier :
+        Le worker tué disparaît de la liste (après le délai du garbage collector).
+        La vue Logs affiche les messages d'élection.
+        En moins de 5 secondes, un nouveau worker reçoit l'icône 👑.
+        L'Epoch ID dans le titre s'incrémente.
