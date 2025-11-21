@@ -1,0 +1,192 @@
+Exécution : Sprint 1A - Tâche des Jours 6-7
+Objectif : Mettre en place l'environnement de build et les tests de validation des prérequis pour notre test de bout en bout (E2E).
+Philosophie : "Measure twice, cut once." Nous allons valider chaque brique technologique (compatibilité du navigateur, processus de build) avant d'assembler le test final. Cela nous évitera des heures de débogage frustrant.
+Sous-Étape 6.1 : Test de Compatibilité du BroadcastChannel
+Action : Nous exécutons le test broadcast-channel-test.html que nous avons conçu lors de notre audit. C'est notre "canari dans la mine de charbon".
+Code du Test (pour rappel) :
+Un fichier HTML qui lance un worker et vérifie qu'un message envoyé par le worker via BroadcastChannel est bien reçu par le thread principal.
+HTML
+
+<!-- tests/browser/compatibility/broadcast-channel.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head><title>Test Compatibilité BroadcastChannel</title></head>
+<body>Vérification en cours...</body>
+<script>
+    // worker-script.js
+    const workerScriptContent = `
+        const bc = new BroadcastChannel('kensho-compat-test');
+        self.onmessage = () => { bc.postMessage('pong'); };
+    `;
+    const blob = new Blob([workerScriptContent], { type: 'application/javascript' });
+    const worker = new Worker(URL.createObjectURL(blob));
+
+    const bc = new BroadcastChannel('kensho-compat-test');
+    let received = false;
+    
+    bc.onmessage = (e) => {
+        if (e.data === 'pong') {
+            received = true;
+            document.body.innerHTML = '<h1 style="color: green;">✅ Compatibilité BroadcastChannel OK</h1>';
+            bc.close();
+            worker.terminate();
+        }
+    };
+
+    worker.postMessage('start');
+
+    setTimeout(() => {
+        if (!received) {
+            document.body.innerHTML = '<h1 style="color: red;">❌ ERREUR: BroadcastChannel ne communique pas entre le Worker et le Thread Principal sur ce navigateur.</h1>';
+        }
+    }, 2000);
+</script>
+</html>
+
+Résultat Attendu : La page affiche "✅ Compatibilité BroadcastChannel OK". Si ce n'est pas le cas, nous activons le plan de contingence (SharedWorker). Pour l'instant, nous supposons que le test passe.
+Sous-Étape 6.2 : Mise en Place de la Build Vite pour les Agents de Test
+Action : Nous configurons Vite pour qu'il compile nos agents TypeScript en fichiers JavaScript purs que les Web Workers peuvent consommer.
+1. Création du Fichier de Configuration vite.test-agents.config.ts :
+TypeScript
+
+// vite.test-agents.config.ts
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
+
+// Ce fichier de configuration est UNIQUEMENT pour builder nos agents de test
+// en fichiers JS autonomes pour les tests E2E dans le navigateur.
+export default defineConfig({
+  build: {
+    // Vider le dossier de sortie avant chaque build
+    emptyOutDir: false, 
+    rollupOptions: {
+      input: {
+        // Chaque entrée correspond à un worker que nous voulons builder.
+        // La clé ('ping') sera le nom du fichier de sortie.
+        ping: resolve(__dirname, 'src/agents/ping/index.ts'),
+        pong: resolve(__dirname, 'src/agents/pong/index.ts'),
+      },
+      output: {
+        // Spécifie où et comment les fichiers sont générés.
+        dir: resolve(__dirname, 'dist/test-agents'),
+        entryFileNames: '[name].agent.js',
+        format: 'iife', // 'Immediately Invoked Function Expression' - un format simple et autonome.
+      },
+    },
+    // On désactive le minifying pour faciliter le débogage si nécessaire.
+    minify: false,
+  },
+});
+
+2. Ajout du Script au package.json :
+JSON
+
+// package.json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "vitest",
+    "lint": "eslint .",
+    // NOUVEAU SCRIPT
+    "build:test-agents": "vite build --config vite.test-agents.config.ts"
+  }
+}
+
+3. Création des Fichiers d'Agents (pour rappel) :
+Nous devons nous assurer que nos fichiers d'agents sont prêts.
+TypeScript
+
+// src/core/agent-system/defineAgent.ts
+import { AgentRuntime } from './AgentRuntime';
+
+export interface AgentDefinition {
+    name: string;
+    init: (runtime: AgentRuntime) => void;
+}
+
+// Cette fonction est le point d'entrée de chaque fichier de worker.
+export function runAgent(definition: AgentDefinition): void {
+    const runtime = new AgentRuntime(definition.name);
+    definition.init(runtime);
+    // Le worker est maintenant initialisé et à l'écoute.
+}
+
+// src/agents/ping/index.ts
+import { runAgent } from '../../core/agent-system/defineAgent';
+
+runAgent({
+    name: 'PingAgent',
+    init: (runtime) => {
+        runtime.registerMethod('ping', async (message: string) => {
+            return `pong: ${message}`;
+        });
+    }
+});
+
+// src/agents/pong/index.ts
+import { runAgent } from '../../core/agent-system/defineAgent';
+
+runAgent({
+    name: 'PongAgent',
+    init: (runtime) => {
+        runtime.registerMethod('start', async (message: string) => {
+            const response = await runtime.callAgent<string>(
+                'PingAgent',
+                'ping',
+                [message]
+            );
+            return response;
+        });
+    }
+});
+
+    Note : J'ai renommé defineAgent en runAgent pour mieux refléter son rôle : c'est le point de départ de l'exécution du worker.
+
+Sous-Étape 6.3 : Test Unitaire de Build (Votre "Astuce de Survie")
+Action : Nous créons un mini-test pour valider que notre processus de build fonctionne pour un seul worker avant de tenter le test E2E complet.
+1. Création du Fichier de Test tests/browser/build/test-ping-only.html :
+HTML
+
+<!DOCTYPE html>
+<html lang="fr">
+<head><title>Test de Build - Ping Agent</title></head>
+<body>
+    <h1>Test de Build : Ping Agent</h1>
+    <p>Ouvrez la console. Vous devriez voir un message d'erreur indiquant que le worker a été terminé, ce qui est normal et prouve qu'il a bien été chargé.</p>
+    <script>
+        console.log('Tentative de chargement du worker PingAgent...');
+        const worker = new Worker('/dist/test-agents/ping.agent.js');
+        
+        worker.onerror = (e) => {
+            console.error('Erreur du worker (ceci peut être normal si le test est court) :', e.message);
+        };
+        
+        worker.onmessage = (e) => {
+            console.log('Message reçu du worker :', e.data);
+        };
+
+        setTimeout(() => {
+            console.log('Test terminé. Le worker a été chargé sans erreur de syntaxe ou de chargement initial.');
+            worker.terminate();
+        }, 1000);
+    </script>
+</body>
+</html>
+
+Processus de Validation :
+
+    Exécuter npm run build:test-agents.
+    Vérifier que les fichiers dist/test-agents/ping.agent.js et pong.agent.js ont été créés.
+    Lancer le serveur de dev (npm run dev).
+    Ouvrir la page tests/browser/build/test-ping-only.html.
+    Critère de Succès : La console du navigateur ne doit afficher aucune erreur 404, aucune erreur de CORS, et aucune erreur de syntaxe JavaScript. Voir une erreur indiquant que le worker a été terminé est normal.
+
+Conclusion de la Phase de Préparation
+Nous avons maintenant :
+
+    Confirmé que notre technologie de communication de base est compatible.
+    Mis en place un processus de build fiable pour nos agents.
+    Validé que les fichiers buildés peuvent être chargés correctement par un navigateur.
+
+Le terrain est préparé et sécurisé. Nous avons éliminé les risques majeurs liés à l'environnement avant même d'écrire le test final.
