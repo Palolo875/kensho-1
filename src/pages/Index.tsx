@@ -8,6 +8,7 @@ import SettingsModal from "@/components/SettingsModal";
 import SearchModal from "@/components/SearchModal";
 import { ObservatoryModal } from "@/components/ObservatoryModal";
 import { ModelLoadingView } from "@/components/ModelLoadingView";
+import { WorkerStatusIndicator } from "@/components/WorkerStatusIndicator";
 import { useObservatory } from "@/contexts/ObservatoryContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { cn } from "@/lib/utils";
@@ -117,6 +118,9 @@ const Index = () => {
       </main>
 
       <ChatInput showSuggestions={messages.length === 0} />
+
+      {/* Indicateur de statut des workers (en développement) */}
+      {import.meta.env.DEV && <WorkerStatusIndicator />}
 
       <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
       <SearchModal open={showSearch} onOpenChange={setShowSearch} />

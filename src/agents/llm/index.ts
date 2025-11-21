@@ -42,16 +42,17 @@ self.addEventListener('message', (event) => {
 });
 
 // Charger le modèle dès le démarrage du worker
+console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle:', MODEL_ID);
 modelLoader.loadModel(MODEL_ID).then(() => {
     engine = modelLoader.getEngine();
-    console.log('[MainLLMAgent] Moteur LLM prêt.');
+    console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
     // Poster un message final indiquant que le modèle est prêt
     self.postMessage({ 
         type: 'MODEL_PROGRESS', 
         payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' } 
     });
 }).catch((error) => {
-    console.error('[MainLLMAgent] Échec du chargement du modèle:', error);
+    console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
     self.postMessage({ 
         type: 'MODEL_ERROR', 
         payload: { message: error.message } 
@@ -61,7 +62,9 @@ modelLoader.loadModel(MODEL_ID).then(() => {
 runAgent({
     name: 'MainLLMAgent',
     init: (runtime: AgentRuntime) => {
+        console.log('[MainLLMAgent] 🚀 Initialisation...');
         runtime.log('info', `LLM Agent initialisé. Chargement du modèle ${MODEL_ID}...`);
+        console.log('[MainLLMAgent] ✅ Prêt à recevoir des requêtes de génération');
 
         // Exposer une méthode pour obtenir les capacités du système
         runtime.registerMethod('getSystemCapabilities', async () => {
@@ -72,22 +75,30 @@ runAgent({
         runtime.registerStreamMethod(
             'generateResponse',
             async (payload: any, stream: AgentStreamEmitter) => {
+                console.log('[MainLLMAgent] 📨 Requête de génération reçue:', payload);
+                
                 const [prompt, customParams] = payload.args || [payload, {}];
                 
                 if (!engine) {
                     const error = new Error('Le moteur LLM n\'est pas encore prêt. Veuillez patienter...');
+                    console.error('[MainLLMAgent] ❌ Moteur non prêt');
                     runtime.log('error', error.message);
                     stream.error(error);
                     return;
                 }
+                
+                console.log('[MainLLMAgent] ✅ Moteur disponible');
 
                 // Valider le prompt
                 if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
                     const error = new Error('Le prompt doit être une chaîne de caractères non vide.');
+                    console.error('[MainLLMAgent] ❌ Prompt invalide:', prompt);
                     runtime.log('error', error.message);
                     stream.error(error);
                     return;
                 }
+                
+                console.log('[MainLLMAgent] ✅ Prompt valide:', prompt.substring(0, 50) + '...');
 
                 // Fusionner les paramètres par défaut avec les paramètres personnalisés
                 const params: Required<GenerationParams> = {
@@ -113,6 +124,7 @@ runAgent({
                 }
 
                 try {
+                    console.log('[MainLLMAgent] 🔄 Début de la génération...');
                     runtime.log('info', `Début de la génération pour le prompt: "${String(prompt).substring(0, 50)}..." (temp: ${params.temperature}, max_tokens: ${params.max_tokens})`);
                     
                     // Construire les messages avec le system prompt
@@ -121,6 +133,7 @@ runAgent({
                         { role: 'user', content: String(prompt) }
                     ];
 
+                    console.log('[MainLLMAgent] 🤖 Appel du moteur LLM...');
                     const streamIterator = await engine.chat.completions.create({
                         messages,
                         stream: true,
@@ -129,21 +142,27 @@ runAgent({
                         top_p: params.top_p,
                     });
 
+                    console.log('[MainLLMAgent] 📡 Stream démarré, attente des chunks...');
                     let totalChunks = 0;
                     for await (const chunk of streamIterator) {
                         const textChunk = (chunk as any).choices?.[0]?.delta?.content || '';
                         if (textChunk) {
                             totalChunks++;
+                            if (totalChunks === 1) {
+                                console.log('[MainLLMAgent] 📦 Premier chunk reçu');
+                            }
                             // Envoyer chaque morceau de texte via le stream
                             stream.chunk({ text: textChunk });
                         }
                     }
 
+                    console.log(`[MainLLMAgent] ✅ Génération terminée. ${totalChunks} chunks envoyés.`);
                     runtime.log('info', `Génération terminée. ${totalChunks} chunks envoyés.`);
                     stream.end({ totalChunks }); // Signaler la fin du stream
 
                 } catch (error) {
                     const err = error instanceof Error ? error : new Error('Erreur inconnue durant l\'inférence');
+                    console.error('[MainLLMAgent] ❌ Erreur d\'inférence:', err);
                     runtime.log('error', `Erreur d'inférence: ${err.message}`);
                     stream.error(err);
                 }
