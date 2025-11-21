@@ -123,7 +123,7 @@ describe('MessageRouter', () => {
                 type: 'stream_error',
                 streamId: 'stream-123',
                 payload: null,
-                error: { message: 'Error', code: 'ERR' }
+                error: { name: 'StreamError', message: 'Error', code: 'ERR' }
             };
 
             const routed = router.route(message);

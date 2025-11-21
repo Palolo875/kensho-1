@@ -155,6 +155,7 @@ describe('StreamManager', () => {
                 streamId,
                 payload: null,
                 error: {
+                    name: 'StreamError',
                     message: 'Stream failed',
                     code: 'ERR_STREAM'
                 }

@@ -124,7 +124,7 @@ export function ObservatoryProvider({ children }: ObservatoryProviderProps) {
                 currentWorkerNames.forEach((name, index) => {
                     const result = statuses[index];
                     if (result.status === 'fulfilled') {
-                        const status = result.value;
+                        const status = result.value as { isLeader: boolean; epoch: number };
                         if (status.isLeader) {
                             currentLeader = name;
                             currentEpoch = status.epoch;

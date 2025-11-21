@@ -38,6 +38,7 @@ describe('DuplicateDetector', () => {
 
         it('should cache response with error', () => {
             detector.markAsProcessed('msg-2', null, {
+                name: 'TestError',
                 message: 'Error occurred',
                 code: 'ERR_TEST'
             });
@@ -107,7 +108,7 @@ describe('DuplicateDetector', () => {
     describe('getStats', () => {
         it('should return correct stats', () => {
             detector.markAsProcessed('msg-1', { data: '1' });
-            detector.markAsProcessed('msg-2', null, { message: 'Error', code: 'ERR' });
+            detector.markAsProcessed('msg-2', null, { name: 'TestError', message: 'Error', code: 'ERR' });
 
             const stats = detector.getStats();
 
