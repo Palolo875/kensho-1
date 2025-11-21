@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import type { RollupOptions } from "rollup";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -13,7 +14,7 @@ export default defineConfig(({ mode }) => {
 
   if (isTestAgentsBuild || isRemoteAgentsBuild || isLLMBuild) {
     // Agent build modes - use rollupOptions for multi-entry builds
-    const rollupOptions = {
+    const rollupOptions: RollupOptions = {
       output: {
         format: "es",
         entryFileNames: "[name].agent.js",
@@ -25,17 +26,17 @@ export default defineConfig(({ mode }) => {
         llm: path.resolve(__dirname, "src/agents/llm/mock.ts"),
         calculator: path.resolve(__dirname, "src/agents/calculator/index.ts"),
       };
-      rollupOptions.output.dir = path.resolve(__dirname, "dist/test-agents");
+      (rollupOptions.output as any).dir = path.resolve(__dirname, "dist/test-agents");
     } else if (isRemoteAgentsBuild) {
       rollupOptions.input = {
         "remote-ping": path.resolve(__dirname, "src/agents/remote-ping/index.ts"),
       };
-      rollupOptions.output.dir = path.resolve(__dirname, "dist/remote-agents");
+      (rollupOptions.output as any).dir = path.resolve(__dirname, "dist/remote-agents");
     } else if (isLLMBuild) {
       rollupOptions.input = {
         llm: path.resolve(__dirname, "src/agents/llm/mock.ts"),
       };
-      rollupOptions.output.dir = path.resolve(__dirname, "dist/test-agents");
+      (rollupOptions.output as any).dir = path.resolve(__dirname, "dist/test-agents");
     }
 
     return {
