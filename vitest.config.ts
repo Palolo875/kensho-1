@@ -5,17 +5,8 @@ export default defineConfig({
     test: {
         globals: true,
         environment: 'happy-dom',
-        include: ['src/**/__tests__/**/*.test.ts'],
-
-        // Fix pour Windows: Use threads instead of forks
-        pool: 'threads',
-        poolOptions: {
-            threads: {
-                singleThread: false,
-                minThreads: 1,
-                maxThreads: 4,
-            }
-        },
+        include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+        setupFiles: ['./tests/setup/vitest-setup.ts'],
 
         // Augmenter les timeouts pour éviter les erreurs
         testTimeout: 10000,
@@ -34,13 +25,13 @@ export default defineConfig({
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],
-            include: ['src/**/*.ts'],
+            include: ['src/**/*.{ts,tsx}'],
             exclude: [
                 'node_modules/',
                 'dist/',
                 'tests/',
                 'src/**/__tests__/**',
-                'src/**/*.test.ts',
+                'src/**/*.test.{ts,tsx}',
                 '**/*.config.ts',
                 '**/*.d.ts',
                 'src/vite-env.d.ts',
