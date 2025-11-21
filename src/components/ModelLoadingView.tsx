@@ -4,128 +4,128 @@ import { Progress } from '@/components/ui/progress';
 import { X, Minimize2, Maximize2, Pause, Play, HardDrive, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 
 /**
  * Icône SVG personnalisée pour le téléchargement
  */
 const DownloadIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    viewBox="0 0 100 100"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path
-      d="M50 20 L50 65 M35 50 L50 65 L65 50"
-      stroke="currentColor"
-      strokeWidth="4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="animate-bounce"
-    />
-    <path
-      d="M25 70 L25 75 Q25 80 30 80 L70 80 Q75 80 75 75 L75 70"
-      stroke="currentColor"
-      strokeWidth="4"
-      strokeLinecap="round"
-    />
-  </svg>
+    <svg
+        className={className}
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M50 20 L50 65 M35 50 L50 65 L65 50"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="animate-bounce"
+        />
+        <path
+            d="M25 70 L25 75 Q25 80 30 80 L70 80 Q75 80 75 75 L75 70"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
+        />
+    </svg>
 );
 
 /**
  * Icône SVG personnalisée pour la compilation
  */
 const CompileIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    viewBox="0 0 100 100"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <circle
-      cx="50"
-      cy="50"
-      r="30"
-      stroke="currentColor"
-      strokeWidth="4"
-      strokeDasharray="10 5"
-      className="animate-spin"
-      style={{ transformOrigin: 'center' }}
-    />
-    <path
-      d="M50 35 L50 50 L60 60"
-      stroke="currentColor"
-      strokeWidth="4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
+    <svg
+        className={className}
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <circle
+            cx="50"
+            cy="50"
+            r="30"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeDasharray="10 5"
+            className="animate-spin"
+            style={{ transformOrigin: 'center' }}
+        />
+        <path
+            d="M50 35 L50 50 L60 60"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+    </svg>
 );
 
 /**
  * Icône SVG personnalisée pour la vérification GPU
  */
 const GPUIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    viewBox="0 0 100 100"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <rect
-      x="20"
-      y="30"
-      width="60"
-      height="40"
-      rx="5"
-      stroke="currentColor"
-      strokeWidth="3"
-    />
-    <line x1="30" y1="45" x2="50" y2="45" stroke="currentColor" strokeWidth="2" />
-    <line x1="30" y1="55" x2="70" y2="55" stroke="currentColor" strokeWidth="2" />
-    <circle cx="65" cy="45" r="3" fill="currentColor" className="animate-pulse" />
-  </svg>
+    <svg
+        className={className}
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <rect
+            x="20"
+            y="30"
+            width="60"
+            height="40"
+            rx="5"
+            stroke="currentColor"
+            strokeWidth="3"
+        />
+        <line x1="30" y1="45" x2="50" y2="45" stroke="currentColor" strokeWidth="2" />
+        <line x1="30" y1="55" x2="70" y2="55" stroke="currentColor" strokeWidth="2" />
+        <circle cx="65" cy="45" r="3" fill="currentColor" className="animate-pulse" />
+    </svg>
 );
 
 /**
  * Icône SVG personnalisée pour l'initialisation
  */
 const InitIcon = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    viewBox="0 0 100 100"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <circle
-      cx="50"
-      cy="50"
-      r="25"
-      stroke="currentColor"
-      strokeWidth="4"
-      opacity="0.3"
-    />
-    <path
-      d="M50 25 A25 25 0 0 1 75 50"
-      stroke="currentColor"
-      strokeWidth="4"
-      strokeLinecap="round"
-      className="animate-spin"
-      style={{ transformOrigin: 'center' }}
-    />
-  </svg>
+    <svg
+        className={className}
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <circle
+            cx="50"
+            cy="50"
+            r="25"
+            stroke="currentColor"
+            strokeWidth="4"
+            opacity="0.3"
+        />
+        <path
+            d="M50 25 A25 25 0 0 1 75 50"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
+            className="animate-spin"
+            style={{ transformOrigin: 'center' }}
+        />
+    </svg>
 );
 
 /**
@@ -144,7 +144,7 @@ function useStorageStats() {
         // Vérifier WebGPU une seule fois au montage
         const checkWebGPU = async () => {
             if (hasWebGPUCached !== null) return;
-            
+
             const nav = navigator as any;
             let hasWebGPU = false;
             if (nav.gpu) {
@@ -168,7 +168,7 @@ function useStorageStats() {
                 if (navigator.storage && navigator.storage.estimate) {
                     const estimate = await navigator.storage.estimate();
                     const isPersisted = await navigator.storage.persisted?.();
-                    
+
                     setStats({
                         used: estimate.usage,
                         quota: estimate.quota,
@@ -200,6 +200,7 @@ export function ModelLoadingView() {
     const isPaused = useKenshoStore(state => state.isLoadingPaused);
     const setMinimized = useKenshoStore(state => state.setLoadingMinimized);
     const setPaused = useKenshoStore(state => state.setLoadingPaused);
+    const startDownload = useKenshoStore(state => state.startDownload);
     const [showDetails, setShowDetails] = useState(false);
     const storageStats = useStorageStats();
 
@@ -267,6 +268,7 @@ export function ModelLoadingView() {
             case 'error':
                 return 'Erreur de chargement';
             case 'idle':
+                return 'Téléchargement Requis';
             default:
                 return 'Initialisation';
         }
@@ -311,7 +313,7 @@ export function ModelLoadingView() {
     // Version complète (dialog)
     return (
         <Dialog open={true}>
-            <DialogContent 
+            <DialogContent
                 className="sm:max-w-md"
                 onPointerDownOutside={(e) => e.preventDefault()}
                 onEscapeKeyDown={(e) => e.preventDefault()}
@@ -357,8 +359,8 @@ export function ModelLoadingView() {
                     <div className="flex justify-center">
                         <div className={cn(
                             "rounded-full p-6 transition-colors",
-                            modelProgress.phase === 'error' 
-                                ? "bg-destructive/10 text-destructive" 
+                            modelProgress.phase === 'error'
+                                ? "bg-destructive/10 text-destructive"
                                 : "bg-primary/10 text-primary"
                         )}>
                             {getIcon()}
@@ -368,8 +370,8 @@ export function ModelLoadingView() {
                     {/* Barre de progression */}
                     {modelProgress.phase !== 'error' && (
                         <div className="space-y-3">
-                            <Progress 
-                                value={modelProgress.progress * 100} 
+                            <Progress
+                                value={modelProgress.progress * 100}
                                 className="h-2"
                             />
                             <div className="flex items-center justify-between text-sm">
@@ -408,7 +410,7 @@ export function ModelLoadingView() {
                                         )}
                                     </p>
                                 </div>
-                                
+
                                 <p className="text-xs text-muted-foreground">
                                     {storageStats.isPersisted ? (
                                         <>💾 Stockage persistant actif - Le modèle ne sera jamais supprimé automatiquement</>
@@ -416,7 +418,7 @@ export function ModelLoadingView() {
                                         <>📦 IndexedDB actif - Le modèle est conservé en cache entre les sessions (dev/tests/production)</>
                                     )}
                                 </p>
-                                
+
                                 {isPaused && (
                                     <p className="text-sm font-medium text-primary mt-2">
                                         ⏸️ Téléchargement en pause - cliquez sur ▶ pour reprendre
@@ -438,7 +440,7 @@ export function ModelLoadingView() {
                                             </span>
                                         </div>
                                     </CollapsibleTrigger>
-                                    
+
                                     <CollapsibleContent className="mt-3 space-y-2">
                                         {storageStats.used !== undefined && storageStats.quota !== undefined && storageStats.quota > 0 ? (
                                             <>
@@ -450,8 +452,8 @@ export function ModelLoadingView() {
                                                     <span className="text-muted-foreground">Espace disponible:</span>
                                                     <span className="font-mono">{formatSize(storageStats.quota / (1024 * 1024))}</span>
                                                 </div>
-                                                <Progress 
-                                                    value={(storageStats.used / storageStats.quota) * 100} 
+                                                <Progress
+                                                    value={(storageStats.used / storageStats.quota) * 100}
                                                     className="h-1 mt-2"
                                                 />
                                                 <p className="text-xs text-muted-foreground mt-1">
@@ -464,14 +466,14 @@ export function ModelLoadingView() {
                                                 <p className="text-xs mt-1">(mode privé ou non supporté par le navigateur)</p>
                                             </div>
                                         )}
-                                        
+
                                         <div className="flex justify-between text-xs mt-3 pt-3 border-t">
                                             <span className="text-muted-foreground">Stockage persistant:</span>
                                             <span className={storageStats.isPersisted ? "text-green-600" : "text-orange-600"}>
                                                 {storageStats.isPersisted ? '✓ Actif' : '⚠ Non actif'}
                                             </span>
                                         </div>
-                                        
+
                                         <div className="flex justify-between text-xs">
                                             <span className="text-muted-foreground">Accélération WebGPU:</span>
                                             <span className={storageStats.hasWebGPU ? "text-green-600" : "text-orange-600"}>
@@ -482,8 +484,8 @@ export function ModelLoadingView() {
                                         <div className="mt-3 p-2 bg-background/50 rounded text-xs text-muted-foreground">
                                             <p className="font-medium mb-1">ℹ️ À propos du cache:</p>
                                             <p>
-                                                Les modèles sont stockés localement dans IndexedDB. 
-                                                Une fois téléchargés, ils sont réutilisés automatiquement en dev, 
+                                                Les modèles sont stockés localement dans IndexedDB.
+                                                Une fois téléchargés, ils sont réutilisés automatiquement en dev,
                                                 tests et production, éliminant les téléchargements répétés.
                                             </p>
                                         </div>
@@ -496,9 +498,28 @@ export function ModelLoadingView() {
                     {modelProgress.phase === 'checking_gpu' && (
                         <div className="rounded-lg border border-border bg-muted/50 p-4">
                             <p className="text-sm text-muted-foreground">
-                                💡 Recherche d'accélération matérielle WebGPU 
+                                💡 Recherche d'accélération matérielle WebGPU
                                 pour des performances optimales.
                             </p>
+                        </div>
+                    )}
+
+                    {modelProgress.phase === 'idle' && (
+                        <div className="space-y-4">
+                            <div className="rounded-lg border border-border bg-muted/50 p-4">
+                                <p className="text-sm text-muted-foreground mb-4">
+                                    Le modèle Phi-3 (~2.3 GB) est requis pour utiliser Kensho.
+                                    Il sera stocké localement dans votre navigateur et ne sera téléchargé qu'une seule fois.
+                                </p>
+                                <Button
+                                    onClick={startDownload}
+                                    className="w-full gap-2"
+                                    size="lg"
+                                >
+                                    <DownloadIcon className="w-5 h-5" />
+                                    Télécharger le modèle
+                                </Button>
+                            </div>
                         </div>
                     )}
 
@@ -508,7 +529,7 @@ export function ModelLoadingView() {
                                 Une erreur s'est produite lors du chargement
                             </p>
                             <p className="text-xs text-muted-foreground">
-                                Veuillez rafraîchir la page ou vérifier votre connexion internet. 
+                                Veuillez rafraîchir la page ou vérifier votre connexion internet.
                                 Si le problème persiste, votre navigateur ne supporte peut-être pas WebGPU.
                             </p>
                             <Button

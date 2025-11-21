@@ -32,31 +32,47 @@ const modelLoader = new ModelLoader((progress) => {
     self.postMessage({ type: 'MODEL_PROGRESS', payload: progress });
 }, { allowPause: true });
 
-// Gérer les messages de pause/reprise du téléchargement
+// Gérer les messages de pause/reprise du téléchargement + START_DOWNLOAD
 self.addEventListener('message', (event) => {
-    if (event.data.type === 'PAUSE_DOWNLOAD') {
+    if (event.data.type === 'START_DOWNLOAD') {
+        console.log('[MainLLMAgent] 📥 Démarrage du téléchargement du modèle:', MODEL_ID);
+        startModelLoading();
+    } else if (event.data.type === 'PAUSE_DOWNLOAD') {
+        console.log('[MainLLMAgent] ⏸️ Mise en pause du téléchargement');
         modelLoader.pause();
     } else if (event.data.type === 'RESUME_DOWNLOAD') {
+        console.log('[MainLLMAgent] ▶️ Reprise du téléchargement');
         modelLoader.resume();
     }
 });
 
-// Charger le modèle dès le démarrage du worker
-console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle:', MODEL_ID);
-modelLoader.loadModel(MODEL_ID).then(() => {
-    engine = modelLoader.getEngine();
-    console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
-    // Poster un message final indiquant que le modèle est prêt
-    self.postMessage({
-        type: 'MODEL_PROGRESS',
-        payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
+/**
+ * Démarre le chargement du modèle
+ */
+function startModelLoading() {
+    modelLoader.loadModel(MODEL_ID).then(() => {
+        engine = modelLoader.getEngine();
+        console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
+        // Poster un message final indiquant que le modèle est prêt
+        self.postMessage({
+            type: 'MODEL_PROGRESS',
+            payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
+        });
+        self.postMessage({ type: 'READY' });
+    }).catch((error) => {
+        console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
+        self.postMessage({
+            type: 'MODEL_ERROR',
+            payload: { message: error.message }
+        });
     });
-}).catch((error) => {
-    console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
-    self.postMessage({
-        type: 'MODEL_ERROR',
-        payload: { message: error.message }
-    });
+}
+
+// Signaler que le worker est initialisé et prêt à recevoir des commandes
+console.log('[MainLLMAgent] 🚀 Worker LLM initialisé. En attente de START_DOWNLOAD...');
+self.postMessage({
+    type: 'MODEL_PROGRESS',
+    payload: { phase: 'idle', progress: 0, text: 'Modèle Phi-3 prêt à être téléchargé.' }
 });
 
 runAgent({

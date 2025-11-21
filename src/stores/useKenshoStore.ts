@@ -63,6 +63,7 @@ interface KenshoState {
     clearMessages: () => void;
     setLoadingMinimized: (minimized: boolean) => void;
     setLoadingPaused: (paused: boolean) => void;
+    startDownload: () => void;
     loadMessagesFromStorage: () => void;
     clearWorkerErrors: () => void;
 }
@@ -429,7 +430,27 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     setLoadingPaused: (paused: boolean) => {
         set({ isLoadingPaused: paused });
+        // Envoyer le message au worker LLM
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            llmWorker.postMessage({ type: paused ? 'PAUSE_DOWNLOAD' : 'RESUME_DOWNLOAD' });
+        }
     },
+
+    /**
+     * Démarre le téléchargement du modèle
+     */
+    startDownload: () => {
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            console.log('[KenshoStore] 🚀 Démarrage manuel du téléchargement');
+            llmWorker.postMessage({ type: 'START_DOWNLOAD' });
+        } else {
+            console.error('[KenshoStore] ❌ Impossible de démarrer le téléchargement: Worker LLM introuvable');
+            toast.error('Erreur système', { description: 'Worker LLM non initialisé' });
+        }
+    },
+
 
     /**
      * Charge les messages depuis localStorage
