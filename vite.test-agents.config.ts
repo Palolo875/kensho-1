@@ -18,6 +18,7 @@ export default defineConfig({
         // state: resolve(__dirname, 'src/agents/test/state-agent.ts'),
         // oie: resolve(__dirname, 'src/agents/oie/index.ts'),
         llm: resolve(__dirname, 'src/agents/llm/mock.ts'),
+        calculator: resolve(__dirname, 'src/agents/calculator/index.ts'),
       },
       output: {
         // Specify where and how the files are generated.

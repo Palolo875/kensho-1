@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 3: CalculatorAgent E2E Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #bee5eb;
+        }
+
+        .test-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 4px solid #3498db;
+        }
+
+        .test-input {
+            font-family: 'Courier New', monospace;
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        .test-result {
+            font-family: 'Courier New', monospace;
+            color: #27ae60;
+            font-size: 18px;
+            margin-top: 10px;
+        }
+
+        .log-container {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin: 3px 0;
+        }
+
+        .log-entry.success {
+            color: #2ecc71;
+        }
+
+        .log-entry.error {
+            color: #e74c3c;
+        }
+
+        .log-entry.info {
+            color: #3498db;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s;
+            margin: 5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧮 Sprint 3: CalculatorAgent E2E Test</h1>
+        <p><strong>Objectif:</strong> Valider que le CalculatorAgent fonctionne correctement via le MessageBus.</p>
+
+        <div id="status" class="status info">⏳ En attente du lancement du test...</div>
+
+        <button id="startTestBtn" onclick="startTest()">🚀 Lancer le Test</button>
+        <button onclick="clearLog()">🧹 Effacer les Logs</button>
+
+        <div id="results"></div>
+
+        <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <script type="module">
+        import { MessageBus } from '/src/core/communication/MessageBus.ts';
+
+        const logContainer = document.getElementById('logContainer');
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('startTestBtn');
+        const resultsDiv = document.getElementById('results');
+
+        function log(msg, type = 'info') {
+            const el = document.createElement('div');
+            el.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString('fr-FR');
+            el.innerHTML = `[${timestamp}] ${msg}`;
+            logContainer.appendChild(el);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(msg);
+        }
+
+        function clearLog() {
+            logContainer.innerHTML = '';
+            resultsDiv.innerHTML = '';
+            log('🧹 Logs effacés');
+        }
+
+        window.startTest = async function() {
+            startBtn.disabled = true;
+            resultsDiv.innerHTML = '';
+            
+            statusDiv.textContent = '🚀 Test en cours...';
+            statusDiv.className = 'status info';
+
+            try {
+                log('════════════════════════════════════════════', 'info');
+                log('🧪 SPRINT 3 - DAYS 2-3: CALCULATORAGENT E2E', 'success');
+                log('════════════════════════════════════════════', 'info');
+
+                const bus = new MessageBus('CalculatorTestClient');
+                log('✅ MessageBus initialisé', 'success');
+
+                log('🔄 Démarrage du CalculatorAgent Worker...', 'info');
+                const calculatorWorker = new Worker('/dist/test-agents/calculator.agent.js', { type: 'module' });
+
+                await new Promise(r => setTimeout(r, 1000));
+                log('✅ CalculatorAgent Worker démarré', 'success');
+
+                const testCases = [
+                    { expression: '2 + 2', expected: 4, desc: 'Addition simple' },
+                    { expression: '10 - 3', expected: 7, desc: 'Soustraction' },
+                    { expression: '5 * 6', expected: 30, desc: 'Multiplication' },
+                    { expression: '20 / 4', expected: 5, desc: 'Division' },
+                    { expression: '2^3', expected: 8, desc: 'Puissance' },
+                    { expression: 'sqrt(16)', expected: 4, desc: 'Racine carrée' },
+                    { expression: '2 * (3 + 4)^2', expected: 98, desc: 'Expression complexe' },
+                    { expression: 'abs(-15)', expected: 15, desc: 'Valeur absolue' },
+                    { expression: 'min(5, 3, 8)', expected: 3, desc: 'Minimum' },
+                    { expression: 'max(5, 3, 8)', expected: 8, desc: 'Maximum' },
+                ];
+
+                let passed = 0;
+                let failed = 0;
+
+                log('────────────────────────────────────────', 'info');
+                log(`🧮 Exécution de ${testCases.length} tests de calcul...`, 'info');
+                log('────────────────────────────────────────', 'info');
+
+                for (const testCase of testCases) {
+                    try {
+                        log(`📤 Test: ${testCase.expression}`, 'info');
+                        
+                        const result = await bus.request('CalculatorAgent', {
+                            method: 'calculate',
+                            args: [{ expression: testCase.expression }]
+                        });
+
+                        const testBox = document.createElement('div');
+                        testBox.className = 'test-box';
+
+                        if (result === testCase.expected) {
+                            log(`✅ ${testCase.desc}: ${testCase.expression} = ${result}`, 'success');
+                            testBox.innerHTML = `
+                                <div><strong>✅ ${testCase.desc}</strong></div>
+                                <div class="test-input">${testCase.expression}</div>
+                                <div class="test-result">= ${result}</div>
+                            `;
+                            passed++;
+                        } else {
+                            log(`❌ ${testCase.desc}: ${testCase.expression} = ${result} (attendu: ${testCase.expected})`, 'error');
+                            testBox.innerHTML = `
+                                <div><strong>❌ ${testCase.desc}</strong></div>
+                                <div class="test-input">${testCase.expression}</div>
+                                <div class="test-result">= ${result} (attendu: ${testCase.expected})</div>
+                            `;
+                            testBox.style.borderLeftColor = '#e74c3c';
+                            failed++;
+                        }
+
+                        resultsDiv.appendChild(testBox);
+
+                    } catch (error) {
+                        log(`❌ ${testCase.desc}: Erreur - ${error.message}`, 'error');
+                        failed++;
+
+                        const testBox = document.createElement('div');
+                        testBox.className = 'test-box';
+                        testBox.style.borderLeftColor = '#e74c3c';
+                        testBox.innerHTML = `
+                            <div><strong>❌ ${testCase.desc}</strong></div>
+                            <div class="test-input">${testCase.expression}</div>
+                            <div class="test-result" style="color: #e74c3c;">Erreur: ${error.message}</div>
+                        `;
+                        resultsDiv.appendChild(testBox);
+                    }
+                }
+
+                log('────────────────────────────────────────', 'info');
+                log(`📊 Tests terminés: ${passed} réussis, ${failed} échoués`, 'info');
+                log('────────────────────────────────────────', 'info');
+
+                if (failed === 0) {
+                    log('════════════════════════════════════════════', 'success');
+                    log('🎉 TOUS LES TESTS PASSENT! CalculatorAgent validé!', 'success');
+                    log('════════════════════════════════════════════', 'success');
+                    
+                    statusDiv.textContent = `✅ TEST RÉUSSI: ${passed}/${testCases.length} tests passent!`;
+                    statusDiv.className = 'status success';
+                } else {
+                    throw new Error(`${failed} test(s) échoué(s)`);
+                }
+
+            } catch (error) {
+                log('════════════════════════════════════════════', 'error');
+                log(`❌ TEST ÉCHOUÉ: ${error.message}`, 'error');
+                log('════════════════════════════════════════════', 'error');
+                
+                statusDiv.textContent = `❌ TEST ÉCHOUÉ: ${error.message}`;
+                statusDiv.className = 'status error';
+            } finally {
+                startBtn.disabled = false;
+            }
+        };
+
+        log('🎯 Prêt pour le test du CalculatorAgent', 'success');
+        log('💡 Cliquez sur "Lancer le Test" pour commencer', 'info');
+    </script>
+</body>
+
+</html>
