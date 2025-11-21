@@ -1,0 +1,134 @@
+Exécution : Sprint 1C - Tâche des Jours 1-3 (Validation)
+Objectif : Valider l'OfflineQueue avec un test d'intégration qui simule l'envoi d'un message à un agent avant son démarrage.
+Philosophie : Le test doit être clair, déterministe et reproduire exactement le scénario critique que l'on cherche à résoudre.
+Implémentation du Test d'Intégration de l'OfflineQueue
+1. Préparation :
+Nous allons créer un nouveau fichier de test E2E dédié à cette fonctionnalité.
+Bash
+
+touch tests/browser/sprint1c-offline-queue-e2e.html
+
+2. Mise à Jour de l'Agent de Test :
+Nous avons besoin d'un agent qui, une fois démarré, envoie un HEARTBEAT pour se signaler. Notre OrionGuardian le fait déjà, donc notre PingAgent qui l'utilise est prêt.
+3. Code Complet du Fichier de Test sprint1c-offline-queue-e2e.html :
+Ce test va :
+
+    Créer un MessageBus pour l'agent "A".
+    Envoyer une requête de "A" vers "B", alors que "B" n'existe pas encore.
+    Attendre un court instant.
+    Démarrer le worker de l'agent "B".
+    Vérifier que la requête initiale de "A" se résout correctement.
+
+HTML
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1C - Test E2E de l'OfflineQueue</title>
+    <style>/* ... (même style) ... */</style>
+</head>
+<body>
+    <h1>Sprint 1C - Test E2E de l'OfflineQueue</h1>
+    <p>Ce test valide que les messages envoyés à un agent hors ligne sont mis en attente et délivrés lorsqu'il revient en ligne.</p>
+    <button id="run-tests">Lancer le Test</button>
+    <h2>Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const log = (message, status = 'info') => { /* ... (même fonction log) ... */ };
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const startWorker = (path) => { /* ... (même fonction startWorker) ... */ };
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('--- Démarrage du test de l\'OfflineQueue ---', 'info');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            let busA = null;
+            let workerB = null;
+            let testPassed = true;
+
+            try {
+                // --- Étape 1: Envoyer un message dans le vide ---
+                log('[Étape 1] Création de l\'AgentA et envoi d\'une requête à l\'AgentB (inexistant)...', 'info');
+                busA = new MessageBus('AgentA');
+                
+                const requestPromise = busA.request('AgentB', { method: 'ping', args: ['hello offline'] });
+                log('  Requête envoyée. La promesse est maintenant en attente.', 'info');
+
+                // --- Étape 2: Démarrer l'agent destinataire ---
+                await sleep(500); // Attendre un peu pour s'assurer que la requête est bien en attente
+                log('\n[Étape 2] Démarrage de l\'AgentB...', 'info');
+                
+                workerB = await startWorker('/dist/test-agents/ping.agent.js');
+                log('  AgentB a démarré et envoyé son signal READY.', 'pass');
+                
+                // Le worker va s'annoncer via un broadcast. On doit donner le temps à busA de le recevoir.
+                log('  Attente de la détection de l\'AgentB par l\'AgentA...', 'info');
+                await sleep(500);
+
+                // --- Étape 3: Vérifier la résolution de la promesse ---
+                log('\n[Étape 3] Vérification de la résolution de la requête initiale...', 'info');
+                
+                const response = await requestPromise;
+                log(`  La promesse a été résolue avec la réponse: "${response}"`, 'info');
+
+                if (response === 'pong: hello offline') {
+                    log('  La réponse est correcte ! L\'OfflineQueue a fonctionné.', 'pass');
+                } else {
+                    throw new Error(`Réponse inattendue: ${response}`);
+                }
+
+                // --- Test de Timeout ---
+                log('\n[Test de Timeout] Vérification que la requête échoue si le worker ne revient jamais...', 'info');
+                await expect(
+                    busA.request('GhostAgent', { method: 'ping', args: [] }, 1000)
+                ).rejects.toThrow("Le worker 'GhostAgent' n'est pas revenu en ligne dans le délai de 1000ms.");
+                log('  Le test de timeout a réussi.', 'pass');
+
+
+            } catch (error) {
+                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                testPassed = false;
+            } finally {
+                if (busA) busA.dispose();
+                if (workerB) workerB.terminate();
+                log('\n--- Test Terminé ---', 'summary');
+                if (testPassed) {
+                    log('🎉 Tâche "OfflineQueue" validée avec succès !', 'pass');
+                } else {
+                    log('❗️ Des problèmes ont été détectés dans la gestion de la file d\'attente hors ligne.', 'fail');
+                }
+            }
+        });
+
+        // Helper pour le test de timeout
+        async function expect(promise) {
+            return {
+                async rejects(expectedError) {
+                    try {
+                        await promise;
+                        throw new Error('La promesse aurait dû être rejetée, mais elle a été résolue.');
+                    } catch (error) {
+                        if (error.message.includes(expectedError.message) || error.message.includes(expectedError)) {
+                            // Test réussi
+                        } else {
+                            throw new Error(`Erreur de promesse inattendue: "${error.message}" au lieu de "${expectedError.message}"`);
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
+Conclusion de la Tâche
+Processus de Validation :
+
+    Exécuter npm run build:test-agents.
+    Lancer le serveur de dev.
+    Ouvrir tests/browser/sprint1c-offline-queue-e2e.html.
+    Cliquer sur "Lancer le Test".

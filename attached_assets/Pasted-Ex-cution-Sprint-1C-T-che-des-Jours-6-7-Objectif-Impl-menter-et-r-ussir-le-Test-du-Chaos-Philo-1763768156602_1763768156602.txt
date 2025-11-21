@@ -1,0 +1,170 @@
+Exécution : Sprint 1C - Tâche des Jours 6-7
+Objectif : Implémenter et réussir le Test du Chaos
+Philosophie : "Ce qui ne nous tue pas nous rend plus fort." Nous allons intentionnellement et de manière répétée "casser" notre système pour nous assurer qu'il est non seulement résilient (il survit), mais aussi anti-fragile (il revient toujours à un état de fonctionnement stable).
+Implémentation du Test du Chaos
+1. Préparation :
+Nous allons créer une page de test dédiée qui va orchestrer un scénario de chaos continu. Cette page sera notre "arène".
+Bash
+
+touch tests/browser/sprint1c-chaos-monkey-e2e.html
+
+2. Code Complet du Fichier de Test sprint1c-chaos-monkey-e2e.html :
+Ce test va :
+
+    Démarrer une constellation de plusieurs agents.
+    Lancer un "Chaos Monkey" qui, à intervalles aléatoires, tue un agent au hasard.
+    Pendant ce temps, un "Client" essaie continuellement de faire des requêtes à des agents aléatoires.
+    Nous mesurerons le taux de succès de ces requêtes. Un système robuste devrait maintenir un taux de succès très élevé, malgré le chaos.
+
+HTML
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1C - Test du Chaos</title>
+    <style>
+        /* ... (même style) ... */
+        #stats { display: flex; gap: 2em; margin-bottom: 1em; }
+        .stat-card { background-color: #282c34; padding: 1em; border-radius: 8px; text-align: center; }
+        .stat-card h3 { margin: 0 0 0.5em 0; color: #61afef; }
+        .stat-card p { font-size: 1.5em; margin: 0; color: #d4d4d4; }
+    </style>
+</head>
+<body>
+    <h1>Sprint 1C - Test du Chaos (Chaos Monkey)</h1>
+    <p>Ce test valide la robustesse de la constellation en tuant et redémarrant des agents de manière aléatoire tout en effectuant des requêtes.</p>
+    <button id="run-tests">Lancer le Chaos 🐒</button>
+    <div id="stats"></div>
+    <h2>Journal des Événements :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const statsEl = document.getElementById('stats');
+        const log = (message, status = 'info') => { /* ... */ };
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        
+        // --- Configuration du Test ---
+        const NUM_AGENTS = 5;
+        const TEST_DURATION_MS = 30000; // 30 secondes de chaos
+        const CHAOS_INTERVAL_MIN_MS = 2000;
+        const CHAOS_INTERVAL_MAX_MS = 5000;
+        const CLIENT_REQUEST_INTERVAL_MS = 200;
+
+        let testRunning = false;
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            if (testRunning) return;
+            testRunning = true;
+            resultsEl.innerHTML = '';
+            statsEl.innerHTML = '';
+            log('--- Démarrage du Test du Chaos ---', 'info');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            const mainBus = new MessageBus('MainThread');
+            let workers = new Map();
+            let stats = { requests: 0, successes: 0, failures: 0 };
+
+            // --- Fonctions Helper ---
+            async function startWorker(name) {
+                const worker = new Worker('/dist/test-agents/ping.agent.js');
+                // ... (logique de handshake READY, non montrée pour la clarté)
+                workers.set(name, worker);
+                return worker;
+            }
+
+            function updateStats() {
+                const successRate = stats.requests > 0 ? ((stats.successes / stats.requests) * 100).toFixed(2) : 'N/A';
+                statsEl.innerHTML = `
+                    <div class="stat-card"><h3>Requêtes Tentées</h3><p>${stats.requests}</p></div>
+                    <div class="stat-card"><h3>Succès</h3><p class="pass">${stats.successes}</p></div>
+                    <div class="stat-card"><h3>Échecs</h3><p class="fail">${stats.failures}</p></div>
+                    <div class="stat-card"><h3>Taux de Succès</h3><p>${successRate}%</p></div>
+                `;
+            }
+
+            try {
+                // --- Étape 1: Initialisation de la Constellation ---
+                log(`[INFO] Démarrage de ${NUM_AGENTS} agents...`);
+                for (let i = 0; i < NUM_AGENTS; i++) {
+                    await startWorker(`Agent${i}`);
+                }
+                log('[PASS] Constellation initiale prête.', 'pass');
+
+                // --- Étape 2: Lancement du Chaos Monkey et du Client ---
+                const chaosMonkeyInterval = setInterval(() => {
+                    if (workers.size === 0) return;
+                    const workerNames = Array.from(workers.keys());
+                    const victimName = workerNames[Math.floor(Math.random() * workerNames.length)];
+                    const victimWorker = workers.get(victimName);
+                    
+                    log(`🐒 Chaos Monkey tue ${victimName}...`, 'warn');
+                    victimWorker.terminate();
+                    workers.delete(victimName);
+
+                    // Recréer le worker après un court délai
+                    setTimeout(() => {
+                        log(`🔧 Réparation: redémarrage de ${victimName}...`, 'info');
+                        startWorker(victimName);
+                    }, 1000);
+
+                }, CHAOS_INTERVAL_MIN_MS + Math.random() * (CHAOS_INTERVAL_MAX_MS - CHAOS_INTERVAL_MIN_MS));
+
+                const clientInterval = setInterval(async () => {
+                    if (workers.size === 0) return;
+                    const workerNames = Array.from(workers.keys());
+                    const targetName = workerNames[Math.floor(Math.random() * workerNames.length)];
+                    
+                    stats.requests++;
+                    try {
+                        await mainBus.request(targetName, { method: 'ping', args: ['chaos'] }, 2000);
+                        stats.successes++;
+                    } catch (error) {
+                        stats.failures++;
+                        log(`Client a échoué à contacter ${targetName}: ${error.message}`, 'fail');
+                    }
+                    updateStats();
+                }, CLIENT_REQUEST_INTERVAL_MS);
+
+                // --- Étape 3: Attendre la fin du test ---
+                log(`[INFO] Le test s'exécutera pendant ${TEST_DURATION_MS / 1000} secondes...`);
+                await sleep(TEST_DURATION_MS);
+
+                // --- Étape 4: Nettoyage et Verdict ---
+                clearInterval(chaosMonkeyInterval);
+                clearInterval(clientInterval);
+                workers.forEach(w => w.terminate());
+                mainBus.dispose();
+
+                log('\n--- Test du Chaos Terminé ---', 'summary');
+                const finalSuccessRate = (stats.successes / stats.requests) * 100;
+                if (finalSuccessRate > 95) {
+                    log(`🎉 Taux de succès final: ${finalSuccessRate.toFixed(2)}%. Le système est robuste !`, 'pass');
+                } else {
+                    throw new Error(`Taux de succès final trop bas: ${finalSuccessRate.toFixed(2)}%. Le système n'est pas assez robuste.`);
+                }
+
+            } catch (error) {
+                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+            } finally {
+                testRunning = false;
+            }
+        });
+    </script>
+</body>
+</html>
+
+Conclusion et Validation du Sprint 1
+Processus de Validation Final :
+
+    Exécuter npm run build:test-agents.
+    Lancer le serveur de dev.
+    Ouvrir tests/browser/sprint1c-chaos-monkey-e2e.html.
+    Cliquer sur "Lancer le Chaos 🐒".
+    Observer les statistiques et le journal pendant 30 secondes.
+
+Critère de Succès :
+À la fin des 30 secondes, le Taux de Succès affiché doit être supérieur à 95%.
+
+    Pourquoi pas 100% ? Il est normal et attendu que quelques requêtes échouent. Une requête peut être envoyée à un agent juste au moment où le Chaos Monkey le tue, et avant que la OfflineQueue n'ait le temps de prendre le relais. Un taux de succès de >95% prouve que le système se répare rapidement et que les pannes sont des événements brefs et contenus.

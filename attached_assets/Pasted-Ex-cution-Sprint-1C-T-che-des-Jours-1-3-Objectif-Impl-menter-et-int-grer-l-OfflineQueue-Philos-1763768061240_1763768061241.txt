@@ -1,0 +1,244 @@
+Exécution : Sprint 1C - Tâche des Jours 1-3
+Objectif : Implémenter et intégrer l'OfflineQueue
+Philosophie : "Ne jamais supposer qu'un agent est prêt." Le système doit être capable de mettre en attente une communication et de la délivrer de manière fiable dès que le destinataire se manifeste.
+Sous-Étape 1 : Implémentation de la Classe OfflineQueue
+Nous allons créer une classe dédiée, robuste et testable, qui gère toute la logique de mise en file d'attente.
+1. Création du Fichier OfflineQueue.ts :
+Bash
+
+touch src/core/communication/OfflineQueue.ts
+
+2. Code Complet de OfflineQueue.ts :
+Ce code inclut les protections que nous avons définies (taille max, âge max) pour éviter une consommation de mémoire infinie.
+TypeScript
+
+// src/core/communication/OfflineQueue.ts
+import { KenshoMessage, WorkerName } from './types';
+import { MessageBus } from './MessageBus';
+
+interface QueuedMessage {
+    message: KenshoMessage;
+    enqueuedAt: number;
+}
+
+/**
+ * Gère la mise en file d'attente des messages destinés à des workers
+ * qui ne sont pas encore connus ou actifs dans la constellation.
+ */
+export class OfflineQueue {
+    private queues = new Map<WorkerName, QueuedMessage[]>();
+    
+    // Protections pour éviter une consommation de mémoire incontrôlée
+    private static readonly MAX_QUEUE_SIZE = 100;
+    private static readonly MAX_MESSAGE_AGE_MS = 60000; // 60 secondes
+
+    /**
+     * Met un message en file d'attente pour un destinataire donné.
+     */
+    public enqueue(target: WorkerName, message: KenshoMessage): void {
+        if (!this.queues.has(target)) {
+            this.queues.set(target, []);
+        }
+        
+        const queue = this.queues.get(target)!;
+        
+        // Protection : ne pas dépasser la taille maximale de la file d'attente
+        if (queue.length >= OfflineQueue.MAX_QUEUE_SIZE) {
+            console.warn(`[OfflineQueue] La file d'attente pour '${target}' est pleine. Suppression du message le plus ancien.`);
+            queue.shift(); // Supprimer le plus ancien pour faire de la place
+        }
+        
+        queue.push({
+            message,
+            enqueuedAt: Date.now(),
+        });
+        console.log(`[OfflineQueue] Message ${message.messageId} mis en file d'attente pour '${target}'. Taille de la file: ${queue.length}`);
+    }
+
+    /**
+     * "Flushe" la file d'attente pour un destinataire qui vient de se manifester,
+     * en envoyant tous les messages valides en attente.
+     */
+    public flush(target: WorkerName, messageBus: MessageBus): void {
+        const queue = this.queues.get(target);
+        if (!queue || queue.length === 0) {
+            return;
+        }
+
+        console.log(`[OfflineQueue] '${target}' est en ligne. Flush de ${queue.length} message(s).`);
+        
+        const now = Date.now();
+        const validMessages = queue.filter(qm => 
+            (now - qm.enqueuedAt) < OfflineQueue.MAX_MESSAGE_AGE_MS
+        );
+
+        if (validMessages.length < queue.length) {
+            console.warn(`[OfflineQueue] ${queue.length - validMessages.length} message(s) expiré(s) ont été supprimé(s) pour '${target}'.`);
+        }
+        
+        // Envoyer chaque message valide via le MessageBus
+        validMessages.forEach(qm => {
+            // Important: nous utilisons une méthode interne du bus pour envoyer un message déjà construit
+            // pour éviter de générer un nouveau messageId.
+            messageBus.resendMessage(qm.message);
+        });
+        
+        // Vider la file d'attente pour ce destinataire
+        this.queues.delete(target);
+    }
+
+    /**
+     * Retourne des statistiques sur l'état actuel des files d'attente pour l'Observatory.
+     */
+    public getStats(): { target: WorkerName; queueSize: number }[] {
+        return Array.from(this.queues.entries()).map(([target, queue]) => ({
+            target,
+            queueSize: queue.length
+        }));
+    }
+}
+
+Sous-Étape 2 : Intégration dans le MessageBus
+Maintenant, nous modifions le MessageBus pour qu'il utilise cette nouvelle classe.
+1. Mise à Jour de MessageBus.ts :
+TypeScript
+
+// src/core/communication/MessageBus.ts
+import { OfflineQueue } from './OfflineQueue'; // Importer la nouvelle classe
+// ... autres imports
+
+export class MessageBus {
+    // ...
+    private readonly offlineQueue = new OfflineQueue();
+    private knownWorkers = new Set<WorkerName>(); // Maintenu via les heartbeats
+
+    constructor(name: WorkerName, config: MessageBusConfig = {}) {
+        // ...
+        this.knownWorkers.add(name); // S'ajouter soi-même à la liste des connus
+    }
+
+    // ... (handleIncomingMessage, etc.)
+
+    // Méthode appelée par le Guardian lorsqu'un worker est détecté
+    public notifyWorkerOnline(workerName: WorkerName): void {
+        const wasOffline = !this.knownWorkers.has(workerName);
+        this.knownWorkers.add(workerName);
+        
+        if (wasOffline) {
+            console.log(`[MessageBus] '${workerName}' est maintenant considéré comme en ligne.`);
+            this.offlineQueue.flush(workerName, this);
+        }
+    }
+    
+    // Méthode appelée par le Guardian lorsqu'un worker est considéré comme mort
+    public notifyWorkerOffline(workerName: WorkerName): void {
+        this.knownWorkers.delete(workerName);
+        console.log(`[MessageBus] '${workerName}' est maintenant considéré comme hors ligne.`);
+    }
+
+    // Renommer sendMessage en resendMessage pour clarifier son usage par la queue
+    public resendMessage(message: KenshoMessage): void {
+        this.broadcastChannel.postMessage(message);
+    }
+
+    private createAndSendMessage(message: Omit<KenshoMessage, 'messageId'>): string {
+        const fullMessage: KenshoMessage = {
+            messageId: crypto.randomUUID(),
+            ...message,
+        };
+        this.broadcastChannel.postMessage(fullMessage);
+        return fullMessage.messageId;
+    }
+
+    public request<TResponse>(target: WorkerName, payload: any, timeout?: number): Promise<TResponse> {
+        const traceId = this.currentTraceId || `trace-${crypto.randomUUID()}`;
+        const actualTimeout = timeout ?? this.defaultTimeout;
+
+        // Si le worker n'est pas connu, mettre en file d'attente et attendre.
+        if (!this.knownWorkers.has(target)) {
+            console.warn(`[MessageBus] '${target}' est hors ligne. Mise en file d'attente de la requête.`);
+            
+            const message: KenshoMessage = {
+                messageId: crypto.randomUUID(),
+                traceId,
+                type: 'request',
+                sourceWorker: this.workerName,
+                targetWorker: target,
+                payload
+            };
+            
+            this.offlineQueue.enqueue(target, message);
+            
+            // Retourner une promesse qui attend que le worker revienne en ligne.
+            return this.waitForWorkerAndRetry(target, message.messageId, actualTimeout);
+        }
+        
+        // Sinon, envoyer la requête normalement.
+        return this.sendRequestNormally(target, payload, actualTimeout, traceId);
+    }
+
+    private sendRequestNormally<TResponse>(target: WorkerName, payload: any, timeout: number, traceId: string): Promise<TResponse> {
+        return new Promise<TResponse>((resolve, reject) => {
+            const messageId = this.createAndSendMessage({
+                type: 'request',
+                sourceWorker: this.workerName,
+                targetWorker: target,
+                payload,
+                traceId,
+            });
+            // ... (logique de timeout et de pendingRequests comme avant)
+        });
+    }
+
+    // NOUVELLE MÉTHODE : Gère l'attente d'un worker qui revient en ligne.
+    private waitForWorkerAndRetry<TResponse>(target: WorkerName, originalMessageId: string, timeout: number): Promise<TResponse> {
+        return new Promise<TResponse>((resolve, reject) => {
+            const startTime = Date.now();
+            
+            const checkInterval = setInterval(() => {
+                // Si le worker est revenu, la queue a été flushée.
+                // La requête originale est maintenant dans pendingRequests.
+                if (this.pendingRequests.has(originalMessageId)) {
+                    clearInterval(checkInterval);
+                    // On attache simplement la résolution/rejet à la promesse existante.
+                    const pending = this.pendingRequests.get(originalMessageId)!;
+                    pending.resolve = resolve;
+                    pending.reject = reject;
+                } else if (Date.now() - startTime > timeout) {
+                    clearInterval(checkInterval);
+                    reject(new Error(`Le worker '${target}' n'est pas revenu en ligne dans le délai de ${timeout}ms.`));
+                }
+            }, 100); // Vérifier toutes les 100ms
+        });
+    }
+    // ...
+}
+
+2. Intégration avec le OrionGuardian :
+Le Guardian doit maintenant notifier le MessageBus des changements d'état des workers.
+TypeScript
+
+// src/core/guardian/OrionGuardian.ts
+// ...
+export class OrionGuardian {
+    // ...
+    private handleSystemMessage(message: KenshoMessage): void {
+        // Le simple fait de recevoir un message est une preuve de vie.
+        this.messageBus.notifyWorkerOnline(message.sourceWorker);
+        this.workerRegistry.update(message.sourceWorker);
+        // ...
+    }
+
+    // On pourrait aussi ajouter une méthode dans le Guardian pour notifier
+    // le bus quand le garbage collector du registre supprime un worker.
+    // ...
+}
+
+Conclusion de la Tâche
+Nous avons maintenant une implémentation complète de la OfflineQueue et son intégration dans le MessageBus.
+
+    Ce qui est fait :
+        Une classe OfflineQueue autonome et robuste.
+        Le MessageBus met en file d'attente les messages pour les workers inconnus.
+        Une logique waitForWorkerAndRetry qui attend le retour en ligne d'un worker.
+        Le MessageBus est notifié des changements d'état des workers pour pouvoir "flusher" la file d'attente.

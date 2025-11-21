@@ -1,0 +1,214 @@
+Exécution : Sprint 1C - Tâche des Jours 4-5
+Objectif : Implémenter la Détection de Doublons
+Philosophie : "Traiter une fois, et une seule." Pour garantir l'idempotence au niveau de la couche de transport, le MessageBus doit se souvenir des requêtes qu'il a récemment traitées et retourner une réponse mise en cache pour tout doublon, sans ré-exécuter la logique métier.
+Sous-Étape 1 : Implémentation de la Logique de Détection de Doublons
+Nous allons modifier le MessageBus pour intégrer ce mécanisme de cache.
+1. Mise à Jour de MessageBus.ts :
+TypeScript
+
+// src/core/communication/MessageBus.ts
+// ... (imports)
+
+export class MessageBus {
+    // ... (propriétés existantes)
+    
+    // NOUVEAU : Cache pour la détection de doublons
+    private recentlyProcessedRequests = new Map<string, { response: any, error?: SerializedError, timestamp: number }>();
+    private cacheCleanupTimer: any;
+
+    private static readonly CACHE_MAX_AGE_MS = 60000; // 60 secondes
+    private static readonly CACHE_CLEANUP_INTERVAL_MS = 10000; // 10 secondes
+
+    constructor(name: WorkerName, config: MessageBusConfig = {}) {
+        // ... (constructeur existant)
+        
+        // Démarrer le nettoyage périodique du cache
+        this.cacheCleanupTimer = setInterval(
+            () => this.cleanupRequestCache(), 
+            MessageBus.CACHE_CLEANUP_INTERVAL_MS
+        );
+    }
+
+    private async processRequestMessage(message: KenshoMessage): Promise<void> {
+        // NOUVEAU : Vérifier le cache de détection de doublons
+        const cachedEntry = this.recentlyProcessedRequests.get(message.messageId);
+        if (cachedEntry) {
+            console.warn(`[MessageBus] Doublon de requête détecté (${message.messageId}). Retour de la réponse mise en cache.`);
+            this.sendResponse(message, cachedEntry.response, cachedEntry.error);
+            return;
+        }
+
+        if (!this.requestHandler) {
+            const noHandlerError: SerializedError = { name: 'NoHandlerError', message: `No request handler registered for worker '${this.workerName}'` };
+            this.recentlyProcessedRequests.set(message.messageId, { response: null, error: noHandlerError, timestamp: Date.now() });
+            return this.sendResponse(message, null, noHandlerError);
+        }
+        
+        try {
+            const responsePayload = await this.requestHandler(message.payload);
+            // Mettre en cache la réponse en cas de succès
+            this.recentlyProcessedRequests.set(message.messageId, { response: responsePayload, timestamp: Date.now() });
+            this.sendResponse(message, responsePayload);
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error('Unknown error in request handler');
+            const serializedError: SerializedError = {
+                message: err.message,
+                stack: err.stack,
+                name: err.name,
+            };
+            // Mettre en cache la réponse en cas d'erreur
+            this.recentlyProcessedRequests.set(message.messageId, { response: null, error: serializedError, timestamp: Date.now() });
+            this.sendResponse(message, null, serializedError);
+        }
+    }
+
+    // NOUVEAU : Nettoyage périodique du cache pour éviter les fuites de mémoire
+    private cleanupRequestCache(): void {
+        const now = Date.now();
+        for (const [messageId, entry] of this.recentlyProcessedRequests.entries()) {
+            if ((now - entry.timestamp) > MessageBus.CACHE_MAX_AGE_MS) {
+                this.recentlyProcessedRequests.delete(messageId);
+            }
+        }
+    }
+
+    public dispose(): void {
+        // ... (logique de dispose existante)
+        clearInterval(this.cacheCleanupTimer);
+    }
+
+    // ... (le reste de la classe reste inchangé)
+}
+
+    Commentaire : La logique est simple et efficace.
+        À la réception d'une requête, on vérifie si son messageId est dans le cache.
+        Si oui, on renvoie la réponse (ou l'erreur) mise en cache et on arrête le traitement.
+        Si non, on traite la requête normalement.
+        Une fois le traitement terminé (succès ou erreur), on stocke le résultat dans le cache avant de l'envoyer.
+        Un setInterval nettoie périodiquement les vieilles entrées du cache pour éviter qu'il ne grossisse indéfiniment.
+
+Sous-Étape 2 : Validation avec un Test d'Intégration
+Objectif : Prouver que si le MessageBus reçoit deux fois la même requête, la logique métier sous-jacente (requestHandler) n'est exécutée qu'une seule fois.
+1. Création du Fichier de Test sprint1c-duplicate-detection-e2e.html :
+Bash
+
+touch tests/browser/sprint1c-duplicate-detection-e2e.html
+
+2. Code Complet du Fichier de Test :
+HTML
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1C - Test E2E de Détection de Doublons</title>
+    <style>/* ... (même style) ... */</style>
+</head>
+<body>
+    <h1>Sprint 1C - Test E2E de Détection de Doublons</h1>
+    <p>Ce test valide que le MessageBus ignore les requêtes dupliquées.</p>
+    <button id="run-tests">Lancer le Test</button>
+    <h2>Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const log = (message, status = 'info') => { /* ... */ };
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // Mock du BroadcastChannel pour contrôler la livraison des messages
+        const mockBusController = {
+            listeners: [],
+            postMessage(message) {
+                // On ne livre pas immédiatement pour simuler un réseau
+                setTimeout(() => this.listeners.forEach(l => l({ data: message })), 50);
+            },
+            addEventListener(handler) { this.listeners.push(handler); },
+            clear() { this.listeners = []; }
+        };
+        window.BroadcastChannel = function() { return mockBusController; };
+
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('--- Démarrage du test de détection de doublons ---', 'info');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            let busA = null;
+            let busB = null;
+            let testPassed = true;
+
+            try {
+                // --- Étape 1: Setup ---
+                log('[Étape 1] Création de deux MessageBus (AgentA, AgentB)...', 'info');
+                busA = new MessageBus('AgentA');
+                busB = new MessageBus('AgentB');
+
+                // Le handler de l'AgentB va incrémenter un compteur pour tracer ses exécutions
+                let executionCount = 0;
+                busB.setRequestHandler(async (payload) => {
+                    executionCount++;
+                    log(`  [AgentB] Handler exécuté (compteur: ${executionCount}).`, 'info');
+                    await sleep(50); // Simuler un travail
+                    return `Response for ${payload.data}`;
+                });
+                log('  Handler de l\'AgentB configuré avec un compteur.', 'info');
+
+                // --- Étape 2: Envoyer une requête dupliquée ---
+                log('\n[Étape 2] Envoi de la même requête deux fois de suite...', 'info');
+                
+                // On doit construire le message manuellement pour avoir le même messageId
+                const traceId = `trace-${crypto.randomUUID()}`;
+                const messageId = `msg-${crypto.randomUUID()}`;
+                const payload = { data: 'test-duplicate' };
+
+                const message = {
+                    messageId, traceId, payload,
+                    type: 'request',
+                    sourceWorker: 'AgentA',
+                    targetWorker: 'AgentB',
+                };
+
+                // On utilise une méthode interne pour envoyer un message déjà construit
+                // (On doit l'exposer pour le test)
+                busA.resendMessage(message);
+                busA.resendMessage(message);
+                log('  Deux messages avec le même ID ont été envoyés.', 'info');
+
+                // Attendre que les réponses reviennent (le timeout du bus est de 5s)
+                await sleep(1000);
+
+                // --- Étape 3: Vérification ---
+                log('\n[Étape 3] Vérification du nombre d\'exécutions...', 'info');
+                if (executionCount === 1) {
+                    log('Le handler n\'a été exécuté qu\'une seule fois.', 'pass');
+                } else {
+                    throw new Error(`Le handler a été exécuté ${executionCount} fois au lieu de 1.`);
+                }
+
+            } catch (error) {
+                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                testPassed = false;
+            } finally {
+                if (busA) busA.dispose();
+                if (busB) busB.dispose();
+                log('\n--- Test Terminé ---', 'summary');
+                if (testPassed) {
+                    log('🎉 Tâche "Détection de Doublons" validée avec succès !', 'pass');
+                } else {
+                    log('❗️ Des problèmes ont été détectés dans la gestion des doublons.', 'fail');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+
+    Note : Pour ce test, nous avons besoin de rendre la méthode resendMessage (anciennement sendMessage) publique sur le MessageBus pour pouvoir envoyer manuellement un message avec un ID prédéfini.
+
+Conclusion de la Tâche
+Processus de Validation :
+
+    Lancer le serveur de dev.
+    Ouvrir tests/browser/sprint1c-duplicate-detection-e2e.html.
+    Cliquer sur "Lancer le Test".

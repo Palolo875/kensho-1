@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kensho - Sprint 1C - Test E2E de l'OfflineQueue</title>
+    <style>
+        body { font-family: system-ui, sans-serif; line-height: 1.6; padding: 2em; background-color: #1e1e1e; color: #d4d4d4; }
+        pre { background-color: #282c34; padding: 1em; border-radius: 8px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
+        button { font-size: 1.2em; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; border: 1px solid #61afef; background-color: #282c34; color: #61afef; }
+        h1, h2 { color: #61afef; }
+        .pass { color: #98c379; font-weight: bold; }
+        .fail { color: #e06c75; font-weight: bold; }
+        .info { color: #56b6c2; }
+        .summary { margin-top: 1em; border-top: 1px solid #444; padding-top: 1em; }
+    </style>
+</head>
+<body>
+    <h1>Sprint 1C - Test E2E de l'OfflineQueue</h1>
+    <p>Ce test valide que les messages envoyés à un agent hors ligne sont mis en attente et délivrés lorsqu'il revient en ligne.</p>
+    <button id="run-tests">Lancer le Test</button>
+    <h2>Résultats :</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        const resultsEl = document.getElementById('results');
+        const log = (message, status = 'info') => {
+            const line = document.createElement('div');
+            line.innerHTML = `<span class="${status}">[${status.toUpperCase()}] ${message}</span>`;
+            resultsEl.appendChild(line);
+            console.log(`[${status.toUpperCase()}] ${message}`);
+        };
+
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        function startWorker(path) {
+            const worker = new Worker(path);
+            const readyPromise = new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => reject(new Error('Worker n\'a pas démarré à temps.')), 5000);
+                worker.onmessage = (e) => {
+                    if (e.data && e.data.type === 'READY') {
+                        clearTimeout(timeoutId);
+                        worker.onmessage = null;
+                        resolve(worker);
+                    }
+                };
+            });
+            return readyPromise;
+        }
+
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            resultsEl.innerHTML = '';
+            log('--- Démarrage du test de l\'OfflineQueue ---', 'info');
+
+            const { MessageBus } = await import('/src/core/communication/MessageBus.ts');
+            let busA = null;
+            let workerB = null;
+            let testPassed = true;
+
+            try {
+                // --- Étape 1: Envoyer un message dans le vide ---
+                log('[Étape 1] Création de l\'AgentA et envoi d\'une requête à l\'AgentB (inexistant)...', 'info');
+                busA = new MessageBus('AgentA');
+                
+                const requestPromise = busA.request('AgentB', { method: 'ping', args: ['hello offline'] }, 10000);
+                log('  Requête envoyée. La promesse est maintenant en attente.', 'info');
+
+                // --- Étape 2: Démarrer l'agent destinataire ---
+                await sleep(500);
+                log('\n[Étape 2] Démarrage de l\'AgentB...', 'info');
+                
+                workerB = await startWorker('/dist/test-agents/ping.agent.js');
+                log('  AgentB a démarré et envoyé son signal READY.', 'pass');
+                
+                log('  Attente de la détection de l\'AgentB par l\'AgentA...', 'info');
+                await sleep(1000);
+
+                // --- Étape 3: Vérifier la résolution de la promesse ---
+                log('\n[Étape 3] Vérification de la résolution de la requête initiale...', 'info');
+                
+                try {
+                    const response = await Promise.race([
+                        requestPromise,
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout attente réponse')), 8000))
+                    ]);
+                    log(`  La promesse a été résolue avec la réponse: "${response}"`, 'info');
+
+                    if (typeof response === 'string' && response.includes('pong')) {
+                        log('  La réponse est valide ! L\'OfflineQueue a fonctionné.', 'pass');
+                    } else {
+                        log(`  Réponse inattendue: ${response}`, 'fail');
+                        testPassed = false;
+                    }
+                } catch (error) {
+                    log(`  Erreur lors de la résolution de la promesse: ${error.message}`, 'fail');
+                    testPassed = false;
+                }
+
+            } catch (error) {
+                log(`Erreur critique durant le test: ${error.message}`, 'fail');
+                testPassed = false;
+            } finally {
+                if (busA) busA.dispose();
+                if (workerB) workerB.terminate();
+                log('\n--- Test Terminé ---', 'summary');
+                if (testPassed) {
+                    log('🎉 Tâche "OfflineQueue" validée avec succès !', 'pass');
+                } else {
+                    log('❗️ Des problèmes ont été détectés dans la gestion de la file d\'attente hors ligne.', 'fail');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
