@@ -38,6 +38,12 @@ export interface WorkerError {
     timestamp: number;
 }
 
+interface WorkerStatus {
+    llm: boolean;
+    oie: boolean;
+    telemetry: boolean;
+}
+
 interface KenshoState {
     messages: Message[];
     modelProgress: ModelLoaderProgress;
@@ -47,6 +53,7 @@ interface KenshoState {
     isLoadingMinimized: boolean;
     isLoadingPaused: boolean;
     workerErrors: WorkerError[];
+    workersReady: WorkerStatus;
     
     init: () => void;
     sendMessage: (text: string) => void;
@@ -96,6 +103,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
     isLoadingMinimized: false,
     isLoadingPaused: false,
     workerErrors: [],
+    workersReady: { llm: false, oie: false, telemetry: false },
 
     /**
      * Initialise le système Kensho
@@ -128,7 +136,12 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             
             // Écouter les messages de progression du modèle
             llmWorker.onmessage = (e) => {
-                if (e.data.type === 'MODEL_PROGRESS') {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ LLM Worker prêt');
+                    set(state => ({
+                        workersReady: { ...state.workersReady, llm: true }
+                    }));
+                } else if (e.data.type === 'MODEL_PROGRESS') {
                     console.log('[KenshoStore] Progression du modèle:', e.data.payload);
                     set({ modelProgress: e.data.payload });
                 } else if (e.data.type === 'MODEL_ERROR') {
@@ -185,6 +198,15 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 { type: 'module' }
             );
             
+            oieWorker.onmessage = (e) => {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ OIE Worker prêt');
+                    set(state => ({
+                        workersReady: { ...state.workersReady, oie: true }
+                    }));
+                }
+            };
+            
             oieWorker.onerror = (error) => {
                 console.error('[KenshoStore] Erreur du OIE Worker:', error);
                 const workerError: WorkerError = {
@@ -216,6 +238,15 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 new URL('../agents/telemetry/index.ts', import.meta.url),
                 { type: 'module' }
             );
+            
+            telemetryWorker.onmessage = (e) => {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ Telemetry Worker prêt');
+                    set(state => ({
+                        workersReady: { ...state.workersReady, telemetry: true }
+                    }));
+                }
+            };
             
             telemetryWorker.onerror = (error) => {
                 console.error('[KenshoStore] Erreur du Telemetry Worker:', error);
@@ -251,11 +282,11 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      * - Met à jour le placeholder au fur et à mesure des chunks
      */
     sendMessage: (text) => {
-        const { mainBus, messages, modelProgress } = get();
+        const { mainBus, messages, modelProgress, workersReady } = get();
         
         // Vérifications
         if (!mainBus) {
-            console.error('[KenshoStore] MessageBus non initialisé');
+            console.error('[KenshoStore] ❌ MessageBus non initialisé');
             return;
         }
 
@@ -264,7 +295,18 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
         }
 
         if (modelProgress.phase !== 'ready') {
-            console.warn('[KenshoStore] Le modèle n\'est pas encore prêt');
+            console.warn('[KenshoStore] ⚠️ Le modèle n\'est pas encore prêt. Phase actuelle:', modelProgress.phase);
+            return;
+        }
+
+        // Vérifier que les workers sont prêts
+        if (!workersReady.oie) {
+            console.warn('[KenshoStore] ⚠️ OIE Worker n\'est pas encore prêt');
+            return;
+        }
+
+        if (!workersReady.llm) {
+            console.warn('[KenshoStore] ⚠️ LLM Worker n\'est pas encore prêt');
             return;
         }
 
@@ -291,11 +333,12 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
         });
         saveMessagesToLocalStorage(newMessages);
 
-        console.log('[KenshoStore] 📤 Envoi du message:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+        console.log('[KenshoStore] 📤 Envoi du message vers OIEAgent:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+        console.log('[KenshoStore] 🔍 Workers status:', workersReady);
 
         // Lancer le stream vers l'OIE Agent
         // Le payload doit être au format { method, args } pour AgentRuntime
-        mainBus.requestStream(
+        const streamId = mainBus.requestStream(
             'OIEAgent',
             { method: 'executeQuery', args: [{ query: text.trim() }] },
             {
@@ -339,6 +382,8 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                 }
             }
         );
+        
+        console.log('[KenshoStore] 🆔 Stream créé avec ID:', streamId);
     },
 
     /**

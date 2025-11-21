@@ -248,33 +248,73 @@ export class ModelLoader {
      */
     private async checkModelCache(modelId: string): Promise<boolean> {
         try {
-            // Vérifier dans IndexedDB si le modèle existe
-            const dbName = 'webllm/model';
-            const dbRequest = indexedDB.open(dbName);
+            console.log('[ModelLoader] 🔍 Vérification du cache pour:', modelId);
             
-            return new Promise<boolean>((resolve) => {
-                dbRequest.onsuccess = () => {
-                    const db = dbRequest.result;
-                    if (db.objectStoreNames.contains('models')) {
-                        const transaction = db.transaction(['models'], 'readonly');
-                        const store = transaction.objectStore('models');
-                        const getRequest = store.get(modelId);
+            // web-llm utilise plusieurs bases de données possibles
+            const possibleDbNames = [
+                'webllm',
+                'webllm/model',
+                'webllm/cache',
+                'tvmjs',
+                'tvmjs/model'
+            ];
+            
+            for (const dbName of possibleDbNames) {
+                try {
+                    const isCached = await new Promise<boolean>((resolve) => {
+                        const dbRequest = indexedDB.open(dbName);
                         
-                        getRequest.onsuccess = () => {
-                            const isCached = !!getRequest.result;
-                            console.log(`[ModelLoader] Modèle ${modelId} ${isCached ? 'trouvé' : 'non trouvé'} en cache`);
-                            resolve(isCached);
+                        dbRequest.onsuccess = () => {
+                            const db = dbRequest.result;
+                            console.log(`[ModelLoader] 📂 Base de données "${dbName}" ouverte, stores disponibles:`, Array.from(db.objectStoreNames));
+                            
+                            // Chercher dans tous les object stores possibles
+                            const possibleStores = ['models', 'model', 'cache', 'files', 'records'];
+                            for (const storeName of possibleStores) {
+                                if (db.objectStoreNames.contains(storeName)) {
+                                    try {
+                                        const transaction = db.transaction([storeName], 'readonly');
+                                        const store = transaction.objectStore(storeName);
+                                        
+                                        // Essayer de compter les entrées
+                                        const countRequest = store.count();
+                                        countRequest.onsuccess = () => {
+                                            const count = countRequest.result;
+                                            console.log(`[ModelLoader] 📊 Store "${storeName}" contient ${count} entrées`);
+                                            if (count > 0) {
+                                                resolve(true);
+                                            }
+                                        };
+                                    } catch (err) {
+                                        // Ignorer les erreurs de transaction
+                                    }
+                                }
+                            }
+                            
+                            db.close();
+                            resolve(false);
                         };
                         
-                        getRequest.onerror = () => resolve(false);
-                    } else {
-                        resolve(false);
+                        dbRequest.onerror = () => {
+                            console.log(`[ModelLoader] ⚠️ Base de données "${dbName}" introuvable`);
+                            resolve(false);
+                        };
+                        
+                        // Timeout après 2 secondes
+                        setTimeout(() => resolve(false), 2000);
+                    });
+                    
+                    if (isCached) {
+                        console.log(`[ModelLoader] ✅ Modèle trouvé en cache dans "${dbName}"`);
+                        return true;
                     }
-                    db.close();
-                };
-                
-                dbRequest.onerror = () => resolve(false);
-            });
+                } catch (err) {
+                    console.warn(`[ModelLoader] Erreur lors de la vérification de "${dbName}":`, err);
+                }
+            }
+            
+            console.log('[ModelLoader] ❌ Modèle non trouvé en cache');
+            return false;
         } catch (error) {
             console.warn('[ModelLoader] Impossible de vérifier le cache:', error);
             return false;
@@ -283,33 +323,50 @@ export class ModelLoader {
 
     private async requestPersistentStorage(): Promise<void> {
         if (!(navigator.storage && navigator.storage.persist)) {
-            console.warn('[ModelLoader] API de stockage persistant non disponible.');
+            console.warn('[ModelLoader] ⚠️ API de stockage persistant non disponible.');
+            this.progressCallback({
+                phase: 'downloading',
+                progress: 0.02,
+                text: '⚠️ Stockage persistant non disponible',
+            });
             return;
         }
+        
+        // Vérifier le quota de stockage
+        if (navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            const usedMB = (estimate.usage || 0) / (1024 * 1024);
+            const totalMB = (estimate.quota || 0) / (1024 * 1024);
+            console.log(`[ModelLoader] 💾 Stockage: ${usedMB.toFixed(0)}MB / ${totalMB.toFixed(0)}MB utilisés`);
+        }
+        
         const isPersisted = await navigator.storage.persisted();
         if (isPersisted) {
-            console.log('[ModelLoader] Stockage déjà persistant ✓');
+            console.log('[ModelLoader] ✅ Stockage déjà persistant');
+            this.progressCallback({
+                phase: 'downloading',
+                progress: 0.02,
+                text: '💾 Stockage persistant activé - le modèle sera conservé entre les sessions',
+            });
+            return;
+        }
+        
+        console.log('[ModelLoader] 🔄 Demande de stockage persistant...');
+        const success = await navigator.storage.persist();
+        if (success) {
+            console.log('[ModelLoader] ✅ Stockage persistant accordé');
             this.progressCallback({
                 phase: 'downloading',
                 progress: 0.02,
                 text: '💾 Stockage persistant activé - le modèle sera conservé',
             });
-            return;
-        }
-        const success = await navigator.storage.persist();
-        if (success) {
-            console.log('[ModelLoader] Stockage persistant accordé ✓');
-            this.progressCallback({
-                phase: 'downloading',
-                progress: 0.02,
-                text: '💾 Stockage persistant activé',
-            });
         } else {
-            console.warn('[ModelLoader] Demande de stockage persistant refusée');
+            console.warn('[ModelLoader] ❌ Demande de stockage persistant refusée');
+            console.warn('[ModelLoader] ℹ️ Le modèle sera téléchargé à nouveau si le navigateur vide le cache');
             this.progressCallback({
                 phase: 'downloading',
                 progress: 0.02,
-                text: '⚠️ Stockage persistant non disponible - le modèle pourrait être re-téléchargé',
+                text: '⚠️ Stockage persistant refusé - le modèle pourrait être re-téléchargé',
             });
         }
     }
