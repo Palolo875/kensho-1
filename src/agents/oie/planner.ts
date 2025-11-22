@@ -105,7 +105,8 @@ export class LLMPlanner {
             steps: [{
                 agent: 'MainLLMAgent',
                 action: 'generateResponse',
-                args: { prompt: userQuery }
+                args: {},
+                prompt: userQuery
             }]
         };
     }

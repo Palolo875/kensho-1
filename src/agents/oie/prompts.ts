@@ -31,10 +31,13 @@ Ta seule et unique mission est de générer un objet JSON qui représente un pla
 
 **OUTILS DISPONIBLES :**
 - **CalculatorAgent**: ${JSON.stringify(calculatorManifest.description)}
-  - Méthode: \`calculate(expression: string)\`
-  - Exemple d'utilisation: Pour "Calcule 2 + 2", utilise CalculatorAgent.calculate("2 + 2")
+  - Action: \`calculate\`
+  - Arguments: \`{ expression: string }\`
+  - Exemple: Pour "Calcule 2 + 2", crée une étape avec action "calculate" et args { "expression": "2 + 2" }
   
 - **MainLLMAgent**: Agent conversationnel principal pour répondre en langage naturel.
+  - Action: \`generateResponse\`
+  - Arguments: \`{}\` (vide, utilise le champ "prompt" à la place)
   - Utilise cet agent pour les réponses textuelles, les explications, et toute tâche ne nécessitant pas de calcul précis.
 
 **PROCESSUS DE RÉFLEXION (Chain-of-Thought) :**
@@ -44,10 +47,10 @@ Avant de générer le JSON, suis ces étapes de réflexion :
     - La requête contient-elle une demande de calcul explicite ou implicite ?
     - Recherche des indicateurs : opérations mathématiques (+, -, *, /), questions "combien", "quelle est la valeur", nombres, expressions mathématiques.
 3.  **Décision :**
-    - Si NON (pas de calcul nécessaire), le plan est une simple réponse directe via \`MainLLMAgent\`.
+    - Si NON (pas de calcul nécessaire), le plan est une simple réponse directe via \`MainLLMAgent\` avec action "generateResponse".
     - Si OUI (calcul nécessaire), le plan doit contenir :
-      * Première étape : appeler \`CalculatorAgent.calculate\` avec l'expression mathématique exacte
-      * Deuxième étape : \`MainLLMAgent\` formule une réponse naturelle avec le résultat
+      * Première étape : \`CalculatorAgent\` avec action "calculate" et l'expression mathématique dans args
+      * Deuxième étape : \`MainLLMAgent\` avec action "generateResponse" pour formuler une réponse naturelle avec le résultat
 
 **FORMAT DE SORTIE OBLIGATOIRE :**
 \`\`\`json
@@ -56,7 +59,7 @@ Avant de générer le JSON, suis ces étapes de réflexion :
   "steps": [
     {
       "agent": "NomDeLAgent",
-      "method": "nomDeLaMethode",
+      "action": "nomDeLaMethode",
       "args": { "parametre": "valeur" },
       "prompt": "Pour MainLLMAgent uniquement, le texte à traiter"
     }
@@ -74,11 +77,13 @@ Requête : "Combien font 15 * 3 ?"
   "steps": [
     {
       "agent": "CalculatorAgent",
-      "method": "calculate",
+      "action": "calculate",
       "args": { "expression": "15 * 3" }
     },
     {
       "agent": "MainLLMAgent",
+      "action": "generateResponse",
+      "args": {},
       "prompt": "Formule une réponse naturelle pour indiquer que 15 fois 3 égale [RÉSULTAT_PRÉCÉDENT]."
     }
   ]
@@ -93,6 +98,8 @@ Requête : "Explique-moi ce qu'est la photosynthèse"
   "steps": [
     {
       "agent": "MainLLMAgent",
+      "action": "generateResponse",
+      "args": {},
       "prompt": "Explique-moi ce qu'est la photosynthèse"
     }
   ]
@@ -119,6 +126,8 @@ Réponds UNIQUEMENT avec ce format (remplace les valeurs selon la requête) :
   "steps": [
     {
       "agent": "MainLLMAgent",
+      "action": "generateResponse",
+      "args": {},
       "prompt": "${userQuery}"
     }
   ]

@@ -1,0 +1,56 @@
+Exécution : Sprint 3 - Tâche du Jour 10
+Objectif : Buffer, Intégration Finale, et Démo "L'IA qui Calcule"
+Philosophie : "La qualité n'est pas un accident." Cette journée est dédiée à la stabilisation, à la documentation des leçons apprises, et à la célébration d'une étape majeure.
+Activités du Jour 10
+1. Buffer et Intégration Finale :
+
+    Action : Utiliser les premières heures pour corriger les derniers bugs mineurs découverts lors de l'intégration des Jours 1 à 9. Par exemple, un problème de style dans l'affichage du plan, ou une métrique qui n'est pas correctement calculée.
+    Action : Effectuer une revue de code complète de toutes les nouvelles fonctionnalités : CalculatorAgent, JSONExtractor, LLMPlanner, TaskExecutor, et les modifications de l'UI. S'assurer que le code est clair, commenté et respecte nos standards.
+
+2. Documentation des Leçons Apprises :
+
+    Action : Créer ou mettre à jour les documents pertinents dans notre "Génome".
+        Créer docs/adr/ADR-002-LLM-Planner-Strategy.md : Ce document crucial expliquera pourquoi nous avons choisi une approche avec un JSONExtractor et un prompt de Chain-of-Thought, en documentant les risques des approches naïves. C'est une leçon capitale pour l'avenir.
+        Mettre à jour docs/architecture/Tools.md : Créer une nouvelle page qui décrit l'architecture des outils, en utilisant le CalculatorAgent comme exemple canonique (Manifeste + Agent).
+
+3. Préparation et Exécution de la Démo Finale :
+
+    Action : Préparer un script de démo clair pour s'assurer que nous testons tous les scénarios critiques.
+    Action : Exécuter la démo.
+
+La Démo Finale : "L'IA qui Calcule"
+Scénario de Démo :
+
+    Lancement de l'Application :
+        Action : Lancer l'application avec npm run dev.
+        Résultat Attendu : L'UI de chargement de Phi-3 s'affiche et se termine correctement. L'interface de chat est prête.
+    Test du Flux Simple (Pas d'Outil) :
+        Action : Poser une question de conversation : "Peux-tu m'écrire un court poème sur le code ?".
+        Résultat Attendu :
+            Kensho répond en streaming avec un poème.
+            En cliquant sur "🧠 Voir la réflexion de Kensho", le plan affiché est simple :
+            Plain Text
+
+        Pensée: L'utilisateur demande une réponse directe, je vais utiliser MainLLMAgent.
+        Plan d'action:
+        1. MainLLMAgent -> generateResponse
+
+Test du Flux Complexe (Avec Outil) :
+
+    Action : Poser une question nécessitant un calcul : "Si j'ai 3 équipes de 7 développeurs, et que chaque développeur coûte 8,000€ par mois, quel est mon coût mensuel total en salaires ?".
+    Résultat Attendu :
+        Kensho réfléchit un peu plus longtemps (le temps de faire 2 appels LLM : un pour le plan, un pour la réponse finale).
+        La réponse finale s'affiche en streaming : "Votre coût mensuel total en salaires pour 21 développeurs est de 168 000 €."
+        En cliquant sur "🧠 Voir la réflexion de Kensho", le plan affiché est complexe :
+        Plain Text
+
+        Pensée: L'utilisateur demande un calcul. Je dois d'abord évaluer l'expression mathématique (3 * 7 * 8000), puis formuler une réponse avec le résultat.
+        Plan d'action:
+        1. CalculatorAgent -> calculate
+        2. MainLLMAgent -> generateResponse
+
+Test du Flux d'Erreur (Outil qui Échoue) :
+
+    Action : Poser une question avec une expression mathématique invalide : "Que donne 100 divisé par zéro ?".
+    Résultat Attendu :
+        Kensho réfléchit, puis répond en streaming : "Désolé, je ne peux pas effectuer cette tâche pour le moment. J'ai essayé d'utiliser ma calculatrice mais elle a rencontré une erreur : Impossible d'évaluer l'expression: Division by zero. Puis-je vous aider d'une autre manière ?"

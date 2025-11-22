@@ -39,8 +39,17 @@ export class TaskExecutor {
                     // C'est la dernière étape et c'est une génération de réponse, on streame.
                     this.runtime.log('info', '[TaskExecutor] Dernière étape : streaming de la réponse...');
                     
-                    // Pour la compatibilité avec callAgentStream, on utilise le prompt directement
-                    const promptToUse = step.prompt || interpolatedArgs.prompt || this.originalQuery;
+                    // Utiliser le champ prompt et l'interpoler avec les résultats précédents
+                    let promptToUse = step.prompt || this.originalQuery;
+                    
+                    // Interpoler les placeholders dans le prompt avec les résultats des étapes précédentes
+                    for (const [key, value] of stepResults.entries()) {
+                        const placeholder = `{{${key}}}`;
+                        // Remplacer les placeholders dans le prompt
+                        promptToUse = promptToUse.split(placeholder).join(String(value));
+                    }
+                    
+                    this.runtime.log('info', `[TaskExecutor] Prompt interpolé: ${promptToUse.substring(0, 50)}...`);
                     
                     this.runtime.callAgentStream(
                         step.agent as any,
