@@ -1,30 +1,23 @@
 // src/agents/oie/index.ts
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
-import { naiveTaskPlanner, AgentType } from './planner';
-
-// Configuration des agents disponibles pour ce sprint
-// À mesure que de nouveaux agents sont implémentés, ajoutez-les ici
-const AVAILABLE_AGENTS: Set<AgentType> = new Set([
-    'MainLLMAgent',
-    // 'CodeAgent',     // Sprint futur
-    // 'VisionAgent',   // Sprint futur
-]);
-
-const DEFAULT_FALLBACK_AGENT: AgentType = 'MainLLMAgent';
+import { LLMPlanner } from './planner';
+import { TaskExecutor } from './executor';
 
 runAgent({
     name: 'OIEAgent',
     init: (runtime: AgentRuntime) => {
         console.log('[OIEAgent] 🚀 Initialisation...');
-        runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer.');
-        runtime.log('info', `[OIEAgent] Agents disponibles: ${Array.from(AVAILABLE_AGENTS).join(', ')}`);
+        runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
         console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
+
+        // Instancier le planificateur
+        const planner = new LLMPlanner(runtime);
 
         // L'OIE expose une seule méthode de stream : 'executeQuery'
         runtime.registerStreamMethod(
             'executeQuery',
-            (payload: any, stream: AgentStreamEmitter) => {
+            async (payload: any, stream: AgentStreamEmitter) => {
                 console.log('[OIEAgent] 📨 Requête reçue:', payload);
                 
                 // Validation du payload
@@ -58,66 +51,42 @@ runAgent({
                 console.log('[OIEAgent] 🎯 Query valide:', query);
                 runtime.log('info', `Nouvelle requête reçue: "${query}"`);
 
-                // 1. Planification
-                runtime.log('info', 'Planification de la tâche...');
-                const plan = naiveTaskPlanner(query, {
-                    availableAgents: Array.from(AVAILABLE_AGENTS),
-                    defaultAgent: DEFAULT_FALLBACK_AGENT,
-                });
-                
-                console.log('[OIEAgent] 📋 Plan généré:', plan);
-                runtime.log('info', `Plan généré: utiliser ${plan.agent} (confidence: ${plan.metadata?.confidence}, keywords: ${plan.metadata?.detectedKeywords?.join(', ') || 'none'})`);
+                try {
+                    // 1. Planification avec le LLMPlanner
+                    console.log('[OIEAgent] 🧠 Début de la planification...');
+                    runtime.log('info', 'Planification de la tâche avec LLMPlanner...');
+                    const plan = await planner.generatePlan(query);
+                    
+                    console.log('[OIEAgent] 📋 Plan généré:', plan);
+                    runtime.log('info', `Plan généré: "${plan.thought}"`);
+                    runtime.log('info', `Plan contient ${plan.steps.length} étape(s)`);
 
-                // Vérifier si l'agent choisi est disponible
-                let targetAgent = plan.agent;
-                if (!AVAILABLE_AGENTS.has(targetAgent)) {
-                    console.warn('[OIEAgent] ⚠️ Agent non disponible:', targetAgent, '→ fallback vers', DEFAULT_FALLBACK_AGENT);
-                    runtime.log('warn', `Agent ${targetAgent} n'est pas encore implémenté, fallback vers ${DEFAULT_FALLBACK_AGENT}`);
-                    targetAgent = DEFAULT_FALLBACK_AGENT;
-                } else {
-                    console.log('[OIEAgent] ✅ Agent disponible:', targetAgent);
-                    runtime.log('info', `Agent ${targetAgent} est disponible et sera utilisé`);
+                    // Envoyer le plan à l'UI pour affichage
+                    stream.chunk({ type: 'plan', data: plan });
+                    console.log('[OIEAgent] 📤 Plan envoyé à l\'UI');
+
+                    // 2. Exécution avec le TaskExecutor
+                    console.log('[OIEAgent] ⚙️ Début de l\'exécution du plan...');
+                    runtime.log('info', 'Exécution du plan avec TaskExecutor...');
+                    const executor = new TaskExecutor(runtime, query);
+                    await executor.execute(plan, stream);
+                    
+                    console.log('[OIEAgent] ✅ Exécution terminée');
+                    
+                } catch (error) {
+                    const err = error instanceof Error ? error : new Error('Erreur inconnue');
+                    console.error('[OIEAgent] ❌ Erreur durant l\'orchestration:', err);
+                    runtime.log('error', `Erreur durant l'orchestration: ${err.message}`);
+                    stream.error(err);
                 }
-
-                // 2. Exécution
-                console.log('[OIEAgent] 🔄 Appel de', targetAgent, 'avec prompt:', plan.prompt.substring(0, 50) + '...');
-                runtime.log('info', `Exécution du plan: appel de ${targetAgent}...`);
-                
-                // On appelle l'agent en mode stream et on relaie les chunks.
-                const streamId = runtime.callAgentStream(
-                    targetAgent as any,
-                    'generateResponse',
-                    [plan.prompt],
-                    {
-                        onChunk: (chunk: any) => {
-                            console.log('[OIEAgent] 📦 Chunk reçu de', targetAgent, '→ relay');
-                            // Relayer chaque morceau reçu de l'agent vers l'UI
-                            stream.chunk(chunk);
-                        },
-                        onEnd: (finalPayload: any) => {
-                            console.log('[OIEAgent] ✅ Stream terminé de', targetAgent);
-                            // Le stream de l'agent est terminé, on termine notre propre stream.
-                            runtime.log('info', 'Exécution terminée avec succès.');
-                            stream.end(finalPayload);
-                        },
-                        onError: (error: Error) => {
-                            console.error('[OIEAgent] ❌ Erreur de', targetAgent, ':', error);
-                            // En cas d'erreur de l'agent, on la propage.
-                            runtime.log('error', `Erreur durant l'exécution: ${error.message}`);
-                            stream.error(error);
-                        }
-                    }
-                );
-                
-                console.log('[OIEAgent] 🆔 Stream créé:', streamId);
             }
         );
 
         // Méthode pour obtenir la liste des agents disponibles
         runtime.registerMethod('getAvailableAgents', () => {
             return {
-                available: Array.from(AVAILABLE_AGENTS),
-                default: DEFAULT_FALLBACK_AGENT,
+                available: ['MainLLMAgent', 'CalculatorAgent'],
+                default: 'MainLLMAgent',
             };
         });
     }

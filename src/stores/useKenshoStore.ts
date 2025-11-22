@@ -34,6 +34,7 @@ export interface Message {
     text: string;
     author: 'user' | 'kensho';
     timestamp: number;
+    plan?: any; // Plan généré par l'OIE pour affichage dans l'UI
 }
 
 export interface WorkerError {
@@ -418,17 +419,32 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             { method: 'executeQuery', args: [{ query: text.trim() }] },
             {
                 onChunk: (chunk: any) => {
-                    // Mettre à jour le dernier message de Kensho avec le nouveau texte
-                    console.log('[KenshoStore] 📥 Chunk reçu:', chunk.text?.substring(0, 30) + (chunk.text?.length > 30 ? '...' : ''));
-                    set(state => {
-                        const updatedMessages = state.messages.map(msg =>
-                            msg.id === kenshoResponsePlaceholder.id
-                                ? { ...msg, text: msg.text + (chunk.text || '') }
-                                : msg
-                        );
-                        saveMessagesToLocalStorage(updatedMessages);
-                        return { messages: updatedMessages };
-                    });
+                    // Gérer les différents types de chunks
+                    if (chunk.type === 'plan') {
+                        // C'est un chunk de plan, on le stocke dans le message
+                        console.log('[KenshoStore] 🧠 Plan reçu:', chunk.data.thought);
+                        set(state => {
+                            const updatedMessages = state.messages.map(msg =>
+                                msg.id === kenshoResponsePlaceholder.id
+                                    ? { ...msg, plan: chunk.data }
+                                    : msg
+                            );
+                            saveMessagesToLocalStorage(updatedMessages);
+                            return { messages: updatedMessages };
+                        });
+                    } else if (chunk.text) {
+                        // C'est un chunk de texte, on l'ajoute
+                        console.log('[KenshoStore] 📥 Chunk texte reçu:', chunk.text.substring(0, 30) + (chunk.text.length > 30 ? '...' : ''));
+                        set(state => {
+                            const updatedMessages = state.messages.map(msg =>
+                                msg.id === kenshoResponsePlaceholder.id
+                                    ? { ...msg, text: msg.text + chunk.text }
+                                    : msg
+                            );
+                            saveMessagesToLocalStorage(updatedMessages);
+                            return { messages: updatedMessages };
+                        });
+                    }
                 },
                 onEnd: (finalPayload) => {
                     console.log('[KenshoStore] ✅ Stream terminé:', finalPayload);

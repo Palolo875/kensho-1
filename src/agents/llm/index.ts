@@ -169,6 +169,83 @@ runAgent({
             }
         );
 
+        // Exposer une méthode request/response pour générer une réponse complète (sans streaming)
+        // Utilisée par le LLMPlanner pour générer les plans
+        runtime.registerMethod('generateSingleResponse', async (payload: any) => {
+            console.log('[MainLLMAgent] 📨 Requête de génération unique reçue:', payload);
+
+            const [prompt, customParams] = payload.args || [payload, {}];
+
+            if (!engine) {
+                const error = new Error('Le moteur LLM n\'est pas encore prêt. Veuillez patienter...');
+                console.error('[MainLLMAgent] ❌ Moteur non prêt');
+                runtime.log('error', error.message);
+                throw error;
+            }
+
+            console.log('[MainLLMAgent] ✅ Moteur disponible');
+
+            // Valider le prompt
+            if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+                const error = new Error('Le prompt doit être une chaîne de caractères non vide.');
+                console.error('[MainLLMAgent] ❌ Prompt invalide:', prompt);
+                runtime.log('error', error.message);
+                throw error;
+            }
+
+            console.log('[MainLLMAgent] ✅ Prompt valide pour génération unique');
+
+            // Fusionner les paramètres par défaut avec les paramètres personnalisés
+            const params: Required<GenerationParams> = {
+                temperature: customParams?.temperature ?? DEFAULT_GENERATION_PARAMS.temperature,
+                max_tokens: customParams?.max_tokens ?? DEFAULT_GENERATION_PARAMS.max_tokens,
+                top_p: customParams?.top_p ?? DEFAULT_GENERATION_PARAMS.top_p,
+                system_prompt: customParams?.system_prompt ?? DEFAULT_SYSTEM_PROMPT,
+            };
+
+            // Valider les paramètres
+            if (params.temperature < 0 || params.temperature > 2) {
+                throw new Error('Temperature doit être entre 0 et 2.');
+            }
+
+            if (params.max_tokens < 1 || params.max_tokens > 4096) {
+                throw new Error('max_tokens doit être entre 1 et 4096.');
+            }
+
+            try {
+                console.log('[MainLLMAgent] 🔄 Début de la génération unique...');
+                runtime.log('info', `Génération unique pour: "${String(prompt).substring(0, 50)}..." (temp: ${params.temperature})`);
+
+                // Construire les messages avec le system prompt
+                const messages: any[] = [
+                    { role: 'system', content: params.system_prompt },
+                    { role: 'user', content: String(prompt) }
+                ];
+
+                console.log('[MainLLMAgent] 🤖 Appel du moteur LLM (mode non-stream)...');
+                const response = await engine.chat.completions.create({
+                    messages,
+                    stream: false, // Mode request/response
+                    temperature: params.temperature,
+                    max_tokens: params.max_tokens,
+                    top_p: params.top_p,
+                });
+
+                const textResponse = (response as any).choices?.[0]?.message?.content || '';
+                
+                console.log(`[MainLLMAgent] ✅ Génération unique terminée. ${textResponse.length} caractères.`);
+                runtime.log('info', `Génération unique terminée. ${textResponse.length} caractères générés.`);
+                
+                return textResponse;
+
+            } catch (error) {
+                const err = error instanceof Error ? error : new Error('Erreur inconnue durant l\'inférence');
+                console.error('[MainLLMAgent] ❌ Erreur d\'inférence:', err);
+                runtime.log('error', `Erreur d'inférence (mode unique): ${err.message}`);
+                throw err;
+            }
+        });
+
         // Méthode pour reset le moteur si nécessaire
         runtime.registerMethod('resetEngine', async () => {
             runtime.log('info', 'Reset du moteur LLM...');

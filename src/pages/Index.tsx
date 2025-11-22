@@ -9,6 +9,7 @@ import SearchModal from "@/components/SearchModal";
 import { ObservatoryModal } from "@/components/ObservatoryModal";
 import { ModelLoadingView } from "@/components/ModelLoadingView";
 import { WorkerStatusIndicator } from "@/components/WorkerStatusIndicator";
+import { PlanView } from "@/components/PlanView";
 import { useObservatory } from "@/contexts/ObservatoryContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { cn } from "@/lib/utils";
@@ -105,11 +106,14 @@ const Index = () => {
                     isUser={true}
                   />
                 ) : (
-                  <AIResponse
-                    key={msg.id}
-                    content={msg.text}
-                    thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
-                  />
+                  <div key={msg.id}>
+                    {/* Afficher le plan de réflexion s'il existe */}
+                    {msg.plan && <PlanView plan={msg.plan} />}
+                    <AIResponse
+                      content={msg.text}
+                      thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
+                    />
+                  </div>
                 )
               )}
               {/* Élément invisible pour auto-scroll */}

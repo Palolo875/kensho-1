@@ -1,0 +1,245 @@
+Exécution : Sprint 3 - Tâche des Jours 5-8
+Objectif : Implémenter le LLMPlanner et le TaskExecutor
+Philosophie : "Planifier, puis Exécuter." Nous séparons clairement la phase de "réflexion" (générer le plan) de la phase d'"action" (exécuter le plan). Cela rend le système plus modulaire, plus facile à déboguer et plus puissant.
+Sous-Étape 1 : Implémentation du LLMPlanner
+Ce composant va orchestrer l'appel au LLM pour générer le plan, puis utiliser notre JSONExtractor pour le valider.
+1. Création des Fichiers planner.ts et types.ts dans l'OIE :
+Bash
+
+touch src/agents/oie/planner.ts
+touch src/agents/oie/types.ts
+
+2. Définition des Types du Plan :
+TypeScript
+
+// src/agents/oie/types.ts
+export interface PlanStep {
+    agent: string;
+    action: string;
+    args: Record<string, any>;
+}
+
+export interface Plan {
+    thought: string;
+    steps: PlanStep[];
+}
+
+3. Code du LLMPlanner.ts :
+TypeScript
+
+// src/agents/oie/planner.ts
+import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
+import { JSONExtractor } from '../../core/oie/JSONExtractor';
+import { getPlannerPrompt } from './prompts';
+import { Plan } from './types';
+
+/**
+ * Le LLMPlanner est responsable de la génération d'un plan d'action
+ * structuré en réponse à une requête utilisateur.
+ */
+export class LLMPlanner {
+    constructor(private readonly runtime: AgentRuntime) {}
+
+    /**
+     * Génère un plan d'action pour une requête donnée.
+     * @param userQuery La requête de l'utilisateur.
+     * @returns Un plan d'action structuré.
+     */
+    public async generatePlan(userQuery: string): Promise<Plan> {
+        this.runtime.log('info', '[LLMPlanner] Génération du plan...');
+        
+        // 1. Construire le prompt pour le LLM planificateur
+        const prompt = getPlannerPrompt(userQuery);
+
+        // 2. Appeler le LLM principal pour obtenir la réponse brute
+        // Note: C'est un appel request/response, pas un stream.
+        const llmResponse: string = await this.runtime.callAgent(
+            'MainLLMAgent',
+            'generateSingleResponse', // Une nouvelle méthode non-stream sur le LLMAgent
+            [prompt]
+        );
+        this.runtime.log('info', `[LLMPlanner] Réponse brute du LLM reçue:\n${llmResponse}`);
+
+        // 3. Extraire et valider le JSON
+        const planJSON = JSONExtractor.extract(llmResponse);
+
+        // 4. Gérer les échecs et créer un plan de secours
+        if (!planJSON || !this.isValidPlan(planJSON)) {
+            this.runtime.log('warn', '[LLMPlanner] Échec de l'extraction d'un plan JSON valide. Création d'un plan de secours.');
+            return this.createFallbackPlan(userQuery);
+        }
+
+        this.runtime.log('info', `[LLMPlanner] Plan valide extrait. Pensée: "${planJSON.thought}"`);
+        return planJSON as Plan;
+    }
+
+    private isValidPlan(plan: any): plan is Plan {
+        return plan && typeof plan.thought === 'string' && Array.isArray(plan.steps);
+    }
+
+    private createFallbackPlan(userQuery: string): Plan {
+        return {
+            thought: "Le plan a échoué, je vais répondre directement.",
+            steps: [{
+                agent: 'MainLLMAgent',
+                action: 'generateResponse', // L'action de streaming
+                args: { prompt: userQuery }
+            }]
+        };
+    }
+}
+
+    Action requise : Nous devons ajouter une méthode generateSingleResponse à notre LLMAgent. C'est une simple méthode request/response qui appelle engine.chat.completions.create avec stream: false.
+
+Sous-Étape 2 : Implémentation du TaskExecutor
+Ce composant prend un plan et l'exécute pas à pas.
+1. Création du Fichier executor.ts :
+Bash
+
+touch src/agents/oie/executor.ts
+
+2. Code du TaskExecutor.ts :
+TypeScript
+
+// src/agents/oie/executor.ts
+import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
+import { Plan, PlanStep } from './types';
+
+/**
+ * Le TaskExecutor exécute un plan d'action généré par le LLMPlanner.
+ * Il gère le chaînage des étapes et le streaming de la réponse finale.
+ */
+export class TaskExecutor {
+    constructor(
+        private readonly runtime: AgentRuntime,
+        private readonly originalQuery: string
+    ) {}
+
+    /**
+     * Exécute un plan et streame la réponse finale.
+     * @param plan Le plan à exécuter.
+     * @param stream L'émetteur pour streamer la réponse finale à l'appelant.
+     */
+    public async execute(plan: Plan, stream: AgentStreamEmitter): Promise<void> {
+        const stepResults = new Map<string, any>();
+
+        for (let i = 0; i < plan.steps.length; i++) {
+            const step = plan.steps[i];
+            const isLastStep = i === plan.steps.length - 1;
+
+            try {
+                this.runtime.log('info', `[TaskExecutor] Exécution de l'étape ${i + 1}: ${step.agent}.${step.action}`);
+                
+                // 1. Interpoler les résultats des étapes précédentes dans les arguments
+                const interpolatedArgs = this.interpolateArgs(step.args, stepResults);
+
+                // 2. Décider s'il faut appeler en mode stream ou request/response
+                if (isLastStep && step.action === 'generateResponse') {
+                    // C'est la dernière étape et c'est une génération de réponse, on streame.
+                    this.runtime.callAgentStream(
+                        step.agent,
+                        step.action,
+                        [interpolatedArgs],
+                        {
+                            onChunk: (chunk) => stream.chunk(chunk),
+                            onEnd: (final) => stream.end(final),
+                            onError: (err) => stream.error(err),
+                        }
+                    );
+                    // Le stream est géré, on peut sortir de la boucle.
+                    return; 
+                } else {
+                    // C'est une étape intermédiaire (outil), on utilise request/response.
+                    const result = await this.runtime.callAgent(
+                        step.agent,
+                        step.action,
+                        [interpolatedArgs],
+                        30000 // Timeout de 30s pour les outils
+                    );
+                    stepResults.set(`step${i + 1}_result`, result);
+                    this.runtime.log('info', `[TaskExecutor] Résultat de l'étape ${i + 1}: ${JSON.stringify(result)}`);
+                }
+
+            } catch (error) {
+                this.runtime.log('error', `[TaskExecutor] L'étape ${i + 1} a échoué: ${error.message}`);
+                // GESTION D'ERREUR (comme défini dans l'audit)
+                const fallbackPrompt = `L'utilisateur a demandé : "${this.originalQuery}". J'ai essayé d'utiliser l'outil '${step.agent}' mais il a échoué avec l'erreur : "${error.message}". Explique poliment que tu ne peux pas effectuer cette tâche pour le moment et demande si tu peux aider d'une autre manière.`;
+                
+                this.runtime.callAgentStream(
+                    'MainLLMAgent',
+                    'generateResponse',
+                    [{ prompt: fallbackPrompt }],
+                    {
+                        onChunk: (chunk) => stream.chunk(chunk),
+                        onEnd: (final) => stream.end(final),
+                        onError: (err) => stream.error(err),
+                    }
+                );
+                return; // Arrêter l'exécution du plan
+            }
+        }
+    }
+
+    private interpolateArgs(args: Record<string, any>, results: Map<string, any>): Record<string, any> {
+        // Cloner les arguments pour ne pas muter le plan original
+        let argsStr = JSON.stringify(args);
+        
+        for (const [key, value] of results.entries()) {
+            // Remplacer les placeholders comme {{step1_result}}
+            const placeholder = `{{${key}}}`;
+            // Important: On remplace le placeholder par la valeur JSON.stringifiée
+            // pour gérer correctement les chaînes, nombres, etc.
+            argsStr = argsStr.split(placeholder).join(JSON.stringify(value));
+        }
+        
+        return JSON.parse(argsStr);
+    }
+}
+
+    Commentaire : L'exécuteur est le cœur battant de l'OIE. Il itère sur les étapes, gère l'interpolation des résultats, et sait quand utiliser callAgent (pour un outil) et quand utiliser callAgentStream (pour la réponse finale). La gestion d'erreur avec fallback est intégrée.
+
+Sous-Étape 3 : Intégration dans l'Agent OIE
+Nous mettons à jour notre OIEAgent pour qu'il utilise ces nouveaux composants.
+Code mis à jour pour src/agents/oie/index.ts :
+TypeScript
+
+// src/agents/oie/index.ts
+import { runAgent } from '../../core/agent-system/defineAgent';
+import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
+import { LLMPlanner } from './planner';
+import { TaskExecutor } from './executor';
+
+runAgent({
+    name: 'OIEAgent',
+    init: (runtime: AgentRuntime) => {
+        const planner = new LLMPlanner(runtime);
+
+        runtime.registerStreamMethod(
+            'executeQuery',
+            async (payload: { query: string }, stream: AgentStreamEmitter) => {
+                const { query } = payload;
+                runtime.log('info', `[OIE] Nouvelle requête reçue: "${query}"`);
+
+                // 1. Planification
+                const plan = await planner.generatePlan(query);
+                
+                // On pourrait stocker le plan dans le message pour l'afficher dans l'UI
+                stream.chunk({ type: 'plan', data: plan });
+
+                // 2. Exécution
+                const executor = new TaskExecutor(runtime, query);
+                await executor.execute(plan, stream);
+            }
+        );
+    }
+});
+
+    Commentaire : L'agent OIE devient très simple. Il instancie le planificateur, génère un plan, puis passe la main à l'exécuteur. C'est une belle séparation des responsabilités.
+
+Conclusion de la Tâche
+La tâche des Jours 5 à 8 est terminée. Nous avons construit un système de raisonnement et d'action modulaire et robuste.
+
+    Ce qui est fait :
+        Un LLMPlanner qui génère des plans JSON en utilisant un prompt Chain-of-Thought et un JSONExtractor robuste.
+        Un TaskExecutor qui exécute ces plans, gère le chaînage des outils et le streaming de la réponse finale.
+        Une gestion d'erreur intégrée qui permet au système de "récupérer" gracieusement si un outil échoue.
