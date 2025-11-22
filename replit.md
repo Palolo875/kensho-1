@@ -20,6 +20,21 @@ The system enables agents (Web Workers) to communicate via RPC, streaming, and p
 - **MessageRouter**: Correction du routage des messages inconnus (retourne maintenant `undefined` au lieu de `onUnknown` handler)
 - **Tests**: 88/105 tests passent (84%), fix du test MessageRouter qui échouait
 
+### LLMPlanner Infrastructure (Sprint 3 - Tâche 4)
+- **JSONExtractor** (src/core/oie/JSONExtractor.ts): Extracteur robuste de JSON depuis du texte bruité généré par LLM
+  - Machine à états pour respecter les limites des chaînes de caractères
+  - Gère les blocs Markdown (```json...```), commentaires (// et /* */), virgules finales
+  - Préserve correctement les URLs, chemins Windows, et tokens dans les chaînes
+  - 21 tests unitaires couvrant tous les cas limites et edge cases
+  - Production-ready avec validation architect
+- **Prompts système** (src/agents/oie/prompts.ts): Prompts optimisés pour le LLMPlanner
+  - Approche Chain-of-Thought pour forcer la réflexion avant génération
+  - Règles absolues pour le format JSON (blocs Markdown obligatoires)
+  - Documentation complète des agents disponibles (CalculatorAgent, MainLLMAgent)
+  - Exemples concrets pour guider le LLM
+  - Prompt de secours (fallback) pour cas d'échec
+- **Philosophie "Ne jamais faire confiance à un LLM"**: Infrastructure robuste pour extraire de la valeur déterministe de sorties imprévisibles
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
