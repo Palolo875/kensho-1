@@ -104,7 +104,7 @@ export class MessageRouter {
             case 'broadcast':
                 return this.handlers.onBroadcast;
             default:
-                return this.handlers.onUnknown;
+                return undefined;
         }
     }
 
