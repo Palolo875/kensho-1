@@ -6,6 +6,20 @@ Kensho is a sophisticated distributed multi-agent communication system that runs
 
 The system enables agents (Web Workers) to communicate via RPC, streaming, and pub/sub patterns across both local (same-origin) and remote (cross-device) contexts. It includes comprehensive resilience mechanisms, monitoring capabilities, and data persistence using IndexedDB.
 
+## Recent Changes (November 22, 2025)
+
+### Lazy Loading & Mode Lite
+- **Configuration système** (src/config/app.config.ts): Ajout de `VITE_MODE` (full/lite) et `VITE_LLM_AUTOLOAD` pour contrôler le chargement du modèle LLM
+- **Lazy loading du modèle**: Le modèle LLM (~2 GB) peut maintenant être chargé à la demande au lieu du démarrage automatique
+- **Mode Lite**: Mode sans IA pour tests rapides et développement du système sans télécharger le modèle
+- **UI améliorée**: Bouton "Charger le modèle IA" dans ModelLoadingView avec protection contre les clics multiples
+- **Documentation**: Guide complet dans docs/LAZY_LOADING.md expliquant les modes, configurations et cas d'usage
+- **Onboarding optimisé**: Démarrage de l'app en <1 seconde en mode lite ou lazy loading (vs 5-30 min en mode full autoload)
+
+### Corrections de bugs
+- **MessageRouter**: Correction du routage des messages inconnus (retourne maintenant `undefined` au lieu de `onUnknown` handler)
+- **Tests**: 88/105 tests passent (84%), fix du test MessageRouter qui échouait
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

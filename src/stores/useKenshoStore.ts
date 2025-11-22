@@ -23,6 +23,7 @@ import { create, StoreApi } from 'zustand';
 import { MessageBus } from '../core/communication/MessageBus';
 import { ModelLoaderProgress } from '../core/models/ModelLoader';
 import { toast } from 'sonner';
+import { appConfig } from '../config/app.config';
 
 
 const STORAGE_KEY = 'kensho_conversation_history';
@@ -59,6 +60,7 @@ interface KenshoState {
     workersReady: WorkerStatus;
 
     init: () => void;
+    startLLMWorker: () => void;
     sendMessage: (text: string) => void;
     clearMessages: () => void;
     setLoadingMinimized: (minimized: boolean) => void;
@@ -98,21 +100,18 @@ const saveMessagesToLocalStorage = (messages: Message[]) => {
 };
 
 /**
- * Démarre la constellation de workers (LLM, OIE, Telemetry)
+ * Démarre le LLM Worker (séparé pour lazy loading)
  */
-const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
-    // Démarrer le LLM Worker
+const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
     try {
         const llmWorker = new Worker(
             new URL('../agents/llm/index.ts', import.meta.url),
             { type: 'module' }
         );
 
-        // Stocker le worker pour contrôle externe (pause/reprise)
         (window as any).__kensho_workers = (window as any).__kensho_workers || {};
         (window as any).__kensho_workers['MainLLMAgent'] = llmWorker;
 
-        // Écouter les messages de progression du modèle
         llmWorker.onmessage = (e) => {
             if (e.data.type === 'READY') {
                 console.log('[KenshoStore] ✅ LLM Worker prêt');
@@ -159,7 +158,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             }));
         };
 
-        console.log('[KenshoStore] LLM Worker démarré');
+        console.log('[KenshoStore] 🚀 LLM Worker démarré');
     } catch (error) {
         console.error('[KenshoStore] Erreur lors du démarrage du LLM Worker:', error);
         const workerError: WorkerError = {
@@ -175,6 +174,32 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             },
             workerErrors: [...state.workerErrors, workerError]
         }));
+    }
+};
+
+/**
+ * Démarre la constellation de workers (OIE, Telemetry)
+ * Le LLM Worker est démarré séparément via startLLMWorker()
+ */
+const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
+    console.log(`[KenshoStore] Mode: ${appConfig.mode} | LLM enabled: ${appConfig.llm.enabled} | Autoload: ${appConfig.llm.autoload}`);
+
+    if (appConfig.llm.enabled && appConfig.llm.autoload) {
+        console.log('[KenshoStore] Démarrage automatique du LLM Worker...');
+        set({
+            modelProgress: { phase: 'downloading', progress: 0, text: 'Initialisation du modèle...' }
+        });
+        startLLMWorker(set);
+    } else if (appConfig.mode === 'lite') {
+        console.log('[KenshoStore] 🟢 Mode Lite activé - LLM désactivé');
+        set({
+            modelProgress: { phase: 'ready', progress: 1, text: 'Mode Lite (sans IA)' }
+        });
+    } else {
+        console.log('[KenshoStore] ⏸️ LLM Worker en attente (lazy loading)');
+        set({
+            modelProgress: { phase: 'idle', progress: 0, text: 'Cliquez pour charger l\'IA' }
+        });
     }
 
     // Démarrer l'OIE Worker
@@ -291,6 +316,37 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
 
         // Démarrer la constellation de workers
         startConstellation(set);
+    },
+
+    /**
+     * Démarre le LLM Worker manuellement (lazy loading)
+     */
+    startLLMWorker: () => {
+        const state = get();
+        
+        if (state.workersReady.llm) {
+            console.log('[KenshoStore] LLM Worker déjà démarré');
+            return;
+        }
+        
+        if (state.modelProgress.phase !== 'idle' && state.modelProgress.phase !== 'ready') {
+            console.log('[KenshoStore] LLM Worker déjà en cours de chargement');
+            return;
+        }
+        
+        if (appConfig.mode === 'lite') {
+            toast.info('Mode Lite actif', {
+                description: 'L\'IA est désactivée dans ce mode',
+                duration: 3000
+            });
+            return;
+        }
+
+        console.log('[KenshoStore] Démarrage manuel du LLM Worker...');
+        set({
+            modelProgress: { phase: 'downloading', progress: 0, text: 'Démarrage...' }
+        });
+        startLLMWorker(set);
     },
 
     /**

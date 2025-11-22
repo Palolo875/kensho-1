@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 import { Progress } from '@/components/ui/progress';
-import { X, Minimize2, Maximize2, Pause, Play, HardDrive, Database } from 'lucide-react';
+import { X, Minimize2, Maximize2, Pause, Play, HardDrive, Database, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { appConfig } from '@/config/app.config';
 import {
   Dialog,
   DialogContent,
@@ -200,6 +201,7 @@ export function ModelLoadingView() {
     const isPaused = useKenshoStore(state => state.isLoadingPaused);
     const setMinimized = useKenshoStore(state => state.setLoadingMinimized);
     const setPaused = useKenshoStore(state => state.setLoadingPaused);
+    const startLLMWorker = useKenshoStore(state => state.startLLMWorker);
     const [showDetails, setShowDetails] = useState(false);
     const storageStats = useStorageStats();
 
@@ -365,8 +367,28 @@ export function ModelLoadingView() {
                         </div>
                     </div>
 
+                    {/* Bouton de démarrage pour lazy loading */}
+                    {modelProgress.phase === 'idle' && !appConfig.llm.autoload && appConfig.llm.enabled && (
+                        <div className="space-y-4">
+                            <div className="text-center text-sm text-muted-foreground">
+                                Le modèle IA n'est pas encore chargé. Taille du téléchargement : ~2 GB
+                            </div>
+                            <Button 
+                                onClick={startLLMWorker}
+                                className="w-full gap-2"
+                                size="lg"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                Charger le modèle IA
+                            </Button>
+                            <div className="text-xs text-muted-foreground text-center">
+                                Le modèle sera téléchargé une seule fois et mis en cache pour les prochaines utilisations
+                            </div>
+                        </div>
+                    )}
+
                     {/* Barre de progression */}
-                    {modelProgress.phase !== 'error' && (
+                    {modelProgress.phase !== 'error' && modelProgress.phase !== 'idle' && (
                         <div className="space-y-3">
                             <Progress 
                                 value={modelProgress.progress * 100} 
