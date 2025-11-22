@@ -1,0 +1,197 @@
+Exécution : Sprint 3 - Tâche du Jour 9
+Objectif : Implémenter la Robustesse et la Transparence
+Philosophie : "Ne jamais cacher la magie." Montrer à l'utilisateur comment l'IA réfléchit n'est pas un gadget, c'est un outil fondamental pour construire la confiance et permettre un débogage collaboratif.
+Sous-Étape 1 : Affichage du Plan d'Action dans l'UI
+Nous allons modifier notre ChatMessage pour qu'il puisse afficher le plan généré par l'OIE.
+1. Mise à Jour du Store (useKenshoStore.ts) :
+Le store doit pouvoir comprendre le nouveau type de chunk plan.
+TypeScript
+
+// src/ui/state/useKenshoStore.ts
+// ...
+
+// Mettre à jour la structure d'un message pour inclure le plan optionnel
+export interface KenshoMessageData {
+    id: string;
+    text: string;
+    author: 'user' | 'kensho';
+    plan?: any; // On stockera le plan ici
+}
+
+// ... dans le store
+    // ...
+    sendMessage: (text) => {
+        // ...
+        mainBus.requestStream(
+            'OIEAgent',
+            { method: 'executeQuery', args: [{ query: text }] },
+            {
+                onChunk: (chunk) => {
+                    if (chunk.type === 'plan') {
+                        // C'est un chunk de plan, on le stocke
+                        set(state => ({
+                            messages: state.messages.map(msg => 
+                                msg.id === kenshoResponsePlaceholder.id 
+                                    ? { ...msg, plan: chunk.data }
+                                    : msg
+                            )
+                        }));
+                    } else if (chunk.text) {
+                        // C'est un chunk de texte, on l'ajoute
+                        set(state => ({
+                            messages: state.messages.map(msg => 
+                                msg.id === kenshoResponsePlaceholder.id 
+                                    ? { ...msg, text: msg.text + chunk.text }
+                                    : msg
+                            )
+                        }));
+                    }
+                },
+                // ... onEnd, onError
+            }
+        );
+    },
+}));
+
+    Commentaire : Le store est maintenant capable de différencier un chunk de plan d'un chunk de text et de mettre à jour l'état du message en conséquence.
+
+2. Création du Composant PlanView.tsx :
+Un composant dédié à l'affichage du plan.
+TypeScript
+
+// src/ui/components/PlanView.tsx
+import React, { useState } from 'react';
+
+export function PlanView({ plan }) {
+    const [isOpen, setIsOpen] = useState(false);
+
+    if (!plan || !plan.steps) return null;
+
+    return (
+        <div className="plan-view">
+            <button onClick={() => setIsOpen(!isOpen)} className="plan-toggle">
+                🧠 {isOpen ? 'Masquer la réflexion' : 'Voir la réflexion de Kensho'}
+            </button>
+            {isOpen && (
+                <div className="plan-details">
+                    <p><strong>Pensée :</strong> <em>{plan.thought}</em></p>
+                    <strong>Plan d'action :</strong>
+                    <ol>
+                        {plan.steps.map((step, i) => (
+                            <li key={i}>
+                                <code>{step.agent}</code> &rarr; <code>{step.action}</code>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            )}
+        </div>
+    );
+}
+
+3. Intégration dans ChatView.tsx :
+TypeScript
+
+// src/ui/components/ChatView.tsx
+import { PlanView } from './PlanView';
+// ...
+
+export function ChatView() {
+    // ...
+    return (
+        <div className="chat-view">
+            {messages.map(msg => (
+                <div key={msg.id} className={`message ${msg.author}`}>
+                    {msg.author === 'kensho' && <PlanView plan={msg.plan} />}
+                    <p>{msg.text}</p>
+                </div>
+            ))}
+            {/* ... */}
+        </div>
+    );
+}
+
+    Commentaire : C'est simple et efficace. Chaque message de Kensho a maintenant le potentiel d'afficher le plan qui a mené à sa création.
+
+Sous-Étape 2 : Ajout des Métriques du Planificateur
+Nous allons enrichir notre TelemetryWorker pour qu'il puisse suivre la performance de notre LLMPlanner.
+1. Mise à Jour du LLMPlanner.ts pour émettre des métriques :
+TypeScript
+
+// src/agents/oie/planner.ts
+// ...
+
+export class LLMPlanner {
+    // ...
+    public async generatePlan(userQuery: string): Promise<Plan> {
+        const startTime = performance.now();
+        // ... (logique existante)
+
+        const planningTime = performance.now() - startTime;
+        let isValid = true;
+
+        if (!planJSON || !this.isValidPlan(planJSON)) {
+            isValid = false;
+            // ... (logique de fallback)
+        }
+        
+        // Envoyer les métriques au TelemetryWorker (fire-and-forget)
+        this.runtime.callAgent('TelemetryWorker', 'trackPlannerMetric', [{
+            planningTime,
+            wasValid: isValid,
+            usedTool: (planJSON as Plan)?.steps.some(s => s.agent !== 'MainLLMAgent') ?? false,
+        }]);
+
+        return planJSON as Plan; // ou le plan de fallback
+    }
+    // ...
+}
+
+2. Mise à Jour du TelemetryWorker pour agréger les métriques :
+TypeScript
+
+// src/agents/telemetry/index.ts
+// ...
+
+// Garder un état simple en mémoire du worker
+const plannerStats = {
+    totalPlans: 0,
+    validPlans: 0,
+    toolPlans: 0,
+    totalPlanningTime: 0,
+};
+
+runAgent({
+    name: 'TelemetryWorker',
+    init: (runtime) => {
+        // ... (logBatch existant)
+
+        runtime.registerMethod('trackPlannerMetric', (metric) => {
+            plannerStats.totalPlans++;
+            if (metric.wasValid) plannerStats.validPlans++;
+            if (metric.usedTool) plannerStats.toolPlans++;
+            plannerStats.totalPlanningTime += metric.planningTime;
+            
+            // On pourrait envoyer ces stats aggrégées à l'Observatory toutes les 10s
+        });
+
+        runtime.registerMethod('getPlannerStats', () => {
+            return {
+                ...plannerStats,
+                validJSONRate: plannerStats.totalPlans > 0 ? (plannerStats.validPlans / plannerStats.totalPlans) : 0,
+                toolUsageRate: plannerStats.totalPlans > 0 ? (plannerStats.toolPlans / plannerStats.totalPlans) : 0,
+                avgPlanningTime: plannerStats.totalPlans > 0 ? (plannerStats.totalPlanningTime / plannerStats.totalPlans) : 0,
+            };
+        });
+    }
+});
+
+    Commentaire : Le TelemetryWorker devient notre agrégateur de statistiques. L'Observatory pourra plus tard appeler getPlannerStats pour afficher ces métriques en temps réel.
+
+Conclusion de la Tâche
+La tâche du Jour 9 est terminée. Nous avons ajouté les couches finales de robustesse et de transparence.
+
+    Ce qui est fait :
+        L'UI peut maintenant afficher le "processus de pensée" de Kensho, renforçant la confiance et la compréhension de l'utilisateur.
+        Le système collecte désormais des métriques critiques sur la performance et la fiabilité de notre LLMPlanner, ce qui sera inestimable pour les futures optimisations.
+        La gestion des erreurs dans le TaskExecutor (implémentée au jour 8) garantit que même un échec d'outil se traduit par une expérience utilisateur contrôlée.
