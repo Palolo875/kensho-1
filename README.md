@@ -20,6 +20,7 @@ bun run dev
 - 🔄 **Resilience**: Circuit breaker, exponential backoff, offline queuing
 - 🧮 **CalculatorAgent**: Secure math expression evaluation
 - 🤖 **LLM Agent**: WebGPU-accelerated inference (Phi-3-mini)
+- 📄 **UniversalReaderAgent**: Intelligent document reading (PDF, images) with OCR and summarization
 - 📊 **Observability**: Real-time metrics, telemetry, monitoring
 
 ## 🚀 Nouveau : Support Multi-Transport
@@ -67,6 +68,39 @@ npm run test:websocket
 Ouvrez ensuite l'URL dans **deux navigateurs différents** et regardez-les communiquer !
 
 📖 **Guide complet** : [docs/QUICKSTART_WEBSOCKET.md](./docs/QUICKSTART_WEBSOCKET.md)
+
+## 📄 Nouveau : UniversalReaderAgent (Sprint 4)
+
+Le système dispose maintenant d'un agent de lecture intelligent capable de traiter différents types de documents :
+
+### 🎯 Fonctionnalités
+
+- **📕 PDF Natifs**: Extraction rapide du texte avec pdf.js
+- **🖼️ PDF Scannés**: Détection automatique et fallback vers OCR
+- **📸 Images**: Support PNG, JPG avec reconnaissance de texte (Tesseract.js)
+- **📝 Documents Longs**: Résumé automatique via Map-Reduce pour textes >9000 caractères
+- **🌍 Multi-Langue**: OCR en français et anglais
+- **📊 Métadonnées Riches**: Confiance OCR, méthode utilisée, temps de traitement
+
+### 💡 Utilisation
+
+```typescript
+// Lire un PDF
+const result = await runtime.callAgent('UniversalReaderAgent', 'read', [{
+  fileBuffer: pdfArrayBuffer,
+  fileType: 'application/pdf'
+}]);
+
+console.log(result.fullText);      // Texte complet
+console.log(result.summary);       // Résumé (si long document)
+console.log(result.metadata);      // Méthode: 'pdf-native' | 'pdf-ocr' | 'image-ocr'
+```
+
+### 🔧 Architecture
+
+- **TesseractService**: Service OCR avec initialisation lazy et support multi-langue
+- **ChunkProcessor**: Découpage et résumé Map-Reduce via MainLLMAgent
+- **Routage Intelligent**: PDF natif → Détection densité → OCR fallback
 
 ## How can I edit this code?
 
@@ -118,11 +152,11 @@ npm run dev
 
 This project is built with:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **Frontend**: Vite, TypeScript, React, shadcn-ui, Tailwind CSS
+- **AI/ML**: @mlc-ai/web-llm (WebGPU), mathjs, pdfjs-dist, tesseract.js
+- **Communication**: Web Workers, BroadcastChannel, WebSocket
+- **Storage**: IndexedDB
+- **Testing**: Vitest, Testing Library
 
 ## Sprint 1A – Tests E2E
 
