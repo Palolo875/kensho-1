@@ -50,6 +50,11 @@ Preferred communication style: Simple, everyday language.
 - **MainLLMAgent**: WebGPU-accelerated LLM inference (TinyLlama-1.1B-Chat) with streaming response generation and configurable parameters.
 - **ModelLoader**: Robust model loading with WebGPU availability checks, retry logic, and persistent storage requests for caching.
 - **CalculatorAgent**: Specialized agent for precise mathematical calculations using mathjs, with security features and standardized error handling.
+- **UniversalReaderAgent**: Intelligent document reader with multi-format support (PDF, images) and automatic OCR fallback.
+    - **TesseractService**: OCR service using Tesseract.js with lazy initialization and support for French and English.
+    - **ChunkProcessor**: Map-Reduce text processing for long documents, automatic chunking and summarization using LLM.
+    - **Intelligent Routing**: Attempts native PDF text extraction first, falls back to OCR for scanned documents.
+    - **Progress Tracking**: Real-time progress updates during OCR operations.
 
 ### User Interface
 - **Chat Interface**: Built with React and Zustand for state management.
@@ -79,6 +84,8 @@ Preferred communication style: Simple, everyday language.
 ### AI/ML
 - **@mlc-ai/web-llm**: WebGPU-based LLM inference library.
 - **mathjs**: Used by CalculatorAgent for secure expression evaluation.
+- **pdfjs-dist**: PDF parsing and rendering library for document reading.
+- **tesseract.js**: OCR library for text extraction from images and scanned documents.
 
 ### Build & Development
 - **ESLint**: Code linting.

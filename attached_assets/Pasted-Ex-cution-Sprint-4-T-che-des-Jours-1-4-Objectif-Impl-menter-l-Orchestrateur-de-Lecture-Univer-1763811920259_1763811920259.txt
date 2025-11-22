@@ -1,0 +1,229 @@
+Exécution : Sprint 4 - Tâche des Jours 1-4
+Objectif : Implémenter l'Orchestrateur de Lecture (UniversalReaderAgent)
+Philosophie : "Le bon outil pour le bon travail." L'agent ne doit pas être un simple conteneur, mais un chef d'orchestre intelligent qui choisit la meilleure méthode d'extraction et qui communique clairement son processus à l'utilisateur.
+Sous-Étape 1 : Préparation de l'Environnement (Jour 1)
+Nous mettons en place les dépendances et les services de base.
+1. Installation des Dépendances :
+Bash
+
+npm install pdfjs-dist tesseract.js
+
+2. Création du TesseractService :
+Ce service encapsule la complexité de l'initialisation de Tesseract.js.
+TypeScript
+
+// src/core/tools/TesseractService.ts
+import { createWorker, Worker } from 'tesseract.js';
+
+export class TesseractService {
+    private worker: Worker | null = null;
+    private isInitializing = false;
+
+    public async initialize(): Promise<void> {
+        if (this.worker || this.isInitializing) return;
+        this.isInitializing = true;
+
+        console.log('[TesseractService] Initialisation du worker OCR...');
+        try {
+            this.worker = await createWorker();
+            await this.worker.loadLanguage('fra+eng');
+            await this.worker.initialize('fra+eng');
+            console.log('[TesseractService] Worker OCR prêt.');
+        } catch (error) {
+            console.error('[TesseractService] Échec de l\'initialisation du worker OCR', error);
+            this.worker = null;
+        } finally {
+            this.isInitializing = false;
+        }
+    }
+
+    public async recognize(imageBuffer: ArrayBuffer, progressCallback: (p: number) => void): Promise<{ text: string; confidence: number }> {
+        if (!this.worker) {
+            await this.initialize();
+            if (!this.worker) throw new Error('Le service OCR n\'a pas pu être initialisé.');
+        }
+
+        const result = await this.worker.recognize(imageBuffer, {}, {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    progressCallback(m.progress);
+                }
+            }
+        });
+        return { text: result.data.text, confidence: result.data.confidence };
+    }
+
+    public async dispose(): Promise<void> {
+        if (this.worker) {
+            await this.worker.terminate();
+            this.worker = null;
+            console.log('[TesseractService] Worker OCR terminé.');
+        }
+    }
+}
+
+    Commentaire : Ce service gère l'initialisation "lazy" (à la première utilisation) et le pré-chargement des langues. La méthode recognize accepte un callback pour remonter la progression, comme nous l'avons planifié.
+
+Sous-Étape 2 : Implémentation du UniversalReaderAgent (Jours 2-4)
+C'est le cœur de la tâche. Nous allons créer l'agent et sa logique de routage.
+1. Création des Types et du Manifeste :
+TypeScript
+
+// src/agents/universal-reader/types.ts
+export interface ReadResult {
+    success: boolean;
+    fullText: string;
+    summary?: string;
+    wasSummarized: boolean;
+    metadata: {
+        method: 'pdf-native' | 'pdf-ocr' | 'image-ocr';
+        processingTime: number; // ms
+        confidence?: number; // Pour OCR (0-100)
+        pageCount?: number; // Pour PDF
+        warnings?: string[];
+    };
+}
+
+// src/agents/universal-reader/manifest.ts
+export const universalReaderManifest = {
+    name: 'UniversalReaderAgent',
+    description: 'Un expert en lecture de documents. Utilise cet outil pour extraire le texte de fichiers PDF (natifs ou scannés) ou d\'images (PNG, JPG).',
+    methods: [{
+        name: 'read',
+        description: 'Lit un fichier et retourne son contenu textuel.',
+        args: [
+            { name: 'fileBuffer', type: 'ArrayBuffer' },
+            { name: 'fileType', type: 'string', description: 'Le type MIME du fichier (ex: "application/pdf").' }
+        ]
+    }]
+};
+
+2. Code de l'Agent UniversalReaderAgent :
+TypeScript
+
+// src/agents/universal-reader/index.ts
+import { runAgent } from '../../core/agent-system/defineAgent';
+import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
+import { TesseractService } from '../../core/tools/TesseractService';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf';
+import { ReadResult } from './types';
+
+// Configuration du worker pour pdf.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.js`; // Assumant qu'il est copié dans /public
+
+runAgent({
+    name: 'UniversalReaderAgent',
+    init: (runtime: AgentRuntime) => {
+        const ocrService = new TesseractService();
+        // Pré-initialiser le service OCR en arrière-plan
+        ocrService.initialize();
+
+        runtime.registerMethod(
+            'read',
+            async (payload: { fileBuffer: ArrayBuffer, fileType: string }): Promise<ReadResult> => {
+                const startTime = performance.now();
+                const { fileBuffer, fileType } = payload;
+
+                if (fileType === 'application/pdf') {
+                    return await readPdf(fileBuffer);
+                } else if (fileType.startsWith('image/')) {
+                    return await readImage(fileBuffer);
+                } else {
+                    throw new Error(`Type de fichier non supporté: ${fileType}`);
+                }
+
+                async function readPdf(buffer: ArrayBuffer): Promise<ReadResult> {
+                    runtime.log('info', '[Reader] Début de la lecture du PDF...');
+                    const loadingTask = pdfjsLib.getDocument({ data: buffer });
+                    const pdf = await loadingTask.promise;
+                    const pageCount = pdf.numPages;
+                    
+                    // 1. Tentative d'extraction de texte natif
+                    let text = await extractNativeText(pdf);
+
+                    // 2. Heuristique de détection de PDF scanné
+                    const fileSizeMB = buffer.byteLength / (1024 * 1024);
+                    const textDensity = text.length / (fileSizeMB + 0.01);
+
+                    if (text.trim().length < 100 || textDensity < 100) { // Moins de 100 char/MB
+                        runtime.log('warn', '[Reader] Faible densité de texte. Tentative de fallback OCR...');
+                        // 3. Fallback OCR sur la première page pour confirmer
+                        const ocrResult = await readImage(buffer, true); // true = mode PDF
+                        text = ocrResult.fullText; // Pour l'instant, on ne fait que la première page en OCR
+                        
+                        return {
+                            success: true,
+                            fullText: text,
+                            wasSummarized: false,
+                            metadata: {
+                                method: 'pdf-ocr',
+                                processingTime: performance.now() - startTime,
+                                confidence: ocrResult.metadata.confidence,
+                                pageCount,
+                                warnings: ['Le document semble être scanné. Seule la première page a été analysée par OCR pour ce sprint.'],
+                            }
+                        };
+                    }
+
+                    runtime.log('info', `[Reader] PDF lu avec succès (${pageCount} pages).`);
+                    return {
+                        success: true,
+                        fullText: text,
+                        wasSummarized: false,
+                        metadata: {
+                            method: 'pdf-native',
+                            processingTime: performance.now() - startTime,
+                            pageCount,
+                        }
+                    };
+                }
+
+                async function readImage(buffer: ArrayBuffer, isPdf = false): Promise<ReadResult> {
+                    runtime.log('info', '[Reader] Début de l'analyse OCR...');
+                    
+                    const ocrResult = await ocrService.recognize(buffer, (progress) => {
+                        // Envoyer la progression à l'UI
+                        runtime.callAgent('MainThread', 'streamChunk', [{ type: 'ocr_progress', progress }]);
+                    });
+
+                    runtime.log('info', `[Reader] OCR terminé avec une confiance de ${ocrResult.confidence}%.`);
+                    return {
+                        success: true,
+                        fullText: ocrResult.text,
+                        wasSummarized: false,
+                        metadata: {
+                            method: isPdf ? 'pdf-ocr' : 'image-ocr',
+                            processingTime: performance.now() - startTime,
+                            confidence: ocrResult.confidence,
+                            warnings: ocrResult.confidence < 70 ? ['La confiance de l\'OCR est faible. Le texte peut contenir des erreurs.'] : [],
+                        }
+                    };
+                }
+
+                async function extractNativeText(pdf): Promise<string> {
+                    // ... (logique d'itération sur les pages et de tri de texte, comme défini dans l'audit)
+                    // Pour la simplicité de cette exécution, nous allons faire une version simple.
+                    let fullText = '';
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(' ');
+                        fullText += pageText + '\n\n';
+                    }
+                    return fullText;
+                }
+            }
+        );
+    }
+});
+
+    Commentaire : Cet agent est le cœur de notre tâche. Il implémente la logique de routage : il essaie pdf.js, vérifie la densité, et si nécessaire, fait un fallback vers le TesseractService. Il retourne le format ReadResult structuré et envoie des messages de progression à l'UI. Pour ce sprint, nous simplifions l'OCR sur PDF à la première page pour maîtriser la complexité.
+
+Conclusion de la Tâche
+Nous avons maintenant le code pour la pièce maîtresse du Sprint 4.
+
+    Ce qui est fait :
+        Un TesseractService encapsule la complexité de l'OCR.
+        Un UniversalReaderAgent orchestre intelligemment l'extraction de texte, en choisissant entre le texte natif et l'OCR.
+        Le système est prêt à envoyer des feedbacks de progression à l'UI.
+        Le résultat est structuré avec des métadonnées riches pour une utilisation intelligente par le reste du système
