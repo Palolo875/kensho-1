@@ -221,15 +221,19 @@ export function ModelLoadingView() {
     // Formater les métriques
     const formatSpeed = (mbps?: number) => {
         if (!mbps) return '';
+        if (mbps < 1) return `${(mbps * 1000).toFixed(0)} KB/s`;
         return `${mbps.toFixed(2)} MB/s`;
     };
 
     const formatETA = (seconds?: number) => {
-        if (!seconds) return '';
+        if (!seconds || seconds <= 0) return '';
         if (seconds < 60) return `${Math.round(seconds)}s`;
         const minutes = Math.floor(seconds / 60);
         const secs = Math.round(seconds % 60);
-        return `${minutes}m ${secs}s`;
+        if (minutes < 60) return `${minutes}m ${secs}s`;
+        const hours = Math.floor(minutes / 60);
+        const mins = Math.round(minutes % 60);
+        return `${hours}h ${mins}m`;
     };
 
     const formatSize = (mb?: number) => {
@@ -389,29 +393,55 @@ export function ModelLoadingView() {
 
                     {/* Barre de progression */}
                     {modelProgress.phase !== 'error' && modelProgress.phase !== 'idle' && (
-                        <div className="space-y-3">
-                            <Progress 
-                                value={modelProgress.progress * 100} 
-                                className="h-2"
-                            />
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="font-medium tabular-nums">
-                                    {Math.round(modelProgress.progress * 100)}%
-                                </span>
-                                <div className="flex gap-3 text-muted-foreground tabular-nums">
-                                    {modelProgress.downloadedMB && modelProgress.totalMB && (
-                                        <span>
-                                            {formatSize(modelProgress.downloadedMB)} / {formatSize(modelProgress.totalMB)}
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Progress 
+                                    value={modelProgress.progress * 100} 
+                                    className="h-3"
+                                />
+                                <div className="flex items-center justify-between text-xs md:text-sm">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="font-bold text-base">
+                                            {Math.round(modelProgress.progress * 100)}%
                                         </span>
-                                    )}
-                                    {modelProgress.speedMBps && (
-                                        <span>⚡ {formatSpeed(modelProgress.speedMBps)}</span>
-                                    )}
-                                    {modelProgress.etaSeconds && !isPaused && (
-                                        <span>⏱️ {formatETA(modelProgress.etaSeconds)}</span>
-                                    )}
+                                        <span className="text-muted-foreground">
+                                            {modelProgress.phase === 'downloading' ? '📥 Téléchargement' : modelProgress.phase === 'compiling' ? '⚙️ Compilation' : '🔄 Initialisation'}
+                                        </span>
+                                    </div>
+                                    <div className="text-right">
+                                        {modelProgress.speedMBps && !isPaused && (
+                                            <div className="text-muted-foreground">
+                                                ⚡ {formatSpeed(modelProgress.speedMBps)}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* Affichage détaillé des métriques */}
+                            {modelProgress.downloadedMB && modelProgress.totalMB && (
+                                <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                                    <div className="flex justify-between text-xs text-muted-foreground">
+                                        <span>Taille:</span>
+                                        <span className="font-mono">
+                                            {formatSize(modelProgress.downloadedMB)} / {formatSize(modelProgress.totalMB)}
+                                        </span>
+                                    </div>
+                                    {modelProgress.etaSeconds && !isPaused && (
+                                        <div className="flex justify-between text-xs text-muted-foreground">
+                                            <span>Temps estimé:</span>
+                                            <span className="font-mono">
+                                                ⏱️ {formatETA(modelProgress.etaSeconds)}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {isPaused && (
+                                        <div className="text-xs text-amber-600 font-medium">
+                                            ⏸️ Téléchargement en pause
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
