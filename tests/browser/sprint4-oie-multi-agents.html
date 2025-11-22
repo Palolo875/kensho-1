@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 4 - Test OIE Multi-Agents</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 24px;
+        }
+
+        .test-section {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .test-section h3 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .output {
+            margin-top: 16px;
+            padding: 16px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            min-height: 100px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+        }
+
+        .log-entry {
+            margin: 4px 0;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .log-info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .log-success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .log-error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .log-plan {
+            background: #fff3e0;
+            color: #f57c00;
+            font-weight: 600;
+        }
+
+        .status {
+            padding: 12px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #4caf50;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Sprint 4 - Test OIE Multi-Agents</h1>
+            <p>Test de l'Orchestrateur Intelligent d'Exécution</p>
+        </div>
+        <div class="content">
+            <div class="test-section">
+                <h3>📊 Test 1: Calcul Simple</h3>
+                <button onclick="testCalculation()">Tester: "Combien font 15 * 23 + 100 ?"</button>
+                <div id="output1" class="output"></div>
+            </div>
+            <div class="test-section">
+                <h3>💬 Test 2: Conversation</h3>
+                <button onclick="testConversation()">Tester: "Explique la photosynthèse"</button>
+                <div id="output2" class="output"></div>
+            </div>
+            <div class="test-section">
+                <h3>📄 Test 3: Document</h3>
+                <button onclick="testDocument()">Tester avec fichier simulé</button>
+                <div id="output3" class="output"></div>
+            </div>
+            <div class="status">
+                <strong>État:</strong> <span id="system-status">Chargement...</span>
+            </div>
+        </div>
+    </div>
+    <script type="module">
+        import { MessageBus } from '../../src/core/communication/MessageBus.js';
+        const bus = new MessageBus();
+        window.bus = bus;
+
+        function log(id, msg, type = 'info') {
+            const el = document.getElementById(id);
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            el.appendChild(entry);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function executeQuery(id, query, file = null) {
+            document.getElementById(id).innerHTML = '';
+            log(id, `Requête: "${query}"`, 'info');
+            try {
+                const payload = { query };
+                if (file) payload.attachedFile = file;
+                const response = await bus.requestStream('OIEAgent', 'executeQuery', payload);
+                log(id, '✅ Stream démarré', 'success');
+                for await (const chunk of response) {
+                    if (chunk.type === 'planning') {
+                        log(id, chunk.status === 'started' ? '📋 Planification...' : `💡 ${chunk.plan}`, 'plan');
+                    } else if (chunk.type === 'agent_chunk') {
+                        const txt = typeof chunk.chunk === 'string' ? chunk.chunk : chunk.chunk?.content || '';
+                        if (txt) log(id, txt, 'success');
+                    }
+                }
+            } catch (error) {
+                log(id, `❌ ${error.message}`, 'error');
+            }
+        }
+
+        window.testCalculation = () => executeQuery('output1', 'Combien font 15 * 23 + 100 ?');
+        window.testConversation = () => executeQuery('output2', 'Explique-moi la photosynthèse');
+        window.testDocument = () => {
+            const txt = 'Document de test Sprint 4';
+            const buf = new TextEncoder().encode(txt).buffer;
+            executeQuery('output3', 'Résume ce document', {
+                buffer: buf, type: 'application/pdf', name: 'test.pdf', size: buf.byteLength
+            });
+        };
+
+        setTimeout(async () => {
+            try {
+                await bus.request('OIEAgent', 'getCapabilities', []);
+                document.getElementById('system-status').innerHTML = '<span class="badge badge-success">✅ Opérationnel</span>';
+            } catch (e) {
+                document.getElementById('system-status').textContent = `❌ ${e.message}`;
+            }
+        }, 1000);
+    </script>
+</body>
+
+</html>

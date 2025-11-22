@@ -1,32 +1,34 @@
 // src/agents/oie/index.ts
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
-import { naiveTaskPlanner, AgentType } from './planner';
+import { TaskExecutor, ExecutionContext, Plan } from './executor';
+import { getPlannerPrompt, PromptContext } from './prompts';
 
-// Configuration des agents disponibles pour ce sprint
-// À mesure que de nouveaux agents sont implémentés, ajoutez-les ici
-const AVAILABLE_AGENTS: Set<AgentType> = new Set([
-    'MainLLMAgent',
-    // 'CodeAgent',     // Sprint futur
-    // 'VisionAgent',   // Sprint futur
-]);
+/**
+ * OIE Sprint 4 - Orchestrateur Intelligent d'Exécution
+ * Utilise un LLM pour planifier et un TaskExecutor pour exécuter
+ */
 
-const DEFAULT_FALLBACK_AGENT: AgentType = 'MainLLMAgent';
+// Configuration: Activer le planificateur intelligent
+const USE_LLM_PLANNER = true; // Mettre à false pour utiliser le planificateur naïf
 
 runAgent({
     name: 'OIEAgent',
     init: (runtime: AgentRuntime) => {
-        console.log('[OIEAgent] 🚀 Initialisation...');
-        runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer.');
-        runtime.log('info', `[OIEAgent] Agents disponibles: ${Array.from(AVAILABLE_AGENTS).join(', ')}`);
-        console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
+        console.log('[OIEAgent] 🚀 Initialisation Sprint 4...');
+        runtime.log('info', '[OIEAgent] Orchestrateur Intelligent avec support multi-agents');
+        runtime.log('info', `[OIEAgent] Mode planification: ${USE_LLM_PLANNER ? 'LLM Intelligent' : 'Naïf (mots-clés)'}`);
+        console.log('[OIEAgent] ✅ Prêt à orchestrer avec TaskExecutor');
 
-        // L'OIE expose une seule méthode de stream : 'executeQuery'
+        /**
+         * Méthode principale: executeQuery
+         * Accepte une requête utilisateur et optionnellement un fichier attaché
+         */
         runtime.registerStreamMethod(
             'executeQuery',
-            (payload: any, stream: AgentStreamEmitter) => {
+            async (payload: any, stream: AgentStreamEmitter) => {
                 console.log('[OIEAgent] 📨 Requête reçue:', payload);
-                
+
                 // Validation du payload
                 if (!payload || typeof payload.query !== 'string') {
                     const error = new Error('Invalid payload: query must be a non-empty string');
@@ -36,9 +38,9 @@ runAgent({
                     return;
                 }
 
-                const { query } = payload;
-                
-                // Rejeter les queries vides ou trop courtes
+                const { query, attachedFile } = payload;
+
+                // Validation de la query
                 if (query.trim().length === 0) {
                     const error = new Error('Query cannot be empty');
                     console.error('[OIEAgent] ❌ Query vide');
@@ -56,68 +58,172 @@ runAgent({
                 }
 
                 console.log('[OIEAgent] 🎯 Query valide:', query);
-                runtime.log('info', `Nouvelle requête reçue: "${query}"`);
+                runtime.log('info', `Nouvelle requête: "${query}"`);
 
-                // 1. Planification
-                runtime.log('info', 'Planification de la tâche...');
-                const plan = naiveTaskPlanner(query, {
-                    availableAgents: Array.from(AVAILABLE_AGENTS),
-                    defaultAgent: DEFAULT_FALLBACK_AGENT,
-                });
-                
-                console.log('[OIEAgent] 📋 Plan généré:', plan);
-                runtime.log('info', `Plan généré: utiliser ${plan.agent} (confidence: ${plan.metadata?.confidence}, keywords: ${plan.metadata?.detectedKeywords?.join(', ') || 'none'})`);
-
-                // Vérifier si l'agent choisi est disponible
-                let targetAgent = plan.agent;
-                if (!AVAILABLE_AGENTS.has(targetAgent)) {
-                    console.warn('[OIEAgent] ⚠️ Agent non disponible:', targetAgent, '→ fallback vers', DEFAULT_FALLBACK_AGENT);
-                    runtime.log('warn', `Agent ${targetAgent} n'est pas encore implémenté, fallback vers ${DEFAULT_FALLBACK_AGENT}`);
-                    targetAgent = DEFAULT_FALLBACK_AGENT;
-                } else {
-                    console.log('[OIEAgent] ✅ Agent disponible:', targetAgent);
-                    runtime.log('info', `Agent ${targetAgent} est disponible et sera utilisé`);
+                if (attachedFile) {
+                    console.log('[OIEAgent] 📎 Fichier attaché:', attachedFile.name, `(${attachedFile.size} bytes)`);
+                    runtime.log('info', `Fichier attaché: ${attachedFile.name} (${attachedFile.type})`);
                 }
 
-                // 2. Exécution
-                console.log('[OIEAgent] 🔄 Appel de', targetAgent, 'avec prompt:', plan.prompt.substring(0, 50) + '...');
-                runtime.log('info', `Exécution du plan: appel de ${targetAgent}...`);
-                
-                // On appelle l'agent en mode stream et on relaie les chunks.
-                const streamId = runtime.callAgentStream(
-                    targetAgent as any,
-                    'generateResponse',
-                    [plan.prompt],
-                    {
-                        onChunk: (chunk: any) => {
-                            console.log('[OIEAgent] 📦 Chunk reçu de', targetAgent, '→ relay');
-                            // Relayer chaque morceau reçu de l'agent vers l'UI
-                            stream.chunk(chunk);
-                        },
-                        onEnd: (finalPayload: any) => {
-                            console.log('[OIEAgent] ✅ Stream terminé de', targetAgent);
-                            // Le stream de l'agent est terminé, on termine notre propre stream.
-                            runtime.log('info', 'Exécution terminée avec succès.');
-                            stream.end(finalPayload);
-                        },
-                        onError: (error: Error) => {
-                            console.error('[OIEAgent] ❌ Erreur de', targetAgent, ':', error);
-                            // En cas d'erreur de l'agent, on la propage.
-                            runtime.log('error', `Erreur durant l'exécution: ${error.message}`);
-                            stream.error(error);
-                        }
-                    }
-                );
-                
-                console.log('[OIEAgent] 🆔 Stream créé:', streamId);
+                try {
+                    // 1. PLANIFICATION
+                    runtime.log('info', 'Génération du plan d\'action...');
+                    stream.chunk({ type: 'planning', status: 'started' });
+
+                    const plan = await this.generatePlan(runtime, query, attachedFile);
+
+                    console.log('[OIEAgent] 📋 Plan généré:', plan);
+                    runtime.log('info', `Plan: ${plan.thought}`);
+                    stream.chunk({
+                        type: 'planning',
+                        status: 'completed',
+                        plan: plan.thought,
+                        steps: plan.steps.length
+                    });
+
+                    // 2. EXÉCUTION
+                    runtime.log('info', 'Exécution du plan...');
+
+                    // Créer le contexte d'exécution
+                    const context: ExecutionContext = {
+                        originalQuery: query,
+                        attachedFile: attachedFile ? {
+                            buffer: attachedFile.buffer,
+                            type: attachedFile.type,
+                            name: attachedFile.name,
+                            size: attachedFile.size
+                        } : undefined
+                    };
+
+                    // Créer et exécuter le TaskExecutor
+                    const executor = new TaskExecutor(runtime, context);
+                    await executor.execute(plan, stream);
+
+                    console.log('[OIEAgent] 🎉 Exécution terminée avec succès');
+
+                } catch (error: any) {
+                    console.error('[OIEAgent] ❌ Erreur:', error);
+                    runtime.log('error', `Erreur: ${error.message}`);
+                    stream.error(error);
+                }
             }
         );
 
-        // Méthode pour obtenir la liste des agents disponibles
-        runtime.registerMethod('getAvailableAgents', () => {
+        /**
+         * Méthode helper: génère un plan d'action
+         */
+        this.generatePlan = async (
+            runtime: AgentRuntime,
+            query: string,
+            attachedFile?: any
+        ): Promise<Plan> => {
+            if (!USE_LLM_PLANNER) {
+                // Fallback: plan simple pour tests
+                return {
+                    thought: "Mode fallback: route directement vers MainLLMAgent",
+                    steps: [{
+                        agent: 'MainLLMAgent',
+                        action: 'generateResponse',
+                        args: { prompt: query }
+                    }]
+                };
+            }
+
+            // Construire le contexte pour le prompt
+            const context: PromptContext = attachedFile ? {
+                attachedFile: {
+                    name: attachedFile.name,
+                    type: attachedFile.type,
+                    size: attachedFile.size
+                }
+            } : {};
+
+            // Générer le prompt système
+            const systemPrompt = getPlannerPrompt(query, context);
+
+            console.log('[OIEAgent] 🤖 Appel du LLM pour planification...');
+
+            // Appeler le MainLLMAgent pour générer le plan
+            return new Promise((resolve, reject) => {
+                let planText = '';
+
+                const streamId = runtime.callAgentStream(
+                    'MainLLMAgent',
+                    'generateResponse',
+                    [systemPrompt],
+                    {
+                        onChunk: (chunk: any) => {
+                            const content = typeof chunk === 'string' ? chunk : chunk?.content || '';
+                            planText += content;
+                        },
+                        onEnd: () => {
+                            try {
+                                console.log('[OIEAgent] 📄 Plan brut reçu:', planText.substring(0, 200));
+
+                                // Extraire le JSON du plan
+                                // Le LLM peut retourner du texte avec des balises markdown
+                                let jsonText = planText.trim();
+
+                                // Retirer les balises de code markdown si présentes
+                                if (jsonText.startsWith('```')) {
+                                    jsonText = jsonText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+                                }
+
+                                const plan = JSON.parse(jsonText);
+
+                                // Validation basique du plan
+                                if (!plan.steps || !Array.isArray(plan.steps)) {
+                                    throw new Error('Plan invalide: propriété "steps" manquante ou invalide');
+                                }
+
+                                console.log('[OIEAgent] ✅ Plan parsé avec succès');
+                                resolve(plan);
+                            } catch (error: any) {
+                                console.error('[OIEAgent] ❌ Erreur de parsing du plan:', error);
+                                console.error('[OIEAgent] Plan reçu:', planText);
+
+                                // Fallback: créer un plan simple
+                                resolve({
+                                    thought: 'Fallback car erreur de parsing',
+                                    steps: [{
+                                        agent: 'MainLLMAgent',
+                                        action: 'generateResponse',
+                                        args: { prompt: query }
+                                    }]
+                                });
+                            }
+                        },
+                        onError: (error: Error) => {
+                            console.error('[OIEAgent] ❌ Erreur LLM:', error);
+
+                            // Fallback: plan simple
+                            resolve({
+                                thought: 'Fallback car erreur LLM',
+                                steps: [{
+                                    agent: 'MainLLMAgent',
+                                    action: 'generateResponse',
+                                    args: { prompt: query }
+                                }]
+                            });
+                        }
+                    }
+                );
+            });
+        };
+
+        /**
+         * Méthode utilitaire: obtenir la liste des agents disponibles
+         */
+        runtime.registerMethod('getCapabilities', () => {
             return {
-                available: Array.from(AVAILABLE_AGENTS),
-                default: DEFAULT_FALLBACK_AGENT,
+                supportsMultiAgent: true,
+                supportsFileAttachments: true,
+                supportsLLMPlanning: USE_LLM_PLANNER,
+                availableAgents: [
+                    'MainLLMAgent',
+                    'CalculatorAgent',
+                    'UniversalReaderAgent'
+                ]
             };
         });
     }
