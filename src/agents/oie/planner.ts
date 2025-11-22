@@ -21,15 +21,16 @@ export class LLMPlanner {
     /**
      * Génère un plan d'action pour une requête donnée.
      * @param userQuery La requête de l'utilisateur.
+     * @param context Le contexte de la requête (fichier attaché, etc.)
      * @returns Un plan d'action structuré.
      */
-    public async generatePlan(userQuery: string): Promise<Plan> {
+    public async generatePlan(userQuery: string, context: { attachedFile?: any } = {}): Promise<Plan> {
         const startTime = performance.now();
         this.runtime.log('info', '[LLMPlanner] Génération du plan...');
         
         try {
             // 1. Construire le prompt pour le LLM planificateur
-            const prompt = getPlannerPrompt(userQuery);
+            const prompt = getPlannerPrompt(userQuery, context);
 
             // 2. Appeler le LLM principal pour obtenir la réponse brute
             // Note: C'est un appel request/response, pas un stream.

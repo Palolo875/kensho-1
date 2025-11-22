@@ -29,7 +29,7 @@ runAgent({
                     return;
                 }
 
-                const { query } = payload;
+                const { query, attachedFile } = payload;
                 
                 // Rejeter les queries vides ou trop courtes
                 if (query.trim().length === 0) {
@@ -55,7 +55,16 @@ runAgent({
                     // 1. Planification avec le LLMPlanner
                     console.log('[OIEAgent] 🧠 Début de la planification...');
                     runtime.log('info', 'Planification de la tâche avec LLMPlanner...');
-                    const plan = await planner.generatePlan(query);
+                    
+                    // Préparer le contexte pour le planificateur
+                    const plannerContext = attachedFile ? {
+                        attachedFile: {
+                            name: attachedFile.name,
+                            type: attachedFile.type,
+                        }
+                    } : {};
+                    
+                    const plan = await planner.generatePlan(query, plannerContext);
                     
                     console.log('[OIEAgent] 📋 Plan généré:', plan);
                     runtime.log('info', `Plan généré: "${plan.thought}"`);
@@ -68,7 +77,18 @@ runAgent({
                     // 2. Exécution avec le TaskExecutor
                     console.log('[OIEAgent] ⚙️ Début de l\'exécution du plan...');
                     runtime.log('info', 'Exécution du plan avec TaskExecutor...');
-                    const executor = new TaskExecutor(runtime, query);
+                    
+                    // Préparer le contexte d'exécution
+                    const executionContext = {
+                        originalQuery: query,
+                        attachedFile: attachedFile ? {
+                            buffer: attachedFile.buffer,
+                            type: attachedFile.type,
+                            name: attachedFile.name,
+                        } : undefined
+                    };
+                    
+                    const executor = new TaskExecutor(runtime, executionContext);
                     await executor.execute(plan, stream);
                     
                     console.log('[OIEAgent] ✅ Exécution terminée');
@@ -85,7 +105,7 @@ runAgent({
         // Méthode pour obtenir la liste des agents disponibles
         runtime.registerMethod('getAvailableAgents', () => {
             return {
-                available: ['MainLLMAgent', 'CalculatorAgent'],
+                available: ['MainLLMAgent', 'CalculatorAgent', 'UniversalReaderAgent'],
                 default: 'MainLLMAgent',
             };
         });

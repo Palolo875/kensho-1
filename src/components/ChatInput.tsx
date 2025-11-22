@@ -10,6 +10,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import VoiceRecorderInline from "./VoiceRecorderInline";
 import VoiceWaveformBar from "./VoiceWaveformBar";
+import { FileUploader } from "./FileUploader";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useKenshoStore } from "@/stores/useKenshoStore";
@@ -164,34 +165,37 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
               />
 
               {!isRecording && (
-                <Popover open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full hover:bg-accent/50 shrink-0 transition-colors"
+                <>
+                  <FileUploader />
+                  <Popover open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 rounded-full hover:bg-accent/50 shrink-0 transition-colors"
+                      >
+                        <Plus className="h-5 w-5 sm:h-5.5 sm:w-5.5 md:h-6 md:w-6" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-64 p-2 bg-background/95 backdrop-blur-xl border-border/50 shadow-xl"
+                      side="top"
                     >
-                      <Plus className="h-5 w-5 sm:h-5.5 sm:w-5.5 md:h-6 md:w-6" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-64 p-2 bg-background/95 backdrop-blur-xl border-border/50 shadow-xl"
-                    side="top"
-                  >
-                    <div className="space-y-1">
-                      {menuItems.map((item, index) => (
-                        <button
-                          key={index}
-                          onClick={item.action}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary text-left text-sm text-foreground transition-colors"
-                        >
-                          <item.icon className="h-4 w-4 text-muted-foreground" />
-                          <span className="flex-1">{item.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                      <div className="space-y-1">
+                        {menuItems.map((item, index) => (
+                          <button
+                            key={index}
+                            onClick={item.action}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary text-left text-sm text-foreground transition-colors"
+                          >
+                            <item.icon className="h-4 w-4 text-muted-foreground" />
+                            <span className="flex-1">{item.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </>
               )}
 
               {isRecording ? (

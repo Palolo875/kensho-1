@@ -1,0 +1,52 @@
+Exécution : Sprint 4 - Tâche des Jours 9-10
+Objectif : Intégration Finale, Buffer, et Démo "Le Lecteur Universel"
+Philosophie : "La démo est le test ultime." Tout notre travail des 8 derniers jours converge vers un seul but : rendre les deux scénarios de démo fluides, impressionnants et fiables.
+Activités des Jours 9-10
+1. Intégration et Débogage de Bout en Bout (Jour 9) :
+
+    Action : Lancer l'application complète et exécuter les scénarios de démo une première fois. S'attendre à ce que ça ne marche pas parfaitement.
+    Points de Friction Attendus :
+        Problème 1 : Timing de l'OIE. L'OIE pourrait essayer de planifier avant que l'UI n'ait fini d'envoyer le fileBuffer.
+        Problème 2 : Format des Données. Le fileBuffer est-il correctement transmis à travers 3 couches (UI -> MainBus -> OIE -> UniversalReader) ? Une erreur de sérialisation est probable.
+        Problème 3 : Feedback de l'UI. Les messages de statut (ocr_progress, status) arrivent-ils correctement et l'UI se met-elle à jour de manière fluide ?
+    Méthode de Débogage : Utiliser l'OrionObservatory intensivement. Filtrer par traceId pour suivre une seule requête d'upload de A à Z. Vérifier les logs de chaque agent (UniversalReaderAgent, OIEAgent) pour voir où la chaîne se brise.
+
+2. Documentation et Nettoyage (Jour 10 - Matin) :
+
+    Action : Une fois que les démos fonctionnent, documenter le nouveau flux de travail.
+        Créer docs/features/DocumentReading.md : Expliquer le rôle du UniversalReaderAgent, sa logique de routing (pdf.js -> OCR), et comment l'OIE l'utilise.
+        Créer LIMITATIONS.md dans src/agents/universal-reader/ : Documenter explicitement les limites actuelles (pas de PDFs chiffrés, OCR moins fiable sur du texte manuscrit, etc.), comme nous l'avons planifié.
+
+3. Exécution de la Démo Finale (Jour 10 - Après-midi) :
+
+    Action : Exécuter le script de démo final devant un "public" (nous-mêmes, pour cette simulation).
+
+La Démo Finale : "Le Lecteur Universel"
+Scénario de Démo :
+
+    Lancement et Préparation :
+        Action : Lancer l'application. Attendre que Phi-3 soit chargé.
+        Préparer deux fichiers :
+            rapport_annuel.pdf (un PDF de 5-10 pages avec du texte natif).
+            screenshot_article.png (un screenshot d'un article de presse).
+    Démo 1 : "Le Lecteur Intelligent" (PDF Natif)
+        Action : Cliquer sur l'icône 📎, sélectionner rapport_annuel.pdf.
+        Résultat Attendu (UI) : La prévisualisation "📄 rapport_annuel.pdf" apparaît.
+        Action : Taper dans le chat : "Fais-moi un résumé des points financiers clés de ce rapport." et envoyer.
+        Résultat Attendu (UI & Observatory) :
+            Le message de l'utilisateur apparaît.
+            L'indicateur "Kensho écrit..." s'affiche.
+            Dans l'Observatory, on voit l'OIE générer un plan [UniversalReaderAgent, MainLLMAgent].
+            On voit le UniversalReaderAgent logger "Début de la lecture du PDF...", puis "PDF lu avec succès (méthode: pdf-native)".
+            Kensho commence à streamer une réponse cohérente : "D'après le rapport, les points financiers clés sont une augmentation du chiffre d'affaires de 15% pour atteindre 2.5M€, et une marge bénéficiaire de 12%..."
+    Démo 2 : "L'Œil qui Lit" (Image OCR)
+        Action : Cliquer sur l'icône 📎, sélectionner screenshot_article.png.
+        Résultat Attendu (UI) : La prévisualisation "📄 screenshot_article.png" apparaît.
+        Action : Taper dans le chat : "Quel est le titre de cet article ?" et envoyer.
+        Résultat Attendu (UI & Observatory) :
+            Le message de l'utilisateur apparaît.
+            L'indicateur de statut change pour "🔍 Analyse de l'image avec OCR..." et une barre de progression apparaît.
+            Dans l'Observatory, on voit le UniversalReaderAgent logger "Début de l'analyse OCR...".
+            La barre de progression dans l'UI se remplit de 0% à 100% sur 15-20 secondes.
+            Une fois l'OCR terminé, l'indicateur redevient "Kensho écrit...".
+            Kensho répond en streaming : "Le titre de l'article est 'Les Marchés Financiers en Hausse Après les Annonces de la Banque Central

@@ -1,0 +1,200 @@
+Exécution : Sprint 4 - Tâche du Jour 5
+Objectif : Implémenter la Gestion des Documents Longs (ChunkProcessor)
+Philosophie : "Diviser pour régner." Un LLM ne peut pas lire un livre entier d'un coup, mais il peut lire 100 résumés de chapitres et en faire une synthèse. C'est le principe du "Map-Reduce" que nous allons appliquer au langage.
+Sous-Étape 1 : Implémentation du ChunkProcessor
+Ce composant sera une classe utilitaire pure, facile à tester, qui encapsule la logique de découpage et de résumé.
+1. Création du Fichier ChunkProcessor.ts :
+Bash
+
+touch src/core/processing/ChunkProcessor.ts
+
+2. Code du ChunkProcessor.ts :
+TypeScript
+
+// src/core/processing/ChunkProcessor.ts
+import { AgentRuntime } from '../agent-system/AgentRuntime';
+
+/**
+ * Gère le découpage et le résumé de textes longs pour qu'ils puissent
+ * être traités par des LLM avec une fenêtre de contexte limitée.
+ */
+export class ChunkProcessor {
+    // ~3000 tokens, avec une marge de sécurité. 1 token ~= 4 caractères.
+    private readonly MAX_CHUNK_LENGTH = 3000 * 3; 
+
+    constructor(private readonly runtime: AgentRuntime) {}
+
+    /**
+     * Traite un texte. Si le texte est court, il le retourne.
+     * Si le texte est long, il le découpe et génère un résumé.
+     * @param fullText Le texte complet à traiter.
+     * @returns Un objet contenant le texte complet et un résumé si nécessaire.
+     */
+    public async process(fullText: string): Promise<{ fullText: string; summary?: string; wasSummarized: boolean }> {
+        if (fullText.length <= this.MAX_CHUNK_LENGTH) {
+            return { fullText, wasSummarized: false };
+        }
+
+        this.runtime.log('info', `[ChunkProcessor] Texte trop long (${fullText.length} chars). Début du processus de résumé Map-Reduce.`);
+        
+        // Étape 1 : Découper intelligemment en chunks
+        const chunks = this.splitIntoChunks(fullText);
+        this.runtime.log('info', `[ChunkProcessor] Texte découpé en ${chunks.length} chunks.`);
+
+        // Étape 2 : Résumer chaque chunk en parallèle (MAP)
+        const summaryPromises = chunks.map((chunk, i) => 
+            this.summarizeChunk(chunk, i + 1, chunks.length)
+        );
+        const chunkSummaries = await Promise.all(summaryPromises);
+
+        // Étape 3 : Combiner les résumés et faire un résumé final (REDUCE)
+        const combinedSummaries = chunkSummaries.join('\n\n---\n\n');
+        const finalSummary = await this.summarizeFinal(combinedSummaries);
+        
+        this.runtime.log('info', `[ChunkProcessor] Résumé final généré.`);
+
+        return {
+            fullText, // On garde le texte complet au cas où
+            summary: finalSummary,
+            wasSummarized: true,
+        };
+    }
+
+    private splitIntoChunks(text: string): string[] {
+        const paragraphs = text.split(/(\r\n|\n){2,}/).filter(p => p.trim() !== '');
+        const chunks: string[] = [];
+        let currentChunk = '';
+
+        for (const para of paragraphs) {
+            if ((currentChunk.length + para.length + 2) > this.MAX_CHUNK_LENGTH) {
+                if (currentChunk.length > 0) {
+                    chunks.push(currentChunk);
+                }
+                currentChunk = para;
+            } else {
+                currentChunk += (currentChunk.length > 0 ? '\n\n' : '') + para;
+            }
+        }
+        if (currentChunk.length > 0) {
+            chunks.push(currentChunk);
+        }
+        return chunks;
+    }
+
+    private async summarizeChunk(chunk: string, index: number, total: number): Promise<string> {
+        const prompt = `Ceci est le fragment ${index}/${total} d'un document plus long. Résume les points clés de ce fragment de manière concise. Ne conclus pas, reste factuel sur ce fragment.\n\nFragment:\n"""\n${chunk}\n"""`;
+        return this.runtime.callAgent('MainLLMAgent', 'generateSingleResponse', [prompt]);
+    }
+
+    private async summarizeFinal(combinedSummaries: string): Promise<string> {
+        const prompt = `Voici une série de résumés partiels d'un long document. Ta mission est de les synthétiser en un résumé global cohérent et bien structuré.\n\nRésumés partiels:\n"""\n${combinedSummaries}\n"""\n\nRésumé global:`;
+        return this.runtime.callAgent('MainLLMAgent', 'generateSingleResponse', [prompt]);
+    }
+}
+
+    Commentaire : Cette classe est le cœur de notre stratégie "Map-Reduce". Elle découpe intelligemment par paragraphe, appelle le MainLLMAgent pour résumer chaque morceau, puis refait un appel pour synthétiser le tout. C'est une opération coûteuse (beaucoup d'appels LLM), mais c'est la seule façon de "lire" un document de 100 pages.
+
+Sous-Étape 2 : Intégration dans le UniversalReaderAgent
+Maintenant, nous connectons ce processeur à notre agent de lecture.
+Code mis à jour pour src/agents/universal-reader/index.ts :
+TypeScript
+
+// src/agents/universal-reader/index.ts
+import { ChunkProcessor } from '../../core/processing/ChunkProcessor';
+// ... autres imports
+
+runAgent({
+    name: 'UniversalReaderAgent',
+    init: (runtime: AgentRuntime) => {
+        const ocrService = new TesseractService();
+        const chunkProcessor = new ChunkProcessor(runtime); // Instancier le processeur
+        ocrService.initialize();
+
+        runtime.registerMethod(
+            'read',
+            async (payload: { fileBuffer: ArrayBuffer, fileType: string }): Promise<ReadResult> => {
+                // ... (logique existante pour extraire le texte brut)
+
+                // Une fois qu'on a le texte brut (peu importe la source)
+                const rawText = await extractTextFromSource(...);
+                
+                // On le passe au ChunkProcessor
+                const processedContent = await chunkProcessor.process(rawText);
+
+                // On construit le résultat final avec les données du processeur
+                const finalResult: ReadResult = {
+                    success: true,
+                    fullText: processedContent.fullText,
+                    summary: processedContent.summary,
+                    wasSummarized: processedContent.wasSummarized,
+                    metadata: {
+                        // ... remplir les métadonnées comme avant
+                    }
+                };
+
+                return finalResult;
+            }
+        );
+        // ...
+    }
+});
+
+    Commentaire : L'intégration est simple. L'agent UniversalReader se concentre sur l'extraction, puis délègue la gestion de la longueur au ChunkProcessor. C'est une bonne séparation des responsabilités.
+
+Sous-Étape 3 : Validation avec des Tests Unitaires
+Nous devons tester le ChunkProcessor en isolation.
+Code du Test Unitaire pour ChunkProcessor.test.ts :
+TypeScript
+
+// tests/unit/ChunkProcessor.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { ChunkProcessor } from '../../src/core/processing/ChunkProcessor';
+
+// Mock de l'AgentRuntime et de callAgent
+const mockRuntime = {
+    log: vi.fn(),
+    callAgent: vi.fn(async (agent, method, [prompt]) => {
+        if (prompt.includes('Fragment')) {
+            return `Résumé du fragment.`;
+        }
+        if (prompt.includes('global')) {
+            return 'Résumé global final.';
+        }
+        return '';
+    }),
+};
+
+describe('ChunkProcessor', () => {
+    it('devrait retourner le texte complet si il est court', async () => {
+        const processor = new ChunkProcessor(mockRuntime as any);
+        const shortText = "Ceci est un texte court.";
+        const result = await processor.process(shortText);
+
+        expect(result.wasSummarized).toBe(false);
+        expect(result.summary).toBeUndefined();
+        expect(result.fullText).toBe(shortText);
+        expect(mockRuntime.callAgent).not.toHaveBeenCalled();
+    });
+
+    it('devrait exécuter le processus Map-Reduce pour un texte long', async () => {
+        const processor = new ChunkProcessor(mockRuntime as any);
+        // Créer un texte long (plus de 9000 caractères)
+        const longText = "Paragraphe 1.".repeat(500) + "\n\n" + "Paragraphe 2.".repeat(500);
+        
+        mockRuntime.callAgent.mockClear(); // Reset mock
+        const result = await processor.process(longText);
+
+        expect(result.wasSummarized).toBe(true);
+        expect(result.summary).toBe('Résumé global final.');
+        // 2 chunks + 1 résumé final = 3 appels
+        expect(mockRuntime.callAgent).toHaveBeenCalledTimes(3); 
+    });
+});
+
+Conclusion de la Tâche
+La tâche du Jour 5 est terminée. Kensho a maintenant une "endurance" intellectuelle.
+
+    Ce qui est fait :
+        Un ChunkProcessor robuste implémente la stratégie Map-Reduce pour gérer les textes longs.
+        Il est intégré de manière transparente dans le UniversalReaderAgent.
+        Sa logique a été validée par des tests unitaires.

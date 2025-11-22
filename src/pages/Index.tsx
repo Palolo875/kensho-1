@@ -34,6 +34,8 @@ const Index = () => {
   const clearMessages = useKenshoStore(state => state.clearMessages);
   const modelReady = useKenshoStore(state => state.modelProgress.phase === 'ready');
   const isKenshoWriting = useKenshoStore(state => state.isKenshoWriting);
+  const statusMessage = useKenshoStore(state => state.statusMessage);
+  const ocrProgress = useKenshoStore(state => state.ocrProgress);
 
   useEffect(() => {
     init();
@@ -112,6 +114,8 @@ const Index = () => {
                     <AIResponse
                       content={msg.text}
                       thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
+                      statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
+                      ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
                     />
                   </div>
                 )

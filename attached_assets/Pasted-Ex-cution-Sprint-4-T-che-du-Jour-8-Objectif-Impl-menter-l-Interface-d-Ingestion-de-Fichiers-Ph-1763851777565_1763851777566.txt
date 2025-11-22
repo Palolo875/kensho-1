@@ -1,0 +1,222 @@
+Exécution : Sprint 4 - Tâche du Jour 8
+Objectif : Implémenter l'Interface d'Ingestion de Fichiers
+Philosophie : "L'action doit être simple, le feedback doit être clair." L'utilisateur doit pouvoir attacher un fichier en un clic, et comprendre immédiatement ce qui se passe, surtout si le fichier est volumineux.
+Sous-Étape 1 : Mise à Jour du Store d'État (useKenshoStore.ts)
+Le store doit maintenant gérer l'état du fichier attaché et le feedback de progression de l'OCR.
+Code mis à jour pour src/ui/state/useKenshoStore.ts :
+TypeScript
+
+// src/ui/state/useKenshoStore.ts
+// ...
+
+interface AttachedFile {
+    file: File;
+    buffer: ArrayBuffer;
+}
+
+interface KenshoState {
+    // ... (états existants)
+    attachedFile: AttachedFile | null;
+    uploadProgress: number; // 0-100
+    ocrProgress: number; // 0-1
+    statusMessage: string | null;
+
+    attachFile: (file: File) => void;
+    detachFile: () => void;
+    // sendMessage est mis à jour
+}
+
+export const useKenshoStore = create<KenshoState>((set, get) => ({
+    // ... (valeurs initiales)
+    attachedFile: null,
+    uploadProgress: 0,
+    ocrProgress: -1, // -1 = inactif
+    statusMessage: null,
+
+    attachFile: (file) => {
+        // Validation
+        const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg'];
+        if (!allowedTypes.includes(file.type)) {
+            alert('Type de fichier non supporté.');
+            return;
+        }
+        if (file.size > 20 * 1024 * 1024) { // Limite de 20 Mo
+            alert('Fichier trop volumineux (max 20 Mo).');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onprogress = (e) => {
+            if (e.lengthComputable) {
+                set({ uploadProgress: (e.loaded / e.total) * 100 });
+            }
+        };
+        reader.onload = () => {
+            set({ 
+                attachedFile: { file, buffer: reader.result as ArrayBuffer },
+                uploadProgress: 100 
+            });
+        };
+        reader.onerror = () => {
+            alert('Erreur lors de la lecture du fichier.');
+            set({ uploadProgress: 0 });
+        };
+        reader.readAsArrayBuffer(file);
+    },
+
+    detachFile: () => {
+        set({ attachedFile: null, uploadProgress: 0 });
+    },
+
+    sendMessage: (text) => {
+        const { mainBus, messages, attachedFile } = get();
+        // ...
+        
+        // Préparer le contexte pour l'OIE
+        const oieContext = {
+            query: text,
+            attachedFile: attachedFile ? {
+                buffer: attachedFile.buffer,
+                type: attachedFile.file.type,
+                name: attachedFile.file.name,
+            } : undefined,
+        };
+
+        // Réinitialiser les états après l'envoi
+        set({ attachedFile: null, uploadProgress: 0, ocrProgress: -1, statusMessage: null });
+
+        mainBus.requestStream(
+            'OIEAgent',
+            { method: 'executeQuery', args: [oieContext] },
+            {
+                onChunk: (chunk) => {
+                    // ... (logique existante pour 'plan' et 'text')
+                    if (chunk.type === 'status') {
+                        set({ statusMessage: chunk.message });
+                    }
+                    if (chunk.type === 'ocr_progress') {
+                        set({ ocrProgress: chunk.progress });
+                    }
+                },
+                onEnd: () => {
+                    set({ isKenshoWriting: false, statusMessage: null, ocrProgress: -1 });
+                },
+                // ...
+            }
+        );
+    },
+    // ...
+}));
+
+    Commentaire : Le store gère maintenant tout le cycle de vie d'un fichier : validation, lecture avec progression, stockage, envoi, et nettoyage. Il écoute aussi les nouveaux types de chunks (status, ocr_progress) pour un feedback riche.
+
+Sous-Étape 2 : Création des Composants d'UI pour l'Upload
+Nous créons les briques visuelles.
+1. FileUploader.tsx :
+Le composant qui gère le bouton "trombone" et la prévisualisation.
+TypeScript
+
+// src/ui/components/FileUploader.tsx
+import React, { useRef } from 'react';
+import { useKenshoStore } from '../state/useKenshoStore';
+
+export function FileUploader() {
+    const { attachFile, detachFile, attachedFile, uploadProgress } = useKenshoStore();
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            attachFile(e.target.files[0]);
+        }
+    };
+
+    if (attachedFile) {
+        return (
+            <div className="attached-file-preview">
+                📄 {attachedFile.file.name}
+                <button onClick={detachFile}>&times;</button>
+            </div>
+        );
+    }
+
+    if (uploadProgress > 0 && uploadProgress < 100) {
+        return (
+            <div className="upload-progress">
+                Chargement... {uploadProgress.toFixed(0)}%
+            </div>
+        );
+    }
+
+    return (
+        <>
+            <button onClick={() => inputRef.current?.click()} className="attach-button">📎</button>
+            <input
+                type="file"
+                ref={inputRef}
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+                accept="application/pdf,image/png,image/jpeg"
+            />
+        </>
+    );
+}
+
+2. Intégration dans ChatInput.tsx :
+TypeScript
+
+// src/ui/components/ChatInput.tsx
+import { FileUploader } from './FileUploader';
+// ...
+
+export function ChatInput() {
+    // ...
+    return (
+        <div className="chat-input-area">
+            <FileUploader />
+            <form onSubmit={handleSubmit} className="chat-input-form">
+                {/* ... (input et bouton) */}
+            </form>
+        </div>
+    );
+}
+
+Sous-Étape 3 : Affichage du Feedback de Statut dans l'UI
+Nous devons montrer à l'utilisateur ce que Kensho est en train de faire (ex: "Analyse OCR...").
+Mise à jour de ChatView.tsx :
+TypeScript
+
+// src/ui/components/ChatView.tsx
+// ...
+
+export function ChatView() {
+    const { messages, isKenshoWriting, statusMessage, ocrProgress } = useKenshoStore();
+
+    return (
+        <div className="chat-view">
+            {/* ... (map des messages) */}
+
+            {isKenshoWriting && (
+                <div className="message kensho typing-indicator">
+                    {statusMessage ? (
+                        <>
+                            <p>{statusMessage}</p>
+                            {ocrProgress !== -1 && <progress value={ocrProgress} max="1"></progress>}
+                        </>
+                    ) : (
+                        <p>Kensho écrit...</p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+    Commentaire : Le typing-indicator est maintenant plus intelligent. S'il y a un statusMessage, il l'affiche, avec une barre de progression si l'OCR est en cours. Sinon, il affiche le message par défaut.
+
+Conclusion de la Tâche
+La tâche du Jour 8 est terminée. Le pont entre l'utilisateur et les nouvelles capacités de lecture de Kensho est construit.
+
+    Ce qui est fait :
+        Une interface utilisateur complète pour attacher des fichiers, avec validation, feedback de progression et prévisualisation.
+        Le store d'état est capable de gérer le cycle de vie des fichiers et de communiquer les informations nécessaires à l'OIE.
+        L'UI peut afficher des messages de statut dynamiques et une barre de progression pour les tâches longues comme l'OCR.

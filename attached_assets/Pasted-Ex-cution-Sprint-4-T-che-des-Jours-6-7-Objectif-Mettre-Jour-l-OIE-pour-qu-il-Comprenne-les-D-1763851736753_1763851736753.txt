@@ -1,0 +1,180 @@
+Exécution : Sprint 4 - Tâche des Jours 6-7
+Objectif : Mettre à Jour l'OIE pour qu'il Comprenne les Documents
+Philosophie : "Ne pas donner plus d'informations que nécessaire." Le LLMPlanner doit être assez intelligent pour savoir quand utiliser un résumé concis et quand se plonger dans le texte complet, afin d'économiser des tokens et d'accélérer le raisonnement.
+Sous-Étape 1 : Mise à Jour du Manifeste de l'Outil
+Le manifeste doit refléter la nouvelle capacité de l'outil à retourner un résumé.
+Code mis à jour pour src/agents/universal-reader/manifest.ts :
+TypeScript
+
+// src/agents/universal-reader/manifest.ts
+
+export const universalReaderManifest = {
+    name: 'UniversalReaderAgent',
+    description: 'Un expert en lecture de documents. Utilise cet outil pour extraire le texte de fichiers PDF (natifs ou scannés) ou d\'images (PNG, JPG). Il peut gérer des documents très longs en générant automatiquement un résumé.',
+    methods: [{
+        name: 'read',
+        description: 'Lit un fichier et retourne son contenu textuel, potentiellement résumé.',
+        args: [
+            { name: 'fileBuffer', type: 'ArrayBuffer', description: 'Le contenu binaire du fichier à lire.' },
+            { name: 'fileType', type: 'string', description: 'Le type MIME du fichier (ex: "application/pdf").' }
+        ],
+        // NOUVEAU: Décrire ce que la méthode retourne
+        returns: {
+            type: 'object',
+            description: 'Un objet contenant le texte et des métadonnées.',
+            properties: {
+                fullText: { type: 'string', description: 'Le texte complet extrait.' },
+                summary: { type: 'string', description: 'Un résumé du texte, si le document était trop long.' },
+                wasSummarized: { type: 'boolean', description: 'Vrai si un résumé a été généré.' },
+                metadata: { type: 'object', description: 'Informations sur le processus de lecture.' }
+            }
+        }
+    }]
+};
+
+    Commentaire : L'ajout de la section returns est crucial. Il enseigne explicitement au LLMPlanner la structure de l'objet qu'il recevra, lui permettant de planifier des actions basées sur ses propriétés (comme wasSummarized).
+
+Sous-Étape 2 : Amélioration du Prompt du LLMPlanner
+Le prompt doit maintenant inclure des exemples de plans qui utilisent le résultat du UniversalReaderAgent.
+Code mis à jour pour src/agents/oie/prompts.ts :
+TypeScript
+
+// src/agents/oie/prompts.ts
+import { calculatorManifest } from '../../agents/calculator/manifest';
+import { universalReaderManifest } from '../../agents/universal-reader/manifest';
+
+export const getPlannerPrompt = (userQuery: string, context: { attachedFile?: any }): string => `
+Tu es un planificateur de tâches expert... (Règles Absolues comme avant)
+
+**OUTILS DISPONIBLES :**
+- **CalculatorAgent**: ${JSON.stringify(calculatorManifest.description)}
+  - Méthode: \`calculate(expression: string)\`
+- **UniversalReaderAgent**: ${JSON.stringify(universalReaderManifest.description)}
+  - Méthode: \`read(fileBuffer, fileType)\`
+  - Retourne: ${JSON.stringify(universalReaderManifest.methods[0].returns)}
+
+**CONTEXTE ACTUEL :**
+${context.attachedFile ? `- Un fichier ("${context.attachedFile.name}") est attaché à la requête.` : '- Aucun fichier n\'est attaché.'}
+
+**PROCESSUS DE RÉFLEXION (Chain-of-Thought) :**
+1.  **Analyse de la Requête :** La requête est : "${userQuery}".
+2.  **Détection d'Outil :**
+    - La requête nécessite-t-elle un calcul ?
+    - La requête fait-elle référence à un document ou à un fichier attaché ?
+3.  **Décision :**
+    - Si la requête concerne le fichier attaché, le plan doit commencer par appeler \`UniversalReaderAgent.read\`.
+    - Ensuite, pour la réponse finale, utilise le \`summary\` si disponible (\`wasSummarized: true\`), sinon utilise le \`fullText\`. Le texte complet est très long, ne l'utilise que si c'est absolument nécessaire.
+
+**GÉNÉRATION DU PLAN :**
+... (comme avant)
+
+---
+**Exemple de Plan de Lecture :**
+Requête: "Résume le document que je viens d'envoyer."
+\`\`\`json
+{
+  "thought": "L'utilisateur veut un résumé du fichier attaché. Je vais utiliser le UniversalReaderAgent pour le lire, puis passer le résultat au MainLLMAgent pour la formulation finale.",
+  "steps": [
+    {
+      "agent": "UniversalReaderAgent",
+      "action": "read",
+      "args": {
+        "fileBuffer": "{{attached_file_buffer}}",
+        "fileType": "{{attached_file_type}}"
+      }
+    },
+    {
+      "agent": "MainLLMAgent",
+      "action": "generateResponse",
+      "args": {
+        "prompt": "En te basant sur le texte suivant, génère un résumé complet et bien structuré. Texte : {{step1_result.summary ?? step1_result.fullText}}"
+      }
+    }
+  ]
+}
+\`\`\`
+`;
+
+    Commentaire : Ce prompt est maintenant beaucoup plus intelligent.
+        Il est conscient du contexte (un fichier est-il attaché ?).
+        Il inclut un exemple de plan de lecture.
+        Plus important encore, il contient une instruction stratégique : utilise le 'summary' si disponible. Cela guide le LLM pour qu'il génère des plans plus efficaces et moins coûteux en tokens.
+        Il utilise l'interpolation {{step1_result.summary ?? step1_result.fullText}} pour montrer au LLM comment accéder aux propriétés de l'objet retourné.
+
+Sous-Étape 3 : Mise à Jour du TaskExecutor
+L'exécuteur doit pouvoir injecter le buffer du fichier attaché dans les arguments de la première étape.
+Code mis à jour pour src/agents/oie/executor.ts :
+TypeScript
+
+// src/agents/oie/executor.ts
+// ...
+
+export interface ExecutionContext {
+    originalQuery: string;
+    attachedFile?: {
+        buffer: ArrayBuffer;
+        type: string;
+        name: string;
+    };
+}
+
+export class TaskExecutor {
+    constructor(
+        private readonly runtime: AgentRuntime,
+        private readonly context: ExecutionContext
+    ) {}
+
+    public async execute(plan: Plan, stream: AgentStreamEmitter): Promise<void> {
+        // ... (logique existante)
+
+        for (let i = 0; i < plan.steps.length; i++) {
+            const step = plan.steps[i];
+            // ...
+
+            try {
+                // ...
+                
+                // 1. Interpoler les résultats des étapes précédentes
+                let interpolatedArgs = this.interpolateStepResults(step.args, stepResults);
+                // 2. NOUVEAU: Interpoler le contexte initial (fichier attaché)
+                interpolatedArgs = this.interpolateInitialContext(interpolatedArgs, this.context);
+
+                // ... (logique d'appel d'agent)
+            } catch (error) {
+                // ...
+            }
+        }
+    }
+
+    private interpolateInitialContext(args: Record<string, any>, context: ExecutionContext): Record<string, any> {
+        if (!context.attachedFile) return args;
+
+        // Cloner pour éviter la mutation
+        let argsStr = JSON.stringify(args);
+
+        // Remplacer les placeholders liés au fichier
+        // Note: On ne peut pas stringifier le buffer, on le remplace par un placeholder spécial
+        if (argsStr.includes('"{{attached_file_buffer}}"')) {
+            argsStr = args.fileBuffer = context.attachedFile.buffer; // Remplacement direct
+        }
+        argsStr = argsStr.replace(/\{\{attached_file_type\}\}/g, JSON.stringify(context.attachedFile.type));
+        argsStr = argsStr.replace(/\{\{attached_file_name\}\}/g, JSON.stringify(context.attachedFile.name));
+        
+        return typeof argsStr === 'string' ? JSON.parse(argsStr) : argsStr;
+    }
+
+    // Renommer l'ancienne fonction pour plus de clarté
+    private interpolateStepResults(args: Record<string, any>, results: Map<string, any>): Record<string, any> {
+        // ... (logique existante)
+    }
+}
+
+    Commentaire : La gestion de l'interpolation est maintenant plus complexe. Nous devons gérer le cas spécial du ArrayBuffer qui ne peut pas être simplement "stringifié" dans le JSON. La solution est de le remplacer directement dans l'objet d'arguments. C'est un détail technique important.
+
+Conclusion de la Tâche
+La tâche des Jours 6-7 est terminée. Le cerveau de Kensho a été mis à niveau.
+
+    Ce qui est fait :
+        Le LLMPlanner est maintenant conscient des outils de lecture et du contexte de la requête (fichiers attachés).
+        Le prompt du planificateur est bien plus sophistiqué, guidant le LLM vers des plans plus efficaces (utilisation du résumé).
+        Le TaskExecutor peut injecter des données complexes comme des ArrayBuffer dans les plans d'action.

@@ -6,6 +6,15 @@
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
 import { Plan, PlanStep } from './types';
 
+export interface ExecutionContext {
+    originalQuery: string;
+    attachedFile?: {
+        buffer: ArrayBuffer;
+        type: string;
+        name: string;
+    };
+}
+
 /**
  * Le TaskExecutor exécute un plan d'action généré par le LLMPlanner.
  * Il gère le chaînage des étapes et le streaming de la réponse finale.
@@ -13,7 +22,7 @@ import { Plan, PlanStep } from './types';
 export class TaskExecutor {
     constructor(
         private readonly runtime: AgentRuntime,
-        private readonly originalQuery: string
+        private readonly context: ExecutionContext
     ) {}
 
     /**
@@ -32,7 +41,9 @@ export class TaskExecutor {
                 this.runtime.log('info', `[TaskExecutor] Exécution de l'étape ${i + 1}/${plan.steps.length}: ${step.agent}.${step.action}`);
                 
                 // 1. Interpoler les résultats des étapes précédentes dans les arguments
-                const interpolatedArgs = this.interpolateArgs(step.args, stepResults);
+                let interpolatedArgs = this.interpolateArgs(step.args, stepResults);
+                // 2. Interpoler le contexte initial (fichier attaché)
+                interpolatedArgs = this.interpolateInitialContext(interpolatedArgs, this.context);
 
                 // 2. Décider s'il faut appeler en mode stream ou request/response
                 if (isLastStep && step.action === 'generateResponse') {
@@ -40,7 +51,7 @@ export class TaskExecutor {
                     this.runtime.log('info', '[TaskExecutor] Dernière étape : streaming de la réponse...');
                     
                     // Utiliser le champ prompt et l'interpoler avec les résultats précédents
-                    let promptToUse = step.prompt || this.originalQuery;
+                    let promptToUse = step.prompt || this.context.originalQuery;
                     
                     // Interpoler les placeholders dans le prompt avec les résultats des étapes précédentes
                     for (const [key, value] of stepResults.entries()) {
@@ -85,7 +96,7 @@ export class TaskExecutor {
                 this.runtime.log('error', `[TaskExecutor] L'étape ${i + 1} a échoué: ${errorMessage}`);
                 
                 // GESTION D'ERREUR avec fallback gracieux
-                const fallbackPrompt = `L'utilisateur a demandé : "${this.originalQuery}". J'ai essayé d'utiliser l'outil '${step.agent}' mais il a échoué avec l'erreur : "${errorMessage}". Explique poliment que tu ne peux pas effectuer cette tâche pour le moment et demande si tu peux aider d'une autre manière.`;
+                const fallbackPrompt = `L'utilisateur a demandé : "${this.context.originalQuery}". J'ai essayé d'utiliser l'outil '${step.agent}' mais il a échoué avec l'erreur : "${errorMessage}". Explique poliment que tu ne peux pas effectuer cette tâche pour le moment et demande si tu peux aider d'une autre manière.`;
                 
                 this.runtime.log('info', '[TaskExecutor] Fallback vers MainLLMAgent pour gérer l\'erreur');
                 this.runtime.callAgentStream(
@@ -118,6 +129,29 @@ export class TaskExecutor {
             // pour gérer correctement les chaînes, nombres, etc.
             argsStr = argsStr.split(placeholder).join(JSON.stringify(value));
         }
+        
+        return JSON.parse(argsStr);
+    }
+
+    /**
+     * Interpole le contexte initial (fichier attaché) dans les arguments.
+     */
+    private interpolateInitialContext(args: Record<string, any>, context: ExecutionContext): Record<string, any> {
+        if (!context.attachedFile) return args;
+
+        // Cloner pour éviter la mutation
+        const result = { ...args };
+
+        // Remplacer les placeholders liés au fichier
+        // Pour le buffer, on ne peut pas le stringifier, donc on le remplace directement
+        if (args.fileBuffer === '{{attached_file_buffer}}') {
+            result.fileBuffer = context.attachedFile.buffer;
+        }
+        
+        // Pour les autres propriétés, on peut utiliser le remplacement de chaîne
+        let argsStr = JSON.stringify(result);
+        argsStr = argsStr.replace(/\{\{attached_file_type\}\}/g, JSON.stringify(context.attachedFile.type));
+        argsStr = argsStr.replace(/\{\{attached_file_name\}\}/g, JSON.stringify(context.attachedFile.name));
         
         return JSON.parse(argsStr);
     }

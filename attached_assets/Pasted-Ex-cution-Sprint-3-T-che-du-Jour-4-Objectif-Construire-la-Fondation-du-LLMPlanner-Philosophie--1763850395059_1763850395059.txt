@@ -1,0 +1,166 @@
+Exécution : Sprint 3 - Tâche du Jour 4
+Objectif : Construire la Fondation du LLMPlanner
+Philosophie : "Ne jamais faire confiance à un LLM." Nous partons du principe que la sortie du LLM sera bruitée, mal formatée et non fiable. Notre travail est de construire une coquille de robustesse autour de lui pour en extraire de la valeur de manière déterministe.
+Sous-Étape 1 : Implémentation du JSONExtractor
+C'est notre bouclier. Il doit être capable d'extraire un objet JSON valide même s'il est noyé dans du texte explicatif ou des erreurs de formatage.
+1. Création du Fichier JSONExtractor.ts :
+Bash
+
+mkdir -p src/core/oie
+touch src/core/oie/JSONExtractor.ts
+
+2. Code Complet du JSONExtractor.ts :
+TypeScript
+
+// src/core/oie/JSONExtractor.ts
+
+/**
+ * Une classe utilitaire robuste pour extraire un objet JSON valide
+ * à partir d'une chaîne de texte potentiellement bruitée générée par un LLM.
+ */
+export class JSONExtractor {
+    /**
+     * Extrait le premier objet JSON valide d'une chaîne de texte.
+     * Gère le texte avant/après le JSON, les blocs de code Markdown, et les commentaires.
+     */
+    public static extract(text: string): any | null {
+        // Étape 1: Extraire le contenu d'un bloc de code JSON Markdown, si présent.
+        let content = this.extractFromMarkdown(text);
+
+        // Étape 2: Trouver le premier '{' et le dernier '}' pour délimiter le JSON potentiel.
+        const firstBrace = content.indexOf('{');
+        const lastBrace = content.lastIndexOf('}');
+        
+        if (firstBrace === -1 || lastBrace === -1) {
+            return null; // Pas de JSON trouvé
+        }
+        
+        content = content.substring(firstBrace, lastBrace + 1);
+        
+        // Étape 3: Nettoyer les commentaires et les virgules finales.
+        content = this.cleanupJSONString(content);
+        
+        // Étape 4: Tenter de parser.
+        try {
+            return JSON.parse(content);
+        } catch (error) {
+            console.warn('[JSONExtractor] Le parsing JSON a échoué après le nettoyage.', error);
+            // En cas d'échec, on ne tente pas de fallback pour éviter les faux positifs.
+            // La robustesse doit venir du nettoyage, pas de tentatives hasardeuses.
+            return null;
+        }
+    }
+
+    private static extractFromMarkdown(text: string): string {
+        const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+        return match ? match[1] : text;
+    }
+
+    private static cleanupJSONString(jsonString: string): string {
+        // Supprimer les commentaires de ligne (// ...)
+        let result = jsonString.replace(/\/\/.*$/gm, '');
+        // Supprimer les commentaires de bloc (/* ... */)
+        result = result.replace(/\/\*[\s\S]*?\*\//g, '');
+        // Supprimer les virgules finales dans les objets et les tableaux
+        result = result.replace(/,\s*([}\]])/g, '$1');
+        return result;
+    }
+}
+
+    Commentaire : Cette version est encore plus robuste que celle initialement proposée. Elle gère explicitement les blocs de code Markdown (```json ... ```), qui sont une source fréquente d'erreur, et nettoie les virgules finales, une autre erreur de formatage courante des LLM.
+
+Sous-Étape 2 : Validation du JSONExtractor avec des Tests Unitaires
+C'est la "Definition of Done" de cette tâche. Nous utilisons les 7 cas de test que vous avez suggérés.
+1. Création du Fichier de Test :
+Bash
+
+touch tests/unit/JSONExtractor.test.ts
+
+2. Code du Test Unitaire :
+TypeScript
+
+// tests/unit/JSONExtractor.test.ts
+import { describe, it, expect } from 'vitest';
+import { JSONExtractor } from '../../src/core/oie/JSONExtractor';
+
+describe('JSONExtractor', () => {
+    const validPlan = { steps: [{ agent: 'TestAgent' }] };
+    const validPlanString = JSON.stringify(validPlan);
+
+    const testCases = [
+        { name: 'Cas parfait', input: validPlanString, expected: validPlan },
+        { name: 'Texte avant', input: `Voici mon plan:\n${validPlanString}`, expected: validPlan },
+        { name: 'Texte après', input: `${validPlanString}\nJ'espère que c'est bon.`, expected: validPlan },
+        { name: 'Commentaires de ligne', input: `{\n  "steps": [\n    // Première étape\n    { "agent": "TestAgent" }\n  ]\n}`, expected: validPlan },
+        { name: 'Commentaires de bloc', input: `{\n  "steps": [/* Details */{ "agent": "TestAgent" }]\n}`, expected: validPlan },
+        { name: 'Bloc de code Markdown', input: "```json\n" + validPlanString + "\n```", expected: validPlan },
+        { name: 'Virgule finale', input: `{"steps":[{"agent":"TestAgent"}],}`, expected: validPlan },
+        { name: 'Guillemets simples (doit échouer)', input: `{'steps':[{'agent':'TestAgent'}]}`, expected: null },
+        { name: 'Pas de JSON', input: 'Bonjour, comment vas-tu ?', expected: null },
+    ];
+
+    testCases.forEach(({ name, input, expected }) => {
+        it(`devrait gérer le cas : ${name}`, () => {
+            const result = JSONExtractor.extract(input);
+            expect(result).toEqual(expected);
+        });
+    });
+});
+
+Sous-Étape 3 : Amélioration du Prompt du LLMPlanner
+Maintenant que nous avons un extracteur robuste, nous allons améliorer le prompt pour maximiser nos chances d'obtenir un JSON propre dès le départ.
+Nouveau Prompt Système (à stocker dans src/agents/oie/prompts.ts) :
+TypeScript
+
+// src/agents/oie/prompts.ts
+import { calculatorManifest } from '../../agents/calculator/manifest';
+
+// Utiliser un template literal pour une meilleure lisibilité
+export const getPlannerPrompt = (userQuery: string): string => `
+Tu es un planificateur de tâches expert et rigoureux pour une IA nommée Kensho.
+Ta seule et unique mission est de générer un objet JSON qui représente un plan d'action.
+
+**RÈGLES ABSOLUES :**
+1.  Ta réponse doit commencer par \`\`\`json et se terminer par \`\`\`.
+2.  Le JSON doit être valide. N'inclus AUCUN commentaire.
+3.  Le plan doit être une séquence d'étapes dans le tableau "steps".
+
+**OUTILS DISPONIBLES :**
+- **CalculatorAgent**: ${JSON.stringify(calculatorManifest.description)}
+  - Méthode: \`calculate(expression: string)\`
+
+**PROCESSUS DE RÉFLEXION (Chain-of-Thought) :**
+Avant de générer le JSON, suis ces étapes de réflexion :
+1.  **Analyse de la Requête :** La requête de l'utilisateur est : "${userQuery}".
+2.  **Détection d'Outil :** La requête contient-elle une demande de calcul explicite ou implicite (opérations, questions "combien", etc.) ?
+3.  **Décision :**
+    - Si NON, le plan est une simple réponse directe via \`MainLLMAgent\`.
+    - Si OUI, le plan doit contenir une première étape pour appeler \`CalculatorAgent.calculate\` avec l'expression mathématique exacte, suivie d'une deuxième étape pour que \`MainLLMAgent\` formule une réponse naturelle avec le résultat.
+
+**GÉNÉRATION DU PLAN :**
+Basé sur ta réflexion, génère maintenant le plan d'action JSON.
+
+\`\`\`json
+{
+  "thought": "Ici, une brève justification de ton plan.",
+  "steps": [
+    // ... tes étapes ici ...
+  ]
+}
+\`\`\`
+`;
+
+    Commentaire : Ce prompt est une énorme amélioration.
+        Il donne des règles absolues et claires.
+        Il force l'utilisation de blocs de code Markdown, que notre extracteur gère parfaitement.
+        Il intègre une étape de Chain-of-Thought qui oblige le LLM à justifier sa décision.
+        Il ajoute un champ "thought" dans le JSON, ce qui nous permettra de logger et de déboguer la "pensée" du planificateur.
+
+Conclusion de la Tâche
+La tâche du Jour 4 est terminée. Nous avons construit une fondation solide et blindée pour notre planificateur.
+
+    Ce qui est fait :
+        Un JSONExtractor robuste et testé a été implémenté.
+        Le prompt du LLMPlanner a été massivement amélioré pour être plus fiable et plus transparent.
+
+Nous n'avons pas encore écrit le LLMPlanner lui-même, mais nous avons fait 90% du travail en préparant le terrain. Les Jours 5 à 8 seront beaucoup plus simples et plus productifs grâce à ce travail préparatoire.

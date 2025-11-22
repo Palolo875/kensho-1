@@ -49,6 +49,11 @@ interface WorkerStatus {
     telemetry: boolean;
 }
 
+interface AttachedFile {
+    file: File;
+    buffer: ArrayBuffer;
+}
+
 interface KenshoState {
     messages: Message[];
     modelProgress: ModelLoaderProgress;
@@ -59,6 +64,10 @@ interface KenshoState {
     isLoadingPaused: boolean;
     workerErrors: WorkerError[];
     workersReady: WorkerStatus;
+    attachedFile: AttachedFile | null;
+    uploadProgress: number;
+    ocrProgress: number;
+    statusMessage: string | null;
 
     init: () => void;
     startLLMWorker: () => void;
@@ -68,6 +77,8 @@ interface KenshoState {
     setLoadingPaused: (paused: boolean) => void;
     loadMessagesFromStorage: () => void;
     clearWorkerErrors: () => void;
+    attachFile: (file: File) => void;
+    detachFile: () => void;
 }
 
 /**
@@ -296,6 +307,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
     isLoadingPaused: false,
     workerErrors: [],
     workersReady: { llm: false, oie: false, telemetry: false },
+    attachedFile: null,
+    uploadProgress: 0,
+    ocrProgress: -1,
+    statusMessage: null,
 
     /**
      * Initialise le système Kensho
@@ -358,7 +373,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      * - Met à jour le placeholder au fur et à mesure des chunks
      */
     sendMessage: (text) => {
-        const { mainBus, messages, modelProgress, workersReady } = get();
+        const { mainBus, messages, modelProgress, workersReady, attachedFile } = get();
 
         // Vérifications
         if (!mainBus) {
@@ -412,11 +427,25 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
         console.log('[KenshoStore] 📤 Envoi du message vers OIEAgent:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
         console.log('[KenshoStore] 🔍 Workers status:', workersReady);
 
+        // Préparer le payload pour l'OIE
+        const oiePayload: any = { query: text.trim() };
+        if (attachedFile) {
+            oiePayload.attachedFile = {
+                buffer: attachedFile.buffer,
+                type: attachedFile.file.type,
+                name: attachedFile.file.name,
+            };
+            console.log('[KenshoStore] 📎 Fichier attaché inclus:', attachedFile.file.name);
+        }
+
+        // Réinitialiser les états après l'envoi
+        set({ attachedFile: null, uploadProgress: 0, ocrProgress: -1, statusMessage: null });
+
         // Lancer le stream vers l'OIE Agent
         // Le payload doit être au format { method, args } pour AgentRuntime
         const streamId = mainBus.requestStream(
             'OIEAgent',
-            { method: 'executeQuery', args: [{ query: text.trim() }] },
+            { method: 'executeQuery', args: [oiePayload] },
             {
                 onChunk: (chunk: any) => {
                     // Gérer les différents types de chunks
@@ -432,6 +461,14 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                             saveMessagesToLocalStorage(updatedMessages);
                             return { messages: updatedMessages };
                         });
+                    } else if (chunk.type === 'status') {
+                        // Message de statut (ex: "Analyse OCR...")
+                        console.log('[KenshoStore] 📊 Statut:', chunk.message);
+                        set({ statusMessage: chunk.message });
+                    } else if (chunk.type === 'ocr_progress') {
+                        // Progression de l'OCR (0-1)
+                        console.log('[KenshoStore] 📈 Progression OCR:', chunk.progress);
+                        set({ ocrProgress: chunk.progress });
                     } else if (chunk.text) {
                         // C'est un chunk de texte, on l'ajoute
                         console.log('[KenshoStore] 📥 Chunk texte reçu:', chunk.text.substring(0, 30) + (chunk.text.length > 30 ? '...' : ''));
@@ -450,7 +487,11 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
                     console.log('[KenshoStore] ✅ Stream terminé:', finalPayload);
                     set(state => {
                         saveMessagesToLocalStorage(state.messages);
-                        return { isKenshoWriting: false };
+                        return { 
+                            isKenshoWriting: false, 
+                            statusMessage: null, 
+                            ocrProgress: -1 
+                        };
                     });
                 },
                 onError: (error) => {
@@ -516,5 +557,59 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     clearWorkerErrors: () => {
         set({ workerErrors: [] });
+    },
+
+    /**
+     * Attache un fichier pour la prochaine requête
+     */
+    attachFile: (file: File) => {
+        const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+        if (!allowedTypes.includes(file.type)) {
+            toast.error('Type de fichier non supporté', {
+                description: 'Seuls les PDF et images (PNG, JPG) sont acceptés.',
+                duration: 5000
+            });
+            return;
+        }
+
+        if (file.size > 20 * 1024 * 1024) {
+            toast.error('Fichier trop volumineux', {
+                description: 'La taille maximale est de 20 Mo.',
+                duration: 5000
+            });
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onprogress = (e) => {
+            if (e.lengthComputable) {
+                set({ uploadProgress: (e.loaded / e.total) * 100 });
+            }
+        };
+        reader.onload = () => {
+            set({
+                attachedFile: { file, buffer: reader.result as ArrayBuffer },
+                uploadProgress: 100
+            });
+            toast.success('Fichier attaché', {
+                description: file.name,
+                duration: 3000
+            });
+        };
+        reader.onerror = () => {
+            toast.error('Erreur de lecture', {
+                description: 'Impossible de lire le fichier.',
+                duration: 5000
+            });
+            set({ uploadProgress: 0 });
+        };
+        reader.readAsArrayBuffer(file);
+    },
+
+    /**
+     * Détache le fichier actuel
+     */
+    detachFile: () => {
+        set({ attachedFile: null, uploadProgress: 0 });
     }
 }));
