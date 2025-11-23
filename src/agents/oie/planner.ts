@@ -5,6 +5,7 @@
 
 import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
 import { JSONExtractor } from '../../core/oie/JSONExtractor';
+import { QueryClassifier } from '../../core/oie/QueryClassifier';
 import { getPlannerPrompt, getFallbackPlannerPrompt } from './prompts';
 import { Plan } from './types';
 
@@ -14,26 +15,50 @@ import { Plan } from './types';
  * 
  * Il utilise un LLM pour générer le plan et le JSONExtractor pour
  * extraire et valider le JSON de la réponse.
+ * 
+ * Il utilise aussi le QueryClassifier pour déterminer si la question
+ * nécessite un débat interne (DebatePlan) ou une réponse simple.
  */
 export class LLMPlanner {
+    private queryClassifier = new QueryClassifier();
+
     constructor(private readonly runtime: AgentRuntime) {}
 
     /**
      * Génère un plan d'action pour une requête donnée.
      * @param userQuery La requête de l'utilisateur.
-     * @param context Le contexte de la requête (fichier attaché, etc.)
+     * @param context Le contexte de la requête (fichier attaché, mode débat activé, etc.)
      * @returns Un plan d'action structuré.
      */
-    public async generatePlan(userQuery: string, context: { attachedFile?: any } = {}): Promise<Plan> {
+    public async generatePlan(userQuery: string, context: { attachedFile?: any; debateModeEnabled?: boolean } = {}): Promise<Plan> {
         const startTime = performance.now();
         this.runtime.log('info', '[LLMPlanner] Génération du plan...');
         
+        // Par défaut, le mode débat est activé
+        const debateModeEnabled = context.debateModeEnabled !== false;
+        
         try {
-            // 1. Construire le prompt pour le LLM planificateur
+            // 1. Classifier la question
+            const classification = this.queryClassifier.classify(userQuery);
+            this.runtime.log('info', `[LLMPlanner] Classification: ${classification}`);
+            
+            // 2. Si la question est complexe ET que le mode débat est activé,
+            //    générer un DebatePlan sans appeler le LLM (le plan est fixe)
+            if (classification === 'complex' && debateModeEnabled) {
+                this.runtime.log('info', '[LLMPlanner] Question complexe détectée. Génération d\'un DebatePlan.');
+                const debatePlan = this.createDebatePlan(userQuery);
+                
+                // Envoyer les métriques
+                const planningTime = performance.now() - startTime;
+                this.trackMetrics(planningTime, true, true);
+                
+                return debatePlan;
+            }
+            
+            // 3. Pour les questions simples, utiliser le LLM pour générer un plan
             const prompt = getPlannerPrompt(userQuery, context);
 
-            // 2. Appeler le LLM principal pour obtenir la réponse brute
-            // Note: C'est un appel request/response, pas un stream.
+            // 4. Appeler le LLM principal pour obtenir la réponse brute
             this.runtime.log('info', '[LLMPlanner] Appel du MainLLMAgent pour générer le plan...');
             const llmResponse: string = await this.runtime.callAgent(
                 'MainLLMAgent',
@@ -44,10 +69,10 @@ export class LLMPlanner {
             
             this.runtime.log('info', `[LLMPlanner] Réponse brute du LLM reçue (${llmResponse.length} caractères)`);
 
-            // 3. Extraire et valider le JSON
+            // 5. Extraire et valider le JSON
             const planJSON = JSONExtractor.extract(llmResponse);
 
-            // 4. Gérer les échecs et créer un plan de secours
+            // 6. Gérer les échecs et créer un plan de secours
             if (!planJSON || !this.isValidPlan(planJSON)) {
                 this.runtime.log('warn', '[LLMPlanner] Échec de l\'extraction d\'un plan JSON valide. Création d\'un plan de secours.');
                 
@@ -60,7 +85,10 @@ export class LLMPlanner {
 
             this.runtime.log('info', `[LLMPlanner] Plan valide extrait. Pensée: "${planJSON.thought}"`);
             
-            // 5. Envoyer les métriques de succès
+            // 7. Ajouter le type SimplePlan
+            planJSON.type = 'SimplePlan';
+            
+            // 8. Envoyer les métriques de succès
             const planningTime = performance.now() - startTime;
             const usedTool = (planJSON as Plan).steps.some(s => s.agent !== 'MainLLMAgent');
             this.trackMetrics(planningTime, true, usedTool);
@@ -77,6 +105,44 @@ export class LLMPlanner {
             // En cas d'erreur, retourner un plan de secours
             return this.createFallbackPlan(userQuery);
         }
+    }
+    
+    /**
+     * Crée un DebatePlan fixe pour les questions complexes
+     * Le plan est toujours le même : Optimiste -> Critique -> Synthèse
+     */
+    private createDebatePlan(userQuery: string): Plan {
+        return {
+            type: 'DebatePlan',
+            thought: 'Cette question nécessite une réflexion approfondie. Je vais procéder par débat interne.',
+            steps: [
+                {
+                    id: 'step1',
+                    agent: 'OptimistAgent',
+                    action: 'generateInitialResponse',
+                    args: { query: userQuery },
+                    label: 'Réflexion initiale (Léo)'
+                },
+                {
+                    id: 'step2',
+                    agent: 'CriticAgent',
+                    action: 'critique',
+                    args: { text: '{{step1_result}}' },
+                    label: 'Examen critique (Athéna)'
+                },
+                {
+                    id: 'step3',
+                    agent: 'MainLLMAgent',
+                    action: 'synthesizeDebate',
+                    args: {
+                        originalQuery: userQuery,
+                        draftResponse: '{{step1_result}}',
+                        critique: '{{step2_result}}'
+                    },
+                    label: 'Synthèse finale'
+                }
+            ]
+        };
     }
 
     /**

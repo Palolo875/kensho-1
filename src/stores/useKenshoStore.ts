@@ -25,6 +25,7 @@ import { ModelLoaderProgress } from '../core/models/ModelLoader';
 import { DownloadManager, DownloadProgress } from '../core/downloads/DownloadManager';
 import { toast } from 'sonner';
 import { appConfig } from '../config/app.config';
+import { ThoughtStep } from '../agents/oie/types';
 
 
 const STORAGE_KEY = 'kensho_conversation_history';
@@ -36,6 +37,7 @@ export interface Message {
     author: 'user' | 'kensho';
     timestamp: number;
     plan?: any; // Plan généré par l'OIE pour affichage dans l'UI
+    thoughtProcess?: ThoughtStep[]; // Étapes de pensée pour le débat interne (Sprint 6)
 }
 
 export interface WorkerError {
@@ -71,6 +73,7 @@ interface KenshoState {
     uploadProgress: number;
     ocrProgress: number;
     statusMessage: string | null;
+    currentThoughtProcess: ThoughtStep[] | null; // Processus de pensée en cours (Sprint 6)
 
     init: () => void;
     startLLMWorker: () => void;
@@ -370,6 +373,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     mainBus: null,
     isInitialized: false,
     isLoadingMinimized: false,
+    currentThoughtProcess: null,
     isLoadingPaused: false,
     modelDownloadStarted: false,
     workerErrors: [],
@@ -528,6 +532,23 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                             saveMessagesToLocalStorage(updatedMessages);
                             return { messages: updatedMessages };
                         });
+                    } else if (chunk.type === 'thought_process_start') {
+                        // Initialiser le processus de pensée (Sprint 6)
+                        console.log('[KenshoStore] 🧠 Processus de pensée démarré');
+                        set({ currentThoughtProcess: chunk.data.steps || [] });
+                    } else if (chunk.type === 'thought_step_update') {
+                        // Mettre à jour une étape de pensée (Sprint 6)
+                        console.log('[KenshoStore] 🔄 Mise à jour étape:', chunk.data.stepId, chunk.data.status);
+                        set(state => {
+                            if (!state.currentThoughtProcess) return state;
+                            return {
+                                currentThoughtProcess: state.currentThoughtProcess.map(step =>
+                                    step.id === chunk.data.stepId
+                                        ? { ...step, status: chunk.data.status, result: chunk.data.result, error: chunk.data.error }
+                                        : step
+                                )
+                            };
+                        });
                     } else if (chunk.type === 'status') {
                         // Message de statut (ex: "Analyse OCR...")
                         console.log('[KenshoStore] 📊 Statut:', chunk.message);
@@ -553,11 +574,22 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 onEnd: (finalPayload) => {
                     console.log('[KenshoStore] ✅ Stream terminé:', finalPayload);
                     set(state => {
-                        saveMessagesToLocalStorage(state.messages);
+                        // Sauvegarder le processus de pensée dans le message final
+                        const updatedMessages = state.currentThoughtProcess
+                            ? state.messages.map(msg =>
+                                msg.id === kenshoResponsePlaceholder.id
+                                    ? { ...msg, thoughtProcess: state.currentThoughtProcess }
+                                    : msg
+                              )
+                            : state.messages;
+                        
+                        saveMessagesToLocalStorage(updatedMessages);
                         return { 
+                            messages: updatedMessages,
                             isKenshoWriting: false, 
                             statusMessage: null, 
-                            ocrProgress: -1 
+                            ocrProgress: -1,
+                            currentThoughtProcess: null
                         };
                     });
                 },

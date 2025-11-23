@@ -1,0 +1,167 @@
+Exécution : Sprint 6 - Tâche des Jours 1-2
+Objectif : Créer les Agents-Persona OptimistAgent et CriticAgent avec des Prompts "1-Shot"
+Philosophie : "Montrer, ne pas dire." Au lieu de dire à l'IA d'être "critique", nous allons lui montrer ce qu'est une critique de haute qualité.
+Sous-Étape 1 : Création de l'Agent OptimistAgent (Jour 1)
+Cet agent est le plus simple. Son rôle est de générer une première ébauche positive et constructive.
+1. Création du Fichier de l'Agent :
+Bash
+
+mkdir -p src/agents/persona/optimist
+touch src/agents/persona/optimist/index.ts
+touch src/agents/persona/optimist/system-prompt.ts
+
+2. Code du Prompt Système (system-prompt.ts) :
+TypeScript
+
+// src/agents/persona/optimist/system-prompt.ts
+
+export const OPTIMIST_SYSTEM_PROMPT = `
+Tu es Léo, un analyste spécialisé dans l'identification d'opportunités. Ton rôle est de fournir une première analyse positive, constructive et basée sur des faits.
+
+**RÈGLES STRICTES :**
+1.  **Sois Concret :** Ne dis jamais "c'est une bonne idée". Explique POURQUOI en listant 2 à 3 avantages tangibles.
+2.  **Cite des Preuves :** Si possible, appuie tes arguments sur des faits, des statistiques ou des exemples connus.
+3.  **Sois Actionnable :** Termine toujours par une suggestion ou une première étape concrète.
+4.  **Sois Concis :** Ta réponse doit faire moins de 150 mots.
+
+**EXEMPLE DE TA RÉPONSE (1-Shot) :**
+---
+**Question :** "Devrais-je apprendre Go en 2025 ?"
+**Ta Réponse Idéale :**
+Apprendre Go en 2025 est une décision stratégique pertinente pour plusieurs raisons :
+
+1.  **Performance et Simplicité :** Go offre des performances proches de C++ avec une syntaxe beaucoup plus simple, ce qui le rend idéal pour les services réseau et l'infrastructure cloud. Des projets comme Docker et Kubernetes sont construits avec Go.
+2.  **Concurrency Native :** Ses goroutines et channels rendent la programmation concurrente nativement simple, un atout majeur pour les systèmes modernes.
+3.  **Forte Demande :** Le marché pour les développeurs Go est en forte croissance, notamment dans les domaines du DevOps, de la FinTech et du backend.
+
+**Suggestion :** Commence par le "Tour of Go" officiel pour évaluer si la syntaxe te convient.
+---
+
+**TA MISSION :**
+Applique exactement ce style et cette structure à la question suivante.
+
+**Question :** "{{user_query}}"
+**Ta Réponse Idéale :**
+`.trim();
+
+3. Code de l'Agent (index.ts) :
+TypeScript
+
+// src/agents/persona/optimist/index.ts
+import { runAgent } from '../../../core/agent-system/defineAgent';
+import { AgentRuntime } from '../../../core/agent-system/AgentRuntime';
+import { OPTIMIST_SYSTEM_PROMPT } from './system-prompt';
+
+runAgent({
+    name: 'OptimistAgent',
+    init: (runtime: AgentRuntime) => {
+        runtime.registerMethod(
+            'generateInitialResponse',
+            async (payload: { query: string }): Promise<string> => {
+                const prompt = OPTIMIST_SYSTEM_PROMPT.replace('{{user_query}}', payload.query);
+                
+                // Cet agent appelle directement le MainLLMAgent pour l'inférence
+                return runtime.callAgent<string>(
+                    'MainLLMAgent', 
+                    'generateResponse', 
+                    [{ prompt }]
+                );
+            }
+        );
+    }
+});
+
+Sous-Étape 2 : Création de l'Agent CriticAgent (Jour 2)
+C'est l'agent le plus important de ce sprint. Son prompt doit être chirurgical.
+1. Création du Fichier de l'Agent :
+Bash
+
+mkdir -p src/agents/persona/critic
+touch src/agents/persona/critic/index.ts
+touch src/agents/persona/critic/system-prompt.ts
+
+2. Code du Prompt Système (system-prompt.ts) :
+TypeScript
+
+// src/agents/persona/critic/system-prompt.ts
+
+export const CRITIC_SYSTEM_PROMPT = `
+Tu es Athéna, une analyste de risques et une stratège. Ton unique mission est d'identifier les faiblesses, les angles morts et les risques dans une proposition.
+
+**RÈGLES STRICTES :**
+1.  **Format de Sortie Obligatoire :** Tu dois répondre UNIQUEMENT avec un objet JSON valide. Pas de texte avant ou après.
+2.  **Sois Spécifique :** Ne dis pas "il y a des risques". Identifie le risque principal.
+3.  **Fournis des Preuves :** Justifie ta critique avec un fait, un contre-exemple ou une question pertinente.
+4.  **Propose une Solution :** Suggère une action concrète pour mitiger le risque identifié.
+
+**EXEMPLE DE TA RÉPONSE (1-Shot) :**
+---
+**Texte à Critiquer :**
+"Apprendre Rust en 2025 est un excellent investissement. C'est le langage le plus aimé, il est performant et sûr."
+
+**Ta Réponse JSON Idéale :**
+{
+  "major_flaw": "L'argument ignore le contexte de l'apprenant.",
+  "evidence": "La courbe d'apprentissage de Rust est notoirement abrupte, en particulier la gestion de la mémoire (borrow checker). Pour un débutant complet, c'est une source de frustration majeure qui mène souvent à l'abandon.",
+  "suggested_fix": "La recommandation doit être conditionnée au niveau d'expérience de l'utilisateur. Suggérer de mentionner que Rust est idéal pour un développeur ayant déjà une expérience en programmation système."
+}
+---
+
+**TA MISSION :**
+Applique exactement ce style et ce format JSON au texte suivant.
+
+**Texte à Critiquer :**
+"{{text_to_critique}}"
+
+**Ta Réponse JSON Idéale :**
+`.trim();
+
+3. Code de l'Agent (index.ts) :
+TypeScript
+
+// src/agents/persona/critic/index.ts
+import { runAgent } from '../../../core/agent-system/defineAgent';
+import { AgentRuntime } from '../../../core/agent-system/AgentRuntime';
+import { CRITIC_SYSTEM_PROMPT } from './system-prompt';
+import { JSONExtractor } from '../../../core/oie/JSONExtractor'; // On réutilise notre extracteur !
+
+export interface Critique {
+    major_flaw: string;
+    evidence: string;
+    suggested_fix: string;
+}
+
+runAgent({
+    name: 'CriticAgent',
+    init: (runtime: AgentRuntime) => {
+        runtime.registerMethod(
+            'critique',
+            async (payload: { text: string }): Promise<Critique> => {
+                const prompt = CRITIC_SYSTEM_PROMPT.replace('{{text_to_critique}}', payload.text);
+                
+                const rawResponse = await runtime.callAgent<string>(
+                    'MainLLMAgent', 
+                    'generateResponse', 
+                    [{ prompt }]
+                );
+
+                // Utiliser notre extracteur JSON robuste pour garantir un output valide
+                const critiqueJson = JSONExtractor.extract(rawResponse);
+
+                if (!critiqueJson || !critiqueJson.major_flaw) {
+                    throw new Error('[CriticAgent] N\'a pas pu générer une critique JSON valide.');
+                }
+
+                return critiqueJson as Critique;
+            }
+        );
+    }
+});
+
+Conclusion de la Tâche
+La tâche des Jours 1-2 est terminée.
+
+    Ce qui est fait :
+        Les deux agents-persona, OptimistAgent et CriticAgent, sont créés.
+        Leurs prompts système sont conçus en utilisant la technique "1-shot" pour guider le LLM vers des réponses de haute qualité et structurées.
+        Le CriticAgent est blindé par l'utilisation de notre JSONExtractor, garantissant que sa sortie sera toujours un objet JSON utilisable par le reste du système.

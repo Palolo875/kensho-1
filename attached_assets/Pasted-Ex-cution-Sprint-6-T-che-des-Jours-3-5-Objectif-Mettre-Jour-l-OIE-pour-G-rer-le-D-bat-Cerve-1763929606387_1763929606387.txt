@@ -1,0 +1,186 @@
+Exécution : Sprint 6 - Tâche des Jours 3-5
+Objectif : Mettre à Jour l'OIE pour Gérer le Débat (Cerveau à Deux Vitesses)
+Philosophie : "Ne pas sur-réfléchir." Le débat est un outil puissant mais coûteux. Nous ne l'utiliserons que lorsque c'est nécessaire.
+Sous-Étape 1 : Implémentation du QueryClassifier (Jour 3)
+C'est le "trieur" à l'entrée du cerveau. Il doit être rapide et efficace.
+1. Création du Fichier QueryClassifier.ts :
+Bash
+
+touch src/core/oie/QueryClassifier.ts
+
+2. Code du QueryClassifier.ts :
+TypeScript
+
+// src/core/oie/QueryClassifier.ts
+
+// Système de poids pour une classification nuancée
+const COMPLEXITY_WEIGHTS: { [key: string]: number } = {
+    // Mots-clés à forte probabilité de complexité
+    'devrais': 0.9, 'devrait': 0.9, 'recommandes': 0.8, 'conseilles': 0.8,
+    'avantages': 0.7, 'inconvénients': 0.7, 'risques': 0.7, 'opportunités': 0.7,
+    'meilleure option': 0.8, 'comparer': 0.6, 'évaluer': 0.6, 'analyser': 0.6,
+    'stratégie': 0.8,
+    // Mots-clés ambigus
+    'pourquoi': 0.3, 'comment': 0.2, 'explique': 0.4,
+    // Mots-clés à faible probabilité de complexité
+    'qui': -0.5, 'quoi': -0.5, 'où': -0.5, 'quand': -0.5, 'combien': -0.5,
+    'quelle est': -0.7, 'quel est': -0.7, 'définition': -0.8, 'capitale': -0.9,
+};
+
+const COMPLEXITY_THRESHOLD = 0.5; // Seuil pour déclencher un débat
+
+export class QueryClassifier {
+    public classify(query: string): 'simple' | 'complex' {
+        const lowerQuery = query.toLowerCase();
+        let score = 0;
+
+        for (const [keyword, weight] of Object.entries(COMPLEXITY_WEIGHTS)) {
+            if (lowerQuery.includes(keyword)) {
+                score += weight;
+            }
+        }
+
+        // Heuristique de longueur : les questions très longues sont probablement complexes
+        if (query.split(' ').length > 20) {
+            score += 0.2;
+        }
+
+        console.log(`[QueryClassifier] Score de complexité pour la requête: ${score.toFixed(2)}`);
+
+        return score >= COMPLEXITY_THRESHOLD ? 'complex' : 'simple';
+    }
+}
+
+    Commentaire : Cette implémentation est rapide (pas de LLM) et nuancée (pas binaire). Le système de poids nous permet d'affiner facilement le comportement en ajustant les valeurs.
+
+Sous-Étape 2 : Mise à Jour du LLMPlanner et du TaskExecutor (Jours 4-5)
+Maintenant, nous connectons ce classifieur au planificateur et nous apprenons à l'exécuteur à gérer le nouveau DebatePlan.
+1. Mise à Jour du LLMPlanner.ts :
+TypeScript
+
+// src/core/oie/LLMPlanner.ts
+import { QueryClassifier } from './QueryClassifier';
+import { Plan } from './types'; // Assumons que Plan peut être SimplePlan | DebatePlan
+
+export class LLMPlanner {
+    private queryClassifier = new QueryClassifier();
+
+    public async generatePlan(task: Task, debateModeEnabled: boolean): Promise<Plan> {
+        const classification = this.queryClassifier.classify(task.query);
+
+        if (classification === 'simple' || !debateModeEnabled) {
+            // Générer un plan simple (comme dans le Sprint 3)
+            // ...
+            return { type: 'SimplePlan', steps: [...] };
+        }
+
+        // Si la question est complexe ET que le mode débat est activé,
+        // nous n'avons pas besoin d'un LLM pour planifier, le plan est fixe.
+        console.log('[LLMPlanner] Question complexe détectée. Génération d\'un DebatePlan.');
+        return {
+            type: 'DebatePlan',
+            steps: [
+                { id: 'step1', agent: 'OptimistAgent', action: 'generateInitialResponse', args: { query: task.query } },
+                { id: 'step2', agent: 'CriticAgent', action: 'critique', args: { text: '{{step1_result}}' } },
+                { id: 'step3', agent: 'MainLLMAgent', action: 'synthesizeDebate', args: { 
+                    originalQuery: task.query,
+                    draftResponse: '{{step1_result}}',
+                    critique: '{{step2_result}}'
+                }}
+            ]
+        };
+    }
+}
+
+    Commentaire : C'est une simplification intelligente. Pour le débat, le plan est toujours le même (Générer -> Critiquer -> Synthétiser). Nous n'avons donc pas besoin d'un appel LLM coûteux pour le générer, le classifieur suffit.
+
+2. Mise à Jour du TaskExecutor.ts :
+TypeScript
+
+// src/core/oie/TaskExecutor.ts
+
+export class TaskExecutor {
+    public async execute(plan: Plan, context: ExecutionContext): Promise<any> {
+        if (plan.type === 'SimplePlan' || plan.type === 'DebatePlan') {
+            return this.executeLinearPlan(plan, context);
+        }
+        // ... (pour les futurs types de plans comme la récursion)
+    }
+
+    private async executeLinearPlan(plan: Plan, context: ExecutionContext): Promise<any> {
+        const results = new Map<string, any>();
+        
+        for (const step of plan.steps) {
+            // Notifier l'UI du début de l'étape
+            this.runtime.send('MainUI', { type: 'thought_step_update', payload: { stepId: step.id, status: 'running' } });
+
+            try {
+                const interpolatedArgs = this.interpolate(step.args, results);
+                
+                const result = await this.runtime.callAgent(
+                    step.agent,
+                    step.action,
+                    [interpolatedArgs],
+                    60000 // Timeout de 60s pour les étapes de débat
+                );
+
+                results.set(`${step.id}_result`, result);
+                this.runtime.send('MainUI', { type: 'thought_step_update', payload: { stepId: step.id, status: 'completed', result } });
+
+            } catch (error) {
+                this.runtime.send('MainUI', { type: 'thought_step_update', payload: { stepId: step.id, status: 'failed', error: error.message } });
+                // Gérer l'erreur (comme dans le Sprint 3)
+                throw error;
+            }
+        }
+        
+        return results.get(`step${plan.steps.length}_result`);
+    }
+
+    // ... (la méthode interpolate reste la même)
+}
+
+    Commentaire : Le TaskExecutor n'a besoin que d'une modification mineure. Il exécute simplement les étapes du DebatePlan en série, comme il le faisait pour le SimplePlan. La complexité est dans le plan lui-même, pas dans l'exécuteur. Nous ajoutons aussi l'envoi de messages de statut à l'UI.
+
+3. Ajout de la Méthode synthesizeDebate au MainLLMAgent :
+TypeScript
+
+// src/agents/main-llm/index.ts
+
+// ...
+// Ajouter un nouveau prompt de synthèse
+const SYNTHESIS_PROMPT = `...`; // Le prompt structuré que nous avons défini
+
+runAgent({
+    name: 'MainLLMAgent',
+    init: (runtime: AgentRuntime) => {
+        // ... (la méthode generateResponse existe déjà)
+
+        runtime.registerMethod(
+            'synthesizeDebate',
+            async (payload: { originalQuery: string, draftResponse: string, critique: Critique }): Promise<string> => {
+                const prompt = SYNTHESIS_PROMPT
+                    .replace('{{originalQuery}}', payload.originalQuery)
+                    .replace('{{draftResponse}}', payload.draftResponse)
+                    .replace('{{critique}}', JSON.stringify(payload.critique, null, 2));
+                
+                // On utilise la méthode de streaming pour la réponse finale
+                // (La logique exacte dépend de l'implémentation du streaming dans callAgent)
+                return runtime.streamAgent(
+                    'MainLLMAgent', 
+                    'generateResponse', // On réutilise la méthode de base
+                    [{ prompt }]
+                );
+            }
+        );
+    }
+});
+
+Conclusion de la Tâche
+La tâche des Jours 3-5 est terminée. Le cerveau de Kensho est maintenant capable de décider quand il a besoin de réfléchir plus profondément et d'orchestrer un débat interne pour y parvenir.
+
+    Ce qui est fait :
+        Un QueryClassifier rapide et nuancé.
+        Un LLMPlanner qui génère deux types de plans (Simple et Debate).
+        Un TaskExecutor qui peut exécuter ces deux types de plans.
+        Le MainLLMAgent a une nouvelle capacité de synthèse.

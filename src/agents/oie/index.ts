@@ -150,6 +150,17 @@ runAgent({
                     // Envoyer le plan à l'UI pour affichage
                     stream.chunk({ type: 'plan', data: plan });
                     console.log('[OIEAgent] 📤 Plan envoyé à l\'UI');
+                    
+                    // Si c'est un DebatePlan, envoyer la structure des étapes de pensée
+                    if (plan.type === 'DebatePlan' && plan.steps) {
+                        const thoughtSteps = plan.steps.map(step => ({
+                            id: step.id || 'unknown',
+                            label: step.label || `${step.agent}.${step.action}`,
+                            status: 'pending' as const
+                        }));
+                        stream.chunk({ type: 'thought_process_start', data: { steps: thoughtSteps } });
+                        console.log('[OIEAgent] 📤 Structure du processus de pensée envoyée à l\'UI');
+                    }
 
                     // 2. Exécution avec le TaskExecutor
                     console.log('[OIEAgent] ⚙️ Début de l\'exécution du plan...');

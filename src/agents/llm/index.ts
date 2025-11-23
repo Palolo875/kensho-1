@@ -295,6 +295,92 @@ runAgent({
             }
         });
 
+        // Méthode de streaming pour synthétiser un débat (Sprint 6)
+        // Prend la réponse initiale de l'Optimiste et la critique d'Athéna,
+        // et génère une réponse finale équilibrée
+        runtime.registerStreamMethod(
+            'synthesizeDebate',
+            async (payload: any, stream: AgentStreamEmitter) => {
+                console.log('[MainLLMAgent] 🧠 Synthèse de débat demandée');
+                
+                const { originalQuery, draftResponse, critique } = payload.args?.[0] || payload;
+                
+                if (!engine) {
+                    const error = new Error('Le moteur LLM n\'est pas encore prêt. Veuillez patienter...');
+                    console.error('[MainLLMAgent] ❌ Moteur non prêt');
+                    runtime.log('error', error.message);
+                    stream.error(error);
+                    return;
+                }
+                
+                // Construire le prompt de synthèse
+                const SYNTHESIS_PROMPT = `Tu es un assistant IA qui doit synthétiser un débat interne pour fournir une réponse équilibrée et nuancée.
+
+**CONTEXTE :**
+Question originale : "${originalQuery}"
+
+**ANALYSE OPTIMISTE (Léo) :**
+${draftResponse}
+
+**CRITIQUE (Athéna) :**
+${typeof critique === 'object' ? JSON.stringify(critique, null, 2) : critique}
+
+**TA MISSION :**
+Synthétise ces deux perspectives pour fournir une réponse finale qui :
+1. Reconnaît les points forts identifiés par Léo
+2. Intègre les préoccupations légitimes d'Athéna
+3. Fournit une recommandation équilibrée et nuancée
+4. Reste claire et actionnable pour l'utilisateur
+
+**RÈGLES :**
+- Ne mentionne PAS Léo ni Athéna dans ta réponse
+- Parle directement à l'utilisateur
+- Sois concis (moins de 250 mots)
+- Fournis une réponse pratique et équilibrée
+
+**TA RÉPONSE FINALE :`;
+
+                try {
+                    console.log('[MainLLMAgent] 🔄 Début de la synthèse...');
+                    runtime.log('info', 'Synthèse du débat en cours...');
+
+                    const messages: any[] = [
+                        { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+                        { role: 'user', content: SYNTHESIS_PROMPT }
+                    ];
+
+                    console.log('[MainLLMAgent] 🤖 Appel du moteur LLM pour la synthèse...');
+                    const streamIterator = await engine.chat.completions.create({
+                        messages,
+                        stream: true,
+                        temperature: 0.7,
+                        max_tokens: 1024,
+                        top_p: 0.95,
+                    });
+
+                    console.log('[MainLLMAgent] 📡 Stream de synthèse démarré...');
+                    let totalChunks = 0;
+                    for await (const chunk of streamIterator) {
+                        const textChunk = (chunk as any).choices?.[0]?.delta?.content || '';
+                        if (textChunk) {
+                            totalChunks++;
+                            stream.chunk({ text: textChunk });
+                        }
+                    }
+
+                    console.log(`[MainLLMAgent] ✅ Synthèse terminée. ${totalChunks} chunks envoyés.`);
+                    runtime.log('info', `Synthèse du débat terminée. ${totalChunks} chunks envoyés.`);
+                    stream.end({ totalChunks });
+
+                } catch (error) {
+                    const err = error instanceof Error ? error : new Error('Erreur inconnue durant la synthèse');
+                    console.error('[MainLLMAgent] ❌ Erreur de synthèse:', err);
+                    runtime.log('error', `Erreur de synthèse: ${err.message}`);
+                    stream.error(err);
+                }
+            }
+        );
+
         // Méthode pour reset le moteur si nécessaire
         runtime.registerMethod('resetEngine', async () => {
             runtime.log('info', 'Reset du moteur LLM...');

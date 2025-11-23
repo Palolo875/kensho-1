@@ -1,0 +1,175 @@
+Exécution : Sprint 6 - Tâche des Jours 6-8
+Objectif : Mettre à Jour l'UI pour la Transparence du Débat
+Philosophie : "La confiance naît de la transparence." Montrer à l'utilisateur que Kensho réfléchit, critique et raffine ses idées est aussi important que la qualité de la réponse finale elle-même.
+Sous-Étape 1 : Amélioration du InteractiveThoughtStream (Jours 6-7)
+Nous allons modifier notre composant de "flux de pensée" pour qu'il puisse afficher les étapes spécifiques d'un débat.
+1. Mise à Jour du Store (Zustand) :
+Le store doit pouvoir gérer une liste d'étapes de pensée avec leur statut.
+TypeScript
+
+// src/ui/stores/useKenshoStore.ts
+
+export interface ThoughtStep {
+    id: string;
+    label: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    result?: any;
+    error?: string;
+}
+
+interface KenshoState {
+    // ...
+    currentThoughtProcess: ThoughtStep[] | null;
+    // ...
+}
+
+// ...
+// Ajouter des actions pour initialiser et mettre à jour le processus de pensée
+// L'écouteur de messages du MessageBus appellera ces actions
+// en réponse aux messages 'thought_process_start' et 'thought_step_update'
+
+2. Mise à Jour du CognitiveProcessor pour Envoyer les Bons Messages :
+Avant d'exécuter un plan, le processeur envoie la structure du plan à l'UI.
+TypeScript
+
+// src/core/oie/CognitiveProcessor.ts
+
+public async run(): Promise<void> {
+    // ...
+    const plan = await this.llmPlanner.generatePlan(this.task, debateModeEnabled);
+
+    // --- NOUVEAU : Envoyer le plan à l'UI ---
+    const thoughtSteps = plan.steps.map(step => ({
+        id: step.id,
+        label: this.getLabelForStep(step), // ex: "Réflexion initiale (Léo)"
+        status: 'pending'
+    }));
+    this.runtime.send('MainUI', { 
+        type: 'thought_process_start', 
+        payload: { steps: thoughtSteps }
+    });
+
+    // Exécuter le plan (qui enverra des messages 'thought_step_update')
+    // ...
+}
+
+private getLabelForStep(step: PlanStep): string {
+    switch(step.agent) {
+        case 'OptimistAgent': return 'Réflexion initiale (Léo)';
+        case 'CriticAgent': return 'Examen critique (Athéna)';
+        case 'MainLLMAgent':
+            if (step.action === 'synthesizeDebate') {
+                return 'Synthèse finale';
+            }
+            return 'Génération de la réponse';
+        default:
+            return `Action : ${step.agent}`;
+    }
+}
+
+3. Création/Mise à Jour du Composant ThoughtStream.tsx :
+Ce composant affiche les étapes reçues du store.
+TypeScript
+
+// src/ui/components/ThoughtStream.tsx
+import React from 'react';
+import { useKenshoStore } from '../stores/useKenshoStore';
+import { Loader, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+
+const statusIcons = {
+    pending: <Loader className="animate-spin text-gray-400" size={16} />,
+    running: <Loader className="animate-spin text-blue-500" size={16} />,
+    completed: <CheckCircle className="text-green-500" size={16} />,
+    failed: <XCircle className="text-red-500" size={16} />,
+};
+
+export function ThoughtStream() {
+    const thoughtProcess = useKenshoStore(state => state.currentThoughtProcess);
+
+    if (!thoughtProcess) {
+        return null;
+    }
+
+    return (
+        <div className="p-2 mb-2 border rounded-lg bg-gray-50">
+            <div className="flex items-center text-sm font-semibold text-gray-600 mb-2">
+                <AlertTriangle size={16} className="mr-2" />
+                Processus de réflexion en cours...
+            </div>
+            <div className="space-y-1">
+                {thoughtProcess.map(step => (
+                    <div key={step.id} className="flex items-center text-sm text-gray-700">
+                        {statusIcons[step.status]}
+                        <span className="ml-2">{step.label}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+    Commentaire : Ce composant est simple et purement réactif. Il affiche l'état actuel du processus de pensée, qui est mis à jour de manière centralisée par le store en réponse aux messages de l'OIE.
+
+Sous-Étape 2 : Amélioration du "Journal Cognitif" (Jour 8)
+Nous allons rendre la vue détaillée du plan (le "Journal Cognitif") plus riche en affichant les résultats de chaque étape.
+1. Mise à Jour du Composant AssistantMessage.tsx :
+TypeScript
+
+// src/ui/components/AssistantMessage.tsx
+// ... (comme dans le plan du Sprint 3, mais amélioré)
+
+function AssistantMessage({ message }: { message: Message }) {
+    const [showPlan, setShowPlan] = useState(false);
+    
+    // On suppose que le message final contient le 'thoughtProcess' complet avec les résultats
+    const plan = message.thoughtProcess;
+
+    return (
+        <div className="message assistant">
+            {plan && plan.length > 1 && ( // On n'affiche que pour les débats
+                <div className="plan-indicator mb-2">
+                    <button onClick={() => setShowPlan(!showPlan)} className="text-xs text-gray-500 hover:text-gray-800 flex items-center">
+                        🧠 {showPlan ? 'Masquer la réflexion' : 'Voir la réflexion'}
+                    </button>
+                    
+                    {showPlan && (
+                        <div className="plan-details mt-2 p-3 bg-gray-100 rounded-md text-xs">
+                            <h4 className="font-bold mb-1">Journal Cognitif :</h4>
+                            <ol className="list-decimal list-inside space-y-2">
+                                {plan.map(step => (
+                                    <li key={step.id}>
+                                        <strong>{step.label}:</strong>
+                                        <div className="pl-4 mt-1 text-gray-600 border-l-2">
+                                            {/* Afficher le résultat de manière lisible */}
+                                            {typeof step.result === 'string' && <p>"{step.result}"</p>}
+                                            {typeof step.result === 'object' && step.result?.major_flaw && (
+                                                <div className="space-y-1">
+                                                    <p><strong>Faille :</strong> {step.result.major_flaw}</p>
+                                                    <p><strong>Preuve :</strong> {step.result.evidence}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    )}
+                </div>
+            )}
+            
+            <div className="message-text">
+                {/* Affichage de la réponse finale en streaming */}
+                {message.text}
+            </div>
+        </div>
+    );
+}
+
+    Commentaire : Cette version améliorée affiche non seulement les étapes, mais aussi le contenu de la pensée de chaque agent (la réponse de Léo, la critique JSON d'Athéna). C'est la transparence absolue.
+
+Conclusion de la Tâche
+La tâche des Jours 6-8 est terminée. L'interface utilisateur est maintenant capable de refléter la complexité du nouveau processus de pensée de Kensho.
+
+    Ce qui est fait :
+        Un ThoughtStream qui affiche en temps réel les étapes du débat.
+        Un "Journal Cognitif" amélioré qui permet à l'utilisateur d'auditer en détail la contribution de chaque agent.

@@ -7,6 +7,11 @@
  */
 export interface PlanStep {
     /**
+     * Identifiant unique de l'étape (ex: "step1", "step2")
+     */
+    id?: string;
+    
+    /**
      * Le nom de l'agent à appeler (ex: "CalculatorAgent", "MainLLMAgent")
      */
     agent: string;
@@ -26,12 +31,27 @@ export interface PlanStep {
      * Prompt spécifique pour les agents LLM (optionnel)
      */
     prompt?: string;
+    
+    /**
+     * Label lisible pour l'UI (optionnel)
+     */
+    label?: string;
 }
+
+/**
+ * Types de plans supportés
+ */
+export type PlanType = 'SimplePlan' | 'DebatePlan';
 
 /**
  * Un plan d'action complet généré par le LLMPlanner
  */
 export interface Plan {
+    /**
+     * Le type de plan (SimplePlan ou DebatePlan)
+     */
+    type?: PlanType;
+    
     /**
      * La "pensée" ou raisonnement du planificateur
      * Ce champ explique pourquoi ce plan a été choisi
@@ -42,4 +62,20 @@ export interface Plan {
      * La séquence d'étapes à exécuter
      */
     steps: PlanStep[];
+}
+
+/**
+ * Statut d'une étape de pensée pour l'UI
+ */
+export type ThoughtStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+/**
+ * Une étape de pensée pour l'affichage dans l'UI
+ */
+export interface ThoughtStep {
+    id: string;
+    label: string;
+    status: ThoughtStepStatus;
+    result?: any;
+    error?: string;
 }

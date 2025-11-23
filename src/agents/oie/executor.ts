@@ -18,6 +18,7 @@ export interface ExecutionContext {
 /**
  * Le TaskExecutor exécute un plan d'action généré par le LLMPlanner.
  * Il gère le chaînage des étapes et le streaming de la réponse finale.
+ * Il envoie aussi les mises à jour de statut à l'UI pour la transparence.
  */
 export class TaskExecutor {
     constructor(
@@ -36,6 +37,10 @@ export class TaskExecutor {
         for (let i = 0; i < plan.steps.length; i++) {
             const step = plan.steps[i];
             const isLastStep = i === plan.steps.length - 1;
+            const stepId = step.id || `step${i + 1}`;
+
+            // Envoyer le statut 'running' à l'UI via le stream
+            this.sendStepUpdate(stream, stepId, 'running');
 
             try {
                 this.runtime.log('info', `[TaskExecutor] Exécution de l'étape ${i + 1}/${plan.steps.length}: ${step.agent}.${step.action}`);
@@ -46,32 +51,58 @@ export class TaskExecutor {
                 interpolatedArgs = this.interpolateInitialContext(interpolatedArgs, this.context);
 
                 // 2. Décider s'il faut appeler en mode stream ou request/response
-                if (isLastStep && step.action === 'generateResponse') {
+                if (isLastStep && (step.action === 'generateResponse' || step.action === 'synthesizeDebate')) {
                     // C'est la dernière étape et c'est une génération de réponse, on streame.
                     this.runtime.log('info', '[TaskExecutor] Dernière étape : streaming de la réponse...');
                     
-                    // Utiliser le champ prompt et l'interpoler avec les résultats précédents
-                    let promptToUse = step.prompt || this.context.originalQuery;
-                    
-                    // Interpoler les placeholders dans le prompt avec les résultats des étapes précédentes
-                    for (const [key, value] of stepResults.entries()) {
-                        const placeholder = `{{${key}}}`;
-                        // Remplacer les placeholders dans le prompt
-                        promptToUse = promptToUse.split(placeholder).join(String(value));
-                    }
-                    
-                    this.runtime.log('info', `[TaskExecutor] Prompt interpolé: ${promptToUse.substring(0, 50)}...`);
-                    
-                    this.runtime.callAgentStream(
-                        step.agent as any,
-                        step.action,
-                        [promptToUse],
-                        {
-                            onChunk: (chunk) => stream.chunk(chunk),
-                            onEnd: (final) => stream.end(final),
-                            onError: (err) => stream.error(err),
+                    // Pour synthesizeDebate, on utilise les arguments interpolés directement
+                    // Pour generateResponse, on utilise le prompt interpolé
+                    if (step.action === 'synthesizeDebate') {
+                        this.runtime.callAgentStream(
+                            step.agent as any,
+                            step.action,
+                            [interpolatedArgs],
+                            {
+                                onChunk: (chunk) => stream.chunk(chunk),
+                                onEnd: (final) => {
+                                    this.sendStepUpdate(stream, stepId, 'completed');
+                                    stream.end(final);
+                                },
+                                onError: (err) => {
+                                    this.sendStepUpdate(stream, stepId, 'failed', undefined, err.message);
+                                    stream.error(err);
+                                },
+                            }
+                        );
+                    } else {
+                        // generateResponse - utiliser le prompt interpolé
+                        let promptToUse = step.prompt || this.context.originalQuery;
+                        
+                        // Interpoler les placeholders dans le prompt avec les résultats des étapes précédentes
+                        for (const [key, value] of stepResults.entries()) {
+                            const placeholder = `{{${key}}}`;
+                            promptToUse = promptToUse.split(placeholder).join(String(value));
                         }
-                    );
+                        
+                        this.runtime.log('info', `[TaskExecutor] Prompt interpolé: ${promptToUse.substring(0, 50)}...`);
+                        
+                        this.runtime.callAgentStream(
+                            step.agent as any,
+                            step.action,
+                            [promptToUse],
+                            {
+                                onChunk: (chunk) => stream.chunk(chunk),
+                                onEnd: (final) => {
+                                    this.sendStepUpdate(stream, stepId, 'completed');
+                                    stream.end(final);
+                                },
+                                onError: (err) => {
+                                    this.sendStepUpdate(stream, stepId, 'failed', undefined, err.message);
+                                    stream.error(err);
+                                },
+                            }
+                        );
+                    }
                     // Le stream est géré, on peut sortir de la boucle.
                     return; 
                 } else {
@@ -84,16 +115,23 @@ export class TaskExecutor {
                         Object.keys(interpolatedArgs).length > 0 
                             ? [interpolatedArgs] 
                             : [],
-                        30000 // Timeout de 30s pour les outils
+                        60000 // Timeout de 60s pour les étapes de débat
                     );
                     
-                    stepResults.set(`step${i + 1}_result`, result);
+                    const resultKey = step.id ? `${step.id}_result` : `step${i + 1}_result`;
+                    stepResults.set(resultKey, result);
                     this.runtime.log('info', `[TaskExecutor] Résultat de l'étape ${i + 1}: ${JSON.stringify(result).substring(0, 100)}`);
+                    
+                    // Envoyer le statut 'completed' avec le résultat à l'UI
+                    this.sendStepUpdate(stream, stepId, 'completed', result);
                 }
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
                 this.runtime.log('error', `[TaskExecutor] L'étape ${i + 1} a échoué: ${errorMessage}`);
+                
+                // Envoyer le statut 'failed' à l'UI
+                this.sendStepUpdate(stream, stepId, 'failed', undefined, errorMessage);
                 
                 // GESTION D'ERREUR avec fallback gracieux
                 const fallbackPrompt = `L'utilisateur a demandé : "${this.context.originalQuery}". J'ai essayé d'utiliser l'outil '${step.agent}' mais il a échoué avec l'erreur : "${errorMessage}". Explique poliment que tu ne peux pas effectuer cette tâche pour le moment et demande si tu peux aider d'une autre manière.`;
@@ -113,6 +151,26 @@ export class TaskExecutor {
             }
         }
     }
+    
+    /**
+     * Envoie une mise à jour de statut d'étape à l'UI via le stream
+     */
+    private sendStepUpdate(stream: AgentStreamEmitter, stepId: string, status: 'pending' | 'running' | 'completed' | 'failed', result?: any, error?: string): void {
+        try {
+            stream.chunk({
+                type: 'thought_step_update',
+                data: {
+                    stepId,
+                    status,
+                    result,
+                    error
+                }
+            });
+        } catch (err) {
+            // Ignorer les erreurs d'envoi (le stream peut être fermé)
+            this.runtime.log('warn', `[TaskExecutor] Impossible d'envoyer la mise à jour d'étape: ${err}`);
+        }
+    }
 
     /**
      * Interpole les placeholders dans les arguments avec les résultats des étapes précédentes.
@@ -124,10 +182,17 @@ export class TaskExecutor {
         
         for (const [key, value] of results.entries()) {
             // Remplacer les placeholders comme {{step1_result}}
-            const placeholder = `{{${key}}}`;
-            // Important: On remplace le placeholder par la valeur JSON.stringifiée
-            // pour gérer correctement les chaînes, nombres, etc.
-            argsStr = argsStr.split(placeholder).join(JSON.stringify(value));
+            const quotedPlaceholder = `"{{${key}}}"`;  // Placeholder avec guillemets
+            const unquotedPlaceholder = `{{${key}}}`;   // Placeholder sans guillemets
+            
+            // Si le placeholder est entre guillemets dans le JSON, on remplace par la valeur JSON.stringifiée
+            if (argsStr.includes(quotedPlaceholder)) {
+                argsStr = argsStr.split(quotedPlaceholder).join(JSON.stringify(value));
+            }
+            // Sinon, si le placeholder est sans guillemets, on stringify aussi (pour objets/nombres)
+            else if (argsStr.includes(unquotedPlaceholder)) {
+                argsStr = argsStr.split(unquotedPlaceholder).join(JSON.stringify(value));
+            }
         }
         
         return JSON.parse(argsStr);
