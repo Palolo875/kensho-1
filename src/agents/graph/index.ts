@@ -314,6 +314,219 @@ export class GraphWorker {
   public getHNSWManager(): HNSWManager {
     return this.hnswManager;
   }
+
+  /**
+   * Crée un nouveau projet
+   */
+  public async createProject(name: string, goal: string = ''): Promise<string> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const id = `proj-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const now = Date.now();
+    
+    db.run(`
+      INSERT INTO projects (id, name, goal, createdAt, lastActivityAt, isArchived)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `, [id, name, goal, now, now]);
+    
+    this.sqliteManager.markAsDirty();
+    console.log(`[GraphWorker] ✅ Projet créé: ${name} (${id})`);
+    
+    return id;
+  }
+
+  /**
+   * Récupère un projet par son ID
+   */
+  public async getProject(id: string): Promise<any | null> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const result = db.exec(`
+      SELECT id, name, goal, isArchived, createdAt, lastActivityAt
+      FROM projects WHERE id = ? LIMIT 1
+    `, [id]);
+    
+    if (!result[0] || result[0].values.length === 0) {
+      return null;
+    }
+    
+    const row = result[0].values[0];
+    return {
+      id: row[0],
+      name: row[1],
+      goal: row[2],
+      isArchived: row[3],
+      createdAt: row[4],
+      lastActivityAt: row[5]
+    };
+  }
+
+  /**
+   * Récupère tous les projets actifs (non archivés)
+   */
+  public async getActiveProjects(): Promise<any[]> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const result = db.exec(`
+      SELECT id, name, goal, isArchived, createdAt, lastActivityAt
+      FROM projects WHERE isArchived = 0
+      ORDER BY lastActivityAt DESC
+    `);
+    
+    if (!result[0]) {
+      return [];
+    }
+    
+    return result[0].values.map(row => ({
+      id: row[0],
+      name: row[1],
+      goal: row[2],
+      isArchived: row[3],
+      createdAt: row[4],
+      lastActivityAt: row[5]
+    }));
+  }
+
+  /**
+   * Met à jour un projet
+   */
+  public async updateProject(id: string, updates: { name?: string; goal?: string; isArchived?: number }): Promise<void> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const sets: string[] = [];
+    const values: any[] = [];
+    
+    if (updates.name !== undefined) {
+      sets.push('name = ?');
+      values.push(updates.name);
+    }
+    if (updates.goal !== undefined) {
+      sets.push('goal = ?');
+      values.push(updates.goal);
+    }
+    if (updates.isArchived !== undefined) {
+      sets.push('isArchived = ?');
+      values.push(updates.isArchived);
+    }
+    
+    if (sets.length === 0) return;
+    
+    sets.push('lastActivityAt = ?');
+    values.push(Date.now());
+    values.push(id);
+    
+    db.run(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`, values);
+    this.sqliteManager.markAsDirty();
+  }
+
+  /**
+   * Supprime un projet et toutes ses tâches
+   */
+  public async deleteProject(id: string): Promise<void> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    db.run('DELETE FROM project_tasks WHERE projectId = ?', [id]);
+    db.run('DELETE FROM projects WHERE id = ?', [id]);
+    
+    this.sqliteManager.markAsDirty();
+    console.log(`[GraphWorker] 🗑️ Projet supprimé: ${id}`);
+  }
+
+  /**
+   * Crée une nouvelle tâche pour un projet
+   */
+  public async createTask(projectId: string, text: string): Promise<string> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const id = `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const now = Date.now();
+    
+    db.run(`
+      INSERT INTO project_tasks (id, projectId, text, completed, createdAt)
+      VALUES (?, ?, ?, 0, ?)
+    `, [id, projectId, text, now]);
+    
+    db.run(`UPDATE projects SET lastActivityAt = ? WHERE id = ?`, [now, projectId]);
+    
+    this.sqliteManager.markAsDirty();
+    console.log(`[GraphWorker] ✅ Tâche créée pour projet ${projectId}: ${text}`);
+    
+    return id;
+  }
+
+  /**
+   * Récupère toutes les tâches d'un projet
+   */
+  public async getProjectTasks(projectId: string): Promise<any[]> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const result = db.exec(`
+      SELECT id, projectId, text, completed, createdAt
+      FROM project_tasks WHERE projectId = ?
+      ORDER BY createdAt ASC
+    `, [projectId]);
+    
+    if (!result[0]) {
+      return [];
+    }
+    
+    return result[0].values.map(row => ({
+      id: row[0],
+      projectId: row[1],
+      text: row[2],
+      completed: row[3],
+      createdAt: row[4]
+    }));
+  }
+
+  /**
+   * Bascule l'état d'une tâche (complétée/non complétée)
+   */
+  public async toggleTask(taskId: string): Promise<void> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    db.run(`
+      UPDATE project_tasks 
+      SET completed = CASE WHEN completed = 0 THEN 1 ELSE 0 END
+      WHERE id = ?
+    `, [taskId]);
+    
+    const result = db.exec(`SELECT projectId FROM project_tasks WHERE id = ?`, [taskId]);
+    if (result[0] && result[0].values.length > 0) {
+      const projectId = result[0].values[0][0];
+      db.run(`UPDATE projects SET lastActivityAt = ? WHERE id = ?`, [Date.now(), projectId]);
+    }
+    
+    this.sqliteManager.markAsDirty();
+  }
+
+  /**
+   * Supprime une tâche
+   */
+  public async deleteTask(taskId: string): Promise<void> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+    
+    const result = db.exec(`SELECT projectId FROM project_tasks WHERE id = ?`, [taskId]);
+    
+    db.run('DELETE FROM project_tasks WHERE id = ?', [taskId]);
+    
+    if (result[0] && result[0].values.length > 0) {
+      const projectId = result[0].values[0][0];
+      db.run(`UPDATE projects SET lastActivityAt = ? WHERE id = ?`, [Date.now(), projectId]);
+    }
+    
+    this.sqliteManager.markAsDirty();
+    console.log(`[GraphWorker] 🗑️ Tâche supprimée: ${taskId}`);
+  }
 }
 
 export * from './types';

@@ -1,61 +1,10 @@
 import initSqlJs, { Database } from 'sql.js';
 import { IMemoryTransaction } from './types';
+import { MIGRATIONS, getCurrentVersion, setVersion } from './migrations';
 
 const SQL_WASM_URL = '/sql-wasm.wasm';
-
-const DB_SCHEMA = `
-  PRAGMA journal_mode = WAL;
-  PRAGMA foreign_keys = ON;
-  PRAGMA user_version = 1;
-
-  CREATE TABLE IF NOT EXISTS transactions (
-    id TEXT PRIMARY KEY,
-    node_id TEXT,
-    operation TEXT NOT NULL,
-    status TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    error TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS provenance (
-    id TEXT PRIMARY KEY,
-    source_type TEXT NOT NULL,
-    source_id TEXT,
-    timestamp INTEGER NOT NULL,
-    metadata TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS nodes (
-    id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    type TEXT NOT NULL,
-    provenance_id TEXT NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1,
-    replaces_node_id TEXT,
-    importance REAL NOT NULL DEFAULT 1.0,
-    created_at INTEGER NOT NULL,
-    last_accessed_at INTEGER NOT NULL,
-    embedding TEXT,
-    FOREIGN KEY (provenance_id) REFERENCES provenance (id)
-  );
-
-  CREATE TABLE IF NOT EXISTS edges (
-    id TEXT PRIMARY KEY,
-    source_node_id TEXT NOT NULL,
-    target_node_id TEXT NOT NULL,
-    label TEXT NOT NULL,
-    weight REAL NOT NULL DEFAULT 1.0,
-    FOREIGN KEY (source_node_id) REFERENCES nodes (id) ON DELETE CASCADE,
-    FOREIGN KEY (target_node_id) REFERENCES nodes (id) ON DELETE CASCADE
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes (type);
-  CREATE INDEX IF NOT EXISTS idx_nodes_created_at ON nodes (created_at);
-  CREATE INDEX IF NOT EXISTS idx_nodes_provenance ON nodes (provenance_id);
-  CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions (status);
-  CREATE INDEX IF NOT EXISTS idx_edges_source ON edges (source_node_id);
-  CREATE INDEX IF NOT EXISTS idx_edges_target ON edges (target_node_id);
-`;
+const BACKUP_DB_NAME = 'KenshoBackups';
+const BACKUP_STORE_NAME = 'backups';
 
 /**
  * Gère la base de données SQLite avec persistance sur IndexedDB.
@@ -97,16 +46,136 @@ export class SQLiteManager {
       } else {
         console.log('[SQLiteManager] Création d\'une nouvelle base de données...');
         this.db = new SQL.Database();
-        this.db.exec(DB_SCHEMA);
-        await this.checkpoint(true);
-        console.log('[SQLiteManager] Nouvelle base de données créée et sauvegardée.');
       }
+
+      await this.runMigrations();
 
       this.isInitialized = true;
       console.log('[SQLiteManager] ✅ Prêt.');
     } catch (error) {
       console.error('[SQLiteManager] ❌ Échec critique de l\'initialisation:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Exécute les migrations de schéma avec backup automatique et rollback en cas d'échec.
+   * Cette méthode implémente la philosophie "Les données de l'utilisateur sont sacrées".
+   */
+  private async runMigrations(): Promise<void> {
+    if (!this.db) {
+      throw new Error('[SQLiteManager] Base de données non initialisée');
+    }
+
+    const currentVersion = getCurrentVersion(this.db);
+    const targetVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+    console.log(`[SQLiteManager] Version actuelle: ${currentVersion}, Version cible: ${targetVersion}`);
+
+    if (currentVersion >= targetVersion) {
+      console.log('[SQLiteManager] Schéma à jour, pas de migration nécessaire.');
+      await this.ensureGeneralProjectExists();
+      return;
+    }
+
+    const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion);
+    console.log(`[SQLiteManager] ${pendingMigrations.length} migration(s) en attente.`);
+
+    const backupData = this.db.export();
+    await this.createBackup(`pre-migration-v${currentVersion}`, backupData);
+
+    for (const migration of pendingMigrations) {
+      try {
+        console.log(`[SQLiteManager] Application de la migration vers v${migration.version}...`);
+        migration.up(this.db);
+        setVersion(this.db, migration.version);
+        console.log(`[SQLiteManager] ✅ Migration v${migration.version} réussie`);
+      } catch (error) {
+        console.error(`[SQLiteManager] ❌ ÉCHEC de la migration v${migration.version}!`, error);
+        console.log('[SQLiteManager] Tentative de restauration depuis le backup...');
+        
+        const SQL = await initSqlJs({ locateFile: () => SQL_WASM_URL });
+        this.db.close();
+        this.db = new SQL.Database(backupData);
+        
+        const errorMessage = `La mise à jour de la base de données a échoué. Votre session a été restaurée. Veuillez contacter le support.`;
+        console.error('[SQLiteManager]', errorMessage);
+        
+        throw new Error(`Migration v${migration.version} a échoué et a été annulée.`);
+      }
+    }
+
+    await this.ensureGeneralProjectExists();
+    await this.checkpoint(true);
+  }
+
+  /**
+   * Crée un backup de la base de données dans IndexedDB.
+   * Les backups sont stockés séparément pour permettre la récupération en cas d'échec.
+   */
+  private async createBackup(name: string, data: Uint8Array): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log(`[SQLiteManager] Création du backup: ${name}...`);
+      const request = indexedDB.open(BACKUP_DB_NAME, 1);
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(BACKUP_STORE_NAME)) {
+          db.createObjectStore(BACKUP_STORE_NAME);
+        }
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction(BACKUP_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(BACKUP_STORE_NAME);
+        store.put(data, name);
+
+        tx.oncomplete = () => {
+          db.close();
+          console.log(`[SQLiteManager] ✅ Backup ${name} créé avec succès`);
+          resolve();
+        };
+
+        tx.onerror = () => {
+          db.close();
+          console.error('[SQLiteManager] Erreur lors de la création du backup:', tx.error);
+          reject(tx.error);
+        };
+      };
+
+      request.onerror = () => {
+        console.error('[SQLiteManager] Erreur lors de l\'ouverture de la base de backups:', request.error);
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * Garantit qu'un projet "Général" existe par défaut.
+   * Ce projet sert de point de départ pour les nouveaux utilisateurs.
+   */
+  private async ensureGeneralProjectExists(): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      const result = this.db.exec(`SELECT id FROM projects WHERE name = 'Général' LIMIT 1`);
+      
+      if (!result[0] || result[0].values.length === 0) {
+        console.log('[SQLiteManager] Création du projet "Général" par défaut...');
+        const now = Date.now();
+        const id = `proj-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        
+        this.db.run(`
+          INSERT INTO projects (id, name, goal, createdAt, lastActivityAt, isArchived) 
+          VALUES (?, ?, ?, ?, ?, 0)
+        `, [id, 'Général', 'Un espace pour toutes vos conversations générales.', now, now]);
+        
+        this.markAsDirty();
+        console.log('[SQLiteManager] ✅ Projet "Général" créé');
+      }
+    } catch (error) {
+      console.warn('[SQLiteManager] Impossible de créer le projet par défaut:', error);
     }
   }
 

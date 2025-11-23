@@ -1,0 +1,179 @@
+Exécution : Sprint 7 - Tâche des Jours 1-3
+Objectif : Implémenter la Fondation de Données Anti-Fragile
+Philosophie : "Les données de l'utilisateur sont sacrées. Nous les protégeons contre la corruption et nous simplifions l'expérience par défaut."
+Sous-Étape 1 : Mise à Jour du Schéma et Création du Système de Migration (Jour 1)
+1. Mise à Jour du Fichier migrations.ts :
+Nous formalisons la migration de la version 1 (Sprint 5) à la version 2 (Sprint 7).
+TypeScript
+
+// src/agents/graph/migrations.ts
+
+import { SQLDatabase } from 'sql.js';
+
+export interface Migration {
+    version: number;
+    up: (db: SQLDatabase) => void;
+    down?: (db: SQLDatabase) => void; // Optionnel, pour les tests
+}
+
+export const MIGRATIONS: Migration[] = [
+    // ... (Migration 1 reste la même)
+    {
+        version: 1,
+        up: (db: SQLDatabase) => {
+            db.run(`
+                CREATE TABLE nodes (
+                    id TEXT PRIMARY KEY,
+                    content TEXT,
+                    type TEXT,
+                    embedding TEXT,
+                    importance REAL DEFAULT 1.0,
+                    version INTEGER DEFAULT 1,
+                    replacesNodeId TEXT,
+                    createdAt INTEGER,
+                    lastAccessedAt INTEGER
+                )
+            `);
+            // ... autres tables initiales
+        }
+    },
+    
+    // NOUVELLE MIGRATION
+    {
+        version: 2,
+        up: (db: SQLDatabase) => {
+            db.run(`
+                CREATE TABLE projects (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    goal TEXT,
+                    isArchived INTEGER DEFAULT 0,
+                    createdAt INTEGER,
+                    lastActivityAt INTEGER
+                )
+            `);
+            db.run(`
+                CREATE TABLE project_tasks (
+                    id TEXT PRIMARY KEY,
+                    projectId TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    completed INTEGER DEFAULT 0,
+                    createdAt INTEGER,
+                    FOREIGN KEY (projectId) REFERENCES projects(id) ON DELETE CASCADE
+                )
+            `);
+            // Ajouter la colonne projectId à la table des conversations/nodes
+            db.run(`ALTER TABLE nodes ADD COLUMN projectId TEXT`);
+            // Créer un index pour accélérer le filtrage par projet
+            db.run(`CREATE INDEX idx_nodes_projectId ON nodes(projectId)`);
+        }
+    }
+];
+
+    Commentaire : Le schéma est complet, incluant des champs comme lastActivityAt pour le tri et isArchived pour le futur. L'utilisation de ON DELETE CASCADE garantit que si un projet est supprimé, toutes ses tâches le sont aussi.
+
+2. Implémentation de la Création du Projet "Général" par Défaut :
+Dans le SQLiteManager, la logique d'initialisation est modifiée.
+TypeScript
+
+// src/agents/graph/SQLiteManager.ts
+
+// ...
+    private async runMigrations() {
+        // ... (logique de migration existante)
+
+        // --- NOUVEAU : Création du projet par défaut ---
+        const lastMigration = MIGRATIONS[MIGRATIONS.length - 1];
+        if (currentVersion < lastMigration.version && pendingMigrations.length > 0) {
+            // Si on vient d'appliquer la dernière migration, on est sur une nouvelle installation
+            // ou une mise à jour majeure. On s'assure que le projet "Général" existe.
+            const generalProjectExists = this.db.exec(
+                "SELECT 1 FROM projects WHERE name = 'Général'"
+            )[0]?.values.length > 0;
+
+            if (!generalProjectExists) {
+                console.log('[SQLiteManager] Création du projet "Général" par défaut.');
+                const now = Date.now();
+                this.db.run(
+                    "INSERT INTO projects (id, name, goal, createdAt, lastActivityAt) VALUES (?, ?, ?, ?, ?)",
+                    [crypto.randomUUID(), 'Général', 'Un espace pour toutes vos conversations générales.', now, now]
+                );
+            }
+        }
+    }
+// ...
+
+    Commentaire : Cette logique garantit que chaque utilisateur, qu'il soit nouveau ou qu'il mette à jour son application, aura toujours le projet "Général" comme point de départ.
+
+Sous-Étape 2 : Implémentation du Backup/Rollback Anti-Fragile (Jours 2-3)
+C'est le filet de sécurité. Nous modifions le SQLiteManager pour qu'il soit paranoïaque.
+1. Mise à Jour du SQLiteManager.ts :
+TypeScript
+
+// src/agents/graph/SQLiteManager.ts
+import { openDB } from 'idb'; // Utilisation de la bibliothèque idb pour simplifier
+
+const BACKUP_DB_NAME = 'kensho-db-backups';
+const MAIN_DB_KEY = 'main.db';
+
+export class SQLiteManager {
+    // ...
+
+    private async runMigrations() {
+        const currentVersion = this.db.exec("PRAGMA user_version")[0]?.values[0]?.[0] || 0;
+        const targetVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+        if (currentVersion >= targetVersion) {
+            console.log('[SQLiteManager] Schéma à jour.');
+            return;
+        }
+
+        // --- NOUVEAU : Backup AVANT toute migration ---
+        console.log('[SQLiteManager] Création d\'un backup de pré-migration...');
+        const backupData = this.db.export();
+        await this.createBackup(`pre-migration-v${currentVersion}`, backupData);
+
+        const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion);
+
+        for (const migration of pendingMigrations) {
+            try {
+                console.log(`[SQLiteManager] Application de la migration vers v${migration.version}...`);
+                migration.up(this.db);
+                this.db.run(`PRAGMA user_version = ${migration.version}`);
+            } catch (error) {
+                console.error(`[SQLiteManager] ÉCHEC de la migration v${migration.version} !`, error);
+                console.log('[SQLiteManager] Tentative de restauration depuis le backup...');
+                
+                // --- NOUVEAU : Rollback en cas d'échec ---
+                this.db.close(); // Fermer la connexion à la DB corrompue
+                this.db = new SQL.Database(backupData); // Restaurer depuis le backup en mémoire
+                
+                // Notifier l'utilisateur et les développeurs
+                this.runtime.send('MainUI', { type: 'critical_error', payload: { message: 'La mise à jour de la base de données a échoué. Votre session a été restaurée. Veuillez contacter le support.' } });
+                
+                throw new Error(`Migration v${migration.version} a échoué et a été annulée.`);
+            }
+        }
+        
+        // ... (logique de création du projet "Général")
+        await this.checkpoint(); // Sauvegarder la DB migrée
+    }
+
+    private async createBackup(name: string, data: Uint8Array): Promise<void> {
+        const db = await openDB(BACKUP_DB_NAME, 1, {
+            upgrade: (db) => db.createObjectStore('backups')
+        });
+        await db.put('backups', data, name);
+    }
+}
+
+    Commentaire : Le flux est maintenant blindé. On ne touche pas à la base de données sans avoir une copie de sécurité. Si la migration échoue, l'état précédent est restauré instantanément, et l'utilisateur est notifié. C'est la fin des corruptions de données silencieuses.
+
+Conclusion de la Tâche
+La tâche des Jours 1-3 est terminée.
+
+    Ce qui est fait :
+        Le schéma de la base de données a été mis à jour pour inclure les projets et les tâches.
+        Un système de migration robuste et versionné est en place.
+        Un projet "Général" est créé par défaut pour une expérience utilisateur simplifiée.
+        Un mécanisme de backup et de rollback automatique protège les données de l'utilisateur contre les échecs de migration.

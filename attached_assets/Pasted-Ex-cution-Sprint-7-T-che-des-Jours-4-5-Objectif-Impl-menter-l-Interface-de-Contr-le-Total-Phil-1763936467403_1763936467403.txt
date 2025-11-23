@@ -1,0 +1,206 @@
+Exécution : Sprint 7 - Tâche des Jours 4-5
+Objectif : Implémenter l'Interface de Contrôle Total
+Philosophie : "La puissance sans la complexité." L'utilisateur doit sentir qu'il a le contrôle total, mais l'interface doit rester simple et intuitive.
+Sous-Étape 1 : La Sidebar des Projets (Jour 4)
+C'est le nouveau centre de navigation de Kensho.
+1. Création des Hooks de Données :
+Nous créons des hooks React qui utilisent useLiveQuery de Dexie pour s'abonner aux changements de la base de données en temps réel.
+TypeScript
+
+// src/ui/hooks/useProjects.ts
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../lib/db'; // Notre instance Dexie
+
+export function useProjects() {
+    const projects = useLiveQuery(
+        () => db.projects
+            .where('isArchived').equals(0)
+            .orderBy('lastActivityAt').reverse() // Tri par activité récente
+            .toArray(),
+        [] // Dépendances
+    );
+    return projects;
+}
+
+2. Implémentation du Composant Sidebar.tsx :
+TypeScript
+
+// src/ui/components/Sidebar.tsx
+import React, { useState } from 'react';
+import { useProjects } from '../hooks/useProjects';
+import { useKenshoStore } from '../stores/useKenshoStore';
+import { PlusCircle, Search } from 'lucide-react';
+
+export function Sidebar() {
+    const projects = useProjects();
+    const { activeProjectId, setActiveProjectId } = useKenshoStore();
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredProjects = projects?.filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+        <div className="sidebar bg-gray-100 p-2 flex flex-col">
+            <div className="mb-2">
+                <button className="w-full btn btn-primary">
+                    <PlusCircle size={16} /> Nouveau Projet
+                </button>
+            </div>
+            <div className="relative mb-2">
+                <Search size={16} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                    type="text"
+                    placeholder="Rechercher un projet..."
+                    className="w-full pl-8 pr-2 py-1 border rounded"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+            <nav className="flex-grow overflow-y-auto">
+                <ul>
+                    {filteredProjects?.map(project => (
+                        <li key={project.id}>
+                            <a
+                                href="#"
+                                onClick={() => setActiveProjectId(project.id)}
+                                className={`block p-2 rounded ${project.id === activeProjectId ? 'bg-blue-200' : 'hover:bg-gray-200'}`}
+                            >
+                                {project.name}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </nav>
+        </div>
+    );
+}
+
+    Commentaire : L'UI est simple et fonctionnelle. Elle utilise le hook useProjects pour obtenir une liste de projets triée par activité, et inclut une barre de recherche pour le filtrage côté client.
+
+Sous-Étape 2 : Le ProjectDashboard et les Contrôles Manuels (Jour 5)
+C'est le tableau de bord qui donne à l'utilisateur une vue d'ensemble de son projet.
+1. Création du Hook useProjectTasks :
+TypeScript
+
+// src/ui/hooks/useProjectTasks.ts
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../../lib/db';
+
+export function useProjectTasks(projectId: string | null) {
+    const tasks = useLiveQuery(
+        () => projectId ? db.project_tasks.where('projectId').equals(projectId).toArray() : [],
+        [projectId] // Le hook se ré-exécute si projectId change
+    );
+    return tasks;
+}
+
+2. Implémentation du ProjectDashboard.tsx :
+TypeScript
+
+// src/ui/components/ProjectDashboard.tsx
+import React from 'react';
+import { useKenshoStore } from '../stores/useKenshoStore';
+import { useProjectTasks } from '../hooks/useProjectTasks';
+import { db } from '../../lib/db'; // Pour les actions manuelles
+
+export function ProjectDashboard() {
+    const activeProjectId = useKenshoStore(state => state.activeProjectId);
+    const tasks = useProjectTasks(activeProjectId);
+    // ... (logique pour récupérer le nom et l'objectif du projet)
+
+    const handleToggleTask = async (taskId: string, currentState: boolean) => {
+        await db.project_tasks.update(taskId, { completed: !currentState });
+        // Le hook useLiveQuery mettra à jour l'UI automatiquement
+    };
+
+    if (!activeProjectId || activeProjectId === 'general') { // On masque pour le projet "Général"
+        return null;
+    }
+
+    return (
+        <div className="p-4 border-b">
+            <h1 className="text-2xl font-bold">{/* project.name */}</h1>
+            <p className="text-gray-600">{/* project.goal */}</p>
+            <div className="mt-4">
+                <h3 className="font-semibold">Tâches :</h3>
+                <ul className="mt-2 space-y-1">
+                    {tasks?.map(task => (
+                        <li key={task.id} className="flex items-center">
+                            <input
+                                type="checkbox"
+                                checked={!!task.completed}
+                                onChange={() => handleToggleTask(task.id, !!task.completed)}
+                                className="mr-2"
+                            />
+                            <span className={task.completed ? 'line-through text-gray-500' : ''}>
+                                {task.text}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+}
+
+    Commentaire : Le dashboard est simple. Il affiche les informations du projet et la liste des tâches. Chaque tâche a une case à cocher qui appelle directement la base de données pour mettre à jour son état. Grâce à useLiveQuery, l'UI se met à jour automatiquement.
+
+Sous-Étape 3 : La Synchronisation Multi-Onglets (Intégrée au Jour 5)
+C'est la touche finale qui rend l'expérience transparente sur plusieurs appareils.
+1. Création d'un Hook de Synchronisation :
+Nous utilisons un BroadcastChannel pour notifier les autres onglets qu'un changement a eu lieu.
+TypeScript
+
+// src/ui/hooks/useTabSync.ts
+import { useEffect } from 'react';
+
+const syncChannel = new BroadcastChannel('kensho-db-sync');
+
+// Hook pour envoyer une notification de mise à jour
+export function useNotifyTabs() {
+    return () => {
+        syncChannel.postMessage({ type: 'db_updated' });
+    };
+}
+
+// Hook pour écouter les notifications et forcer un re-render
+export function useListenForTabSync(refetchFunction: () => void) {
+    useEffect(() => {
+        const handleMessage = (event: MessageEvent) => {
+            if (event.data.type === 'db_updated') {
+                console.log('[TabSync] Changement détecté, rafraîchissement des données...');
+                refetchFunction();
+            }
+        };
+        syncChannel.addEventListener('message', handleMessage);
+        return () => syncChannel.removeEventListener('message', handleMessage);
+    }, [refetchFunction]);
+}
+
+2. Intégration dans l'Application :
+Dans notre composant principal App.tsx, nous utilisons ce hook pour rafraîchir les requêtes Dexie.
+TypeScript
+
+// src/App.tsx
+import { useListenForTabSync } from './ui/hooks/useTabSync';
+import { db } from './lib/db';
+
+function App() {
+    // Forcer Dexie à relancer ses live queries
+    useListenForTabSync(() => db.table('projects').count()); 
+
+    return (
+        // ...
+    );
+}
+
+    Commentaire : C'est une solution simple et élégante. Toute action qui modifie la base de données (comme handleToggleTask) appellera notifyTabs(). Les autres onglets, en écoutant sur le BroadcastChannel, seront notifiés et Dexie mettra à jour automatiquement les composants qui dépendent de useLiveQuery.
+
+Conclusion de la Tâche
+La tâche des Jours 4-5 est terminée.
+
+    Ce qui est fait :
+        Une Sidebar fonctionnelle qui liste les projets et permet la recherche.
+        Un ProjectDashboard qui affiche les détails du projet et permet la gestion manuelle des tâches.
+        Un système de synchronisation multi-onglets simple et efficace.

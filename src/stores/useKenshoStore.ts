@@ -26,6 +26,7 @@ import { DownloadManager, DownloadProgress } from '../core/downloads/DownloadMan
 import { toast } from 'sonner';
 import { appConfig } from '../config/app.config';
 import { ThoughtStep } from '../agents/oie/types';
+import { Project, ProjectTask } from '../agents/graph/types';
 
 
 const STORAGE_KEY = 'kensho_conversation_history';
@@ -75,6 +76,11 @@ interface KenshoState {
     statusMessage: string | null;
     currentThoughtProcess: ThoughtStep[] | null; // Processus de pensée en cours (Sprint 6)
     isDebateModeEnabled: boolean; // Active/désactive le mode débat (Sprint 6)
+    
+    // Sprint 7: Gestion des projets et tâches
+    activeProjectId: string | null;
+    projects: Project[];
+    projectTasks: Map<string, ProjectTask[]>; // Map projectId -> tasks
 
     init: () => void;
     startLLMWorker: () => void;
@@ -94,6 +100,14 @@ interface KenshoState {
     attachFile: (file: File) => void;
     detachFile: () => void;
     setDebateModeEnabled: (enabled: boolean) => void;
+    
+    // Sprint 7: Méthodes pour les projets
+    setActiveProjectId: (id: string | null) => void;
+    loadProjects: () => Promise<void>;
+    loadProjectTasks: (projectId: string) => Promise<void>;
+    createProject: (name: string, goal: string) => Promise<void>;
+    createTask: (projectId: string, text: string) => Promise<void>;
+    toggleTask: (taskId: string) => Promise<void>;
 }
 
 /**
@@ -358,6 +372,31 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
     } catch (error) {
         console.warn('[KenshoStore] IntentClassifierAgent Worker non disponible:', error);
     }
+
+    // Démarrer le GraphWorker (Sprint 7)
+    try {
+        const graphWorker = new Worker(
+            new URL('../agents/graph/worker.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
+        (window as any).__kensho_workers['GraphWorker'] = graphWorker;
+
+        graphWorker.onmessage = (e) => {
+            if (e.data.type === 'READY') {
+                console.log('[KenshoStore] ✅ GraphWorker prêt');
+            }
+        };
+
+        graphWorker.onerror = (error) => {
+            console.error('[KenshoStore] Erreur du GraphWorker:', error);
+        };
+
+        console.log('[KenshoStore] GraphWorker démarré');
+    } catch (error) {
+        console.warn('[KenshoStore] GraphWorker non disponible:', error);
+    }
 };
 
 export const useKenshoStore = create<KenshoState>((set, get) => {
@@ -385,6 +424,11 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     ocrProgress: -1,
     statusMessage: null,
     isDebateModeEnabled: true,
+    
+    // Sprint 7: État initial des projets
+    activeProjectId: null,
+    projects: [],
+    projectTasks: new Map(),
 
     /**
      * Initialise le système Kensho
@@ -812,6 +856,155 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     setDebateModeEnabled: (enabled: boolean) => {
         console.log('[KenshoStore] Mode débat:', enabled ? 'activé ✅' : 'désactivé ❌');
         set({ isDebateModeEnabled: enabled });
+    },
+
+    /**
+     * Sprint 7: Définit le projet actif
+     */
+    setActiveProjectId: (id: string | null) => {
+        console.log('[KenshoStore] Projet actif:', id);
+        set({ activeProjectId: id });
+    },
+
+    /**
+     * Sprint 7: Charge tous les projets depuis le GraphWorker
+     */
+    loadProjects: async () => {
+        const { mainBus } = get();
+        if (!mainBus) {
+            console.error('[KenshoStore] MessageBus non disponible');
+            return;
+        }
+
+        try {
+            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            if (!graphWorker) {
+                console.warn('[KenshoStore] GraphWorker non disponible');
+                return;
+            }
+
+            const projects = await mainBus.request<Project[]>('GraphWorker', {
+                method: 'getActiveProjects',
+                args: []
+            });
+
+            console.log(`[KenshoStore] ${projects.length} projet(s) chargé(s)`);
+            set({ projects });
+        } catch (error) {
+            console.error('[KenshoStore] Erreur lors du chargement des projets:', error);
+        }
+    },
+
+    /**
+     * Sprint 7: Charge les tâches d'un projet spécifique
+     */
+    loadProjectTasks: async (projectId: string) => {
+        const { mainBus } = get();
+        if (!mainBus) return;
+
+        try {
+            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            if (!graphWorker) return;
+
+            const tasks = await mainBus.request<ProjectTask[]>('GraphWorker', {
+                method: 'getProjectTasks',
+                args: [projectId]
+            });
+
+            set(state => {
+                const newTasksMap = new Map(state.projectTasks);
+                newTasksMap.set(projectId, tasks);
+                return { projectTasks: newTasksMap };
+            });
+
+            console.log(`[KenshoStore] ${tasks.length} tâche(s) chargée(s) pour projet ${projectId}`);
+        } catch (error) {
+            console.error('[KenshoStore] Erreur lors du chargement des tâches:', error);
+        }
+    },
+
+    /**
+     * Sprint 7: Crée un nouveau projet
+     */
+    createProject: async (name: string, goal: string) => {
+        const { mainBus, loadProjects } = get();
+        if (!mainBus) return;
+
+        try {
+            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            if (!graphWorker) return;
+
+            const projectId = await mainBus.request<string>('GraphWorker', {
+                method: 'createProject',
+                args: [name, goal]
+            });
+
+            console.log(`[KenshoStore] Projet créé: ${name} (${projectId})`);
+            await loadProjects();
+            
+            toast.success('Projet créé', {
+                description: `Le projet "${name}" a été créé avec succès`,
+                duration: 3000
+            });
+        } catch (error) {
+            console.error('[KenshoStore] Erreur lors de la création du projet:', error);
+            toast.error('Erreur', {
+                description: 'Impossible de créer le projet',
+                duration: 4000
+            });
+        }
+    },
+
+    /**
+     * Sprint 7: Crée une nouvelle tâche pour un projet
+     */
+    createTask: async (projectId: string, text: string) => {
+        const { mainBus, loadProjectTasks } = get();
+        if (!mainBus) return;
+
+        try {
+            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            if (!graphWorker) return;
+
+            await mainBus.request('GraphWorker', {
+                method: 'createTask',
+                args: [projectId, text]
+            });
+
+            console.log(`[KenshoStore] Tâche créée pour projet ${projectId}`);
+            await loadProjectTasks(projectId);
+        } catch (error) {
+            console.error('[KenshoStore] Erreur lors de la création de la tâche:', error);
+        }
+    },
+
+    /**
+     * Sprint 7: Bascule l'état d'une tâche (complétée/non complétée)
+     */
+    toggleTask: async (taskId: string) => {
+        const { mainBus, projectTasks, loadProjectTasks } = get();
+        if (!mainBus) return;
+
+        try {
+            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            if (!graphWorker) return;
+
+            await mainBus.request('GraphWorker', {
+                method: 'toggleTask',
+                args: [taskId]
+            });
+
+            const projectId = Array.from(projectTasks.entries())
+                .find(([_, tasks]) => tasks.some(t => t.id === taskId))?.[0];
+
+            if (projectId) {
+                await loadProjectTasks(projectId);
+            }
+
+            console.log(`[KenshoStore] Tâche ${taskId} basculée`);
+        } catch (error) {
+            console.error('[KenshoStore] Erreur lors de la bascule de la tâche:', error);
+        }
     }
     };
 });

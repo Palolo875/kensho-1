@@ -79,3 +79,28 @@ export interface IGraphStats {
   lastCheckpoint: number;
   pendingTransactions: number;
 }
+
+/**
+ * Représente un projet dans le système Kensho.
+ * Les projets organisent les conversations et tâches par contexte.
+ */
+export interface Project {
+  id: string;
+  name: string;
+  goal: string;
+  isArchived: number;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
+/**
+ * Représente une tâche associée à un projet.
+ * Les tâches sont suivies par l'IA pour détecter leur complétion automatiquement.
+ */
+export interface ProjectTask {
+  id: string;
+  projectId: string;
+  text: string;
+  completed: number;
+  createdAt: number;
+}
