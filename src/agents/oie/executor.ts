@@ -175,27 +175,68 @@ export class TaskExecutor {
     /**
      * Interpole les placeholders dans les arguments avec les résultats des étapes précédentes.
      * Exemple: {{step1_result}} sera remplacé par la valeur de stepResults.get('step1_result')
+     * 
+     * Utilise une approche récursive pour gérer correctement:
+     * - Strings avec placeholders (complets ou partiels)
+     * - Objets et arrays imbriqués
+     * - Tous types de valeurs (string, number, object, array)
      */
     private interpolateArgs(args: Record<string, any>, results: Map<string, any>): Record<string, any> {
-        // Cloner les arguments pour ne pas muter le plan original
-        let argsStr = JSON.stringify(args);
+        return this.recursiveInterpolate(args, results);
+    }
+
+    /**
+     * Interpolation récursive qui parcourt l'arbre d'arguments
+     */
+    private recursiveInterpolate(value: any, results: Map<string, any>): any {
+        // Si c'est une string, on remplace les placeholders
+        if (typeof value === 'string') {
+            return this.interpolateString(value, results);
+        }
         
-        for (const [key, value] of results.entries()) {
-            // Remplacer les placeholders comme {{step1_result}}
-            const quotedPlaceholder = `"{{${key}}}"`;  // Placeholder avec guillemets
-            const unquotedPlaceholder = `{{${key}}}`;   // Placeholder sans guillemets
-            
-            // Si le placeholder est entre guillemets dans le JSON, on remplace par la valeur JSON.stringifiée
-            if (argsStr.includes(quotedPlaceholder)) {
-                argsStr = argsStr.split(quotedPlaceholder).join(JSON.stringify(value));
+        // Si c'est un array, on interpole récursivement chaque élément
+        if (Array.isArray(value)) {
+            return value.map(item => this.recursiveInterpolate(item, results));
+        }
+        
+        // Si c'est un objet, on interpole récursivement chaque propriété
+        if (typeof value === 'object' && value !== null) {
+            const result: Record<string, any> = {};
+            for (const [key, val] of Object.entries(value)) {
+                result[key] = this.recursiveInterpolate(val, results);
             }
-            // Sinon, si le placeholder est sans guillemets, on stringify aussi (pour objets/nombres)
-            else if (argsStr.includes(unquotedPlaceholder)) {
-                argsStr = argsStr.split(unquotedPlaceholder).join(JSON.stringify(value));
+            return result;
+        }
+        
+        // Pour les autres types (number, boolean, null), on retourne tel quel
+        return value;
+    }
+
+    /**
+     * Interpole les placeholders dans une string
+     * Gère à la fois les cas de placeholder complet et de placeholder partiel
+     */
+    private interpolateString(str: string, results: Map<string, any>): any {
+        // Vérifier si la string est un placeholder pur (ex: "{{step1_result}}")
+        const purePlaceholderMatch = str.match(/^\{\{([^}]+)\}\}$/);
+        if (purePlaceholderMatch) {
+            const key = purePlaceholderMatch[1];
+            // Retourner directement la valeur (preserve le type: string, object, number, etc.)
+            return results.get(key) ?? str;
+        }
+        
+        // Sinon, remplacer tous les placeholders dans la string
+        let result = str;
+        for (const [key, value] of results.entries()) {
+            const placeholder = `{{${key}}}`;
+            if (result.includes(placeholder)) {
+                // Pour les placeholders dans une string mixte, on stringify si nécessaire
+                const replacement = typeof value === 'string' ? value : JSON.stringify(value);
+                result = result.split(placeholder).join(replacement);
             }
         }
         
-        return JSON.parse(argsStr);
+        return result;
     }
 
     /**
