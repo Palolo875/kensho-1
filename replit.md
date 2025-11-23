@@ -45,7 +45,11 @@ Preferred communication style: Simple, everyday language.
     - **Prompts system**: Optimized Chain-of-Thought prompts for LLMPlanner.
     - **LLMPlanner**: Generates execution plans via LLM, with robust JSON validation and graceful fallback.
     - **TaskExecutor**: Executes plans sequentially with result interpolation and progressive streaming.
-- **OIEAgent (Orchestration Intelligence Engine)**: Central orchestrator for multi-agent AI, dynamically routing user queries to specialized agents.
+- **OIEAgent (Orchestration Intelligence Engine)**: Central orchestrator for multi-agent AI with integrated memory and intent classification.
+    - **Intent Classification**: Détecte automatiquement MEMORIZE, FORGET, et CHAT via IntentClassifierAgent.
+    - **Memory Integration**: Récupère les souvenirs pertinents avant la planification via MemoryRetriever.
+    - **Direct Memory Operations**: Gère MEMORIZE et FORGET directement sans passer par le planificateur.
+    - **Context Enrichment**: Enrichit le contexte de conversation avec les souvenirs pour des réponses plus pertinentes.
 - **TaskPlanner**: Intelligent keyword-based routing system with confidence scoring and prioritization for agents.
 - **MainLLMAgent**: WebGPU-accelerated LLM inference (TinyLlama-1.1B-Chat) with streaming response generation and configurable parameters.
 - **ModelLoader**: Robust model loading with WebGPU availability checks, retry logic, and persistent storage requests for caching.
@@ -71,11 +75,27 @@ Preferred communication style: Simple, everyday language.
     - **Linear Search Fallback**: Utilise une recherche linéaire pour les petites bases (<300 nœuds) avant que l'index soit prêt.
     - **WASM-based**: Utilise hnswlib-wasm pour une recherche vectorielle haute performance dans le navigateur.
     - **Dynamic Label Mapping**: Gestion bidirectionnelle entre IDs de nœuds et labels numériques HNSW.
+- **EmbeddingAgent**: Agent spécialisé pour la génération d'embeddings vectoriels.
+    - **Model**: Utilise Xenova/all-MiniLM-L6-v2 (384 dimensions) via @xenova/transformers.
+    - **Batching**: Traitement par batch toutes les 500ms pour optimiser les performances.
+    - **Rate Limiting**: File d'attente pour éviter la surcharge et garantir un traitement efficace.
+    - **Lazy Loading**: Le modèle est chargé uniquement à la première utilisation.
+- **IntentClassifierAgent**: Agent de classification d'intention pour comprendre les commandes utilisateur.
+    - **Hot Path**: Patterns regex ultra-rapides pour détecter MEMORIZE, FORGET, et CHAT.
+    - **High Confidence**: Confiance de 0.90-0.99 pour les patterns reconnus, 0.5 pour CHAT par défaut.
+    - **Multilingual**: Supporte les commandes en français ("retiens que", "oublie", etc.).
+    - **Lightweight**: Aucune dépendance LLM, classification instantanée.
+- **MemoryRetriever**: Système de récupération intelligente de souvenirs.
+    - **Wide Recall**: Récupère top-20 candidats via recherche vectorielle HNSW.
+    - **Re-ranking**: Score composite basé sur similarité (60%), récence (20%), et importance (20%).
+    - **Recency Decay**: Décroissance exponentielle avec demi-vie de 30 jours.
+    - **Final Selection**: Retourne les 3 meilleurs souvenirs après re-ranking.
 - **Data Model**:
     - **IMemoryNode**: Nœud de mémoire avec contenu, embedding (384D), type, provenance, et métadonnées de versionnement.
     - **IMemoryEdge**: Relation étiquetée avec poids entre deux nœuds.
     - **IProvenance**: Traçabilité complète de l'origine des souvenirs (chat, document, inférence, auto-correction).
     - **IMemoryTransaction**: Journal atomique des opérations ADD/DELETE/UPDATE avec statuts PENDING/COMMITTED/FAILED.
+    - **Intent**: Type d'intention détectée (MEMORIZE, FORGET, CHAT) avec contenu et confiance.
 
 ### User Interface
 - **Chat Interface**: Built with React and Zustand for state management.
@@ -106,6 +126,7 @@ Preferred communication style: Simple, everyday language.
 
 ### AI/ML
 - **@mlc-ai/web-llm**: WebGPU-based LLM inference library.
+- **@xenova/transformers**: Browser-based transformer models for embeddings and NLP tasks.
 - **mathjs**: Used by CalculatorAgent for secure expression evaluation.
 - **pdfjs-dist**: PDF parsing and rendering library for document reading.
 - **tesseract.js**: OCR library for text extraction from images and scanned documents.

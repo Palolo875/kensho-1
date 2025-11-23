@@ -73,14 +73,14 @@ export class MemoryRetriever {
     return {
       id: row[0] as string,
       content: row[1] as string,
-      embedding: new Float32Array(JSON.parse(row[2] as string)),
-      type: row[3] as string,
-      provenanceId: row[4] as string,
-      version: row[5] as number,
-      replacesNodeId: row[6] as string | undefined,
-      importance: row[7] as number,
-      createdAt: row[8] as number,
-      lastAccessedAt: row[9] as number,
+      type: row[2] as string,
+      provenanceId: row[3] as string,
+      version: row[4] as number,
+      replacesNodeId: (row[5] as string) || undefined,
+      importance: row[6] as number,
+      createdAt: row[7] as number,
+      lastAccessedAt: row[8] as number,
+      embedding: new Float32Array(JSON.parse(row[9] as string)),
     };
   }
 }

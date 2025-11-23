@@ -32,8 +32,6 @@ runAgent({
       return extractor;
     }
 
-    getExtractor();
-
     let embeddingQueue: QueueItem[] = [];
     let isProcessing = false;
 

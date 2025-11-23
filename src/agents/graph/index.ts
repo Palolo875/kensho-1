@@ -259,6 +259,14 @@ export class GraphWorker {
     await this.sqliteManager.cleanup();
     this.isReady = false;
   }
+
+  public getSQLiteManager(): SQLiteManager {
+    return this.sqliteManager;
+  }
+
+  public getHNSWManager(): HNSWManager {
+    return this.hnswManager;
+  }
 }
 
 export * from './types';

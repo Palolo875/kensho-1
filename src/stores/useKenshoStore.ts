@@ -295,6 +295,54 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             workerErrors: [...state.workerErrors, workerError]
         }));
     }
+
+    try {
+        const embeddingWorker = new Worker(
+            new URL('../agents/embedding/index.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
+        (window as any).__kensho_workers['EmbeddingAgent'] = embeddingWorker;
+
+        embeddingWorker.onmessage = (e) => {
+            if (e.data.type === 'READY') {
+                console.log('[KenshoStore] ✅ EmbeddingAgent Worker prêt');
+            }
+        };
+
+        embeddingWorker.onerror = (error) => {
+            console.error('[KenshoStore] Erreur du EmbeddingAgent Worker:', error);
+        };
+
+        console.log('[KenshoStore] EmbeddingAgent Worker démarré');
+    } catch (error) {
+        console.warn('[KenshoStore] EmbeddingAgent Worker non disponible:', error);
+    }
+
+    try {
+        const intentWorker = new Worker(
+            new URL('../agents/intent-classifier/index.ts', import.meta.url),
+            { type: 'module' }
+        );
+
+        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
+        (window as any).__kensho_workers['IntentClassifierAgent'] = intentWorker;
+
+        intentWorker.onmessage = (e) => {
+            if (e.data.type === 'READY') {
+                console.log('[KenshoStore] ✅ IntentClassifierAgent Worker prêt');
+            }
+        };
+
+        intentWorker.onerror = (error) => {
+            console.error('[KenshoStore] Erreur du IntentClassifierAgent Worker:', error);
+        };
+
+        console.log('[KenshoStore] IntentClassifierAgent Worker démarré');
+    } catch (error) {
+        console.warn('[KenshoStore] IntentClassifierAgent Worker non disponible:', error);
+    }
 };
 
 export const useKenshoStore = create<KenshoState>((set, get) => ({
