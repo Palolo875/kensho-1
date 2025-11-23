@@ -1,0 +1,56 @@
+Exécution : Sprint 7 - Tâche des Jours 9-10
+Objectif : Buffer, Intégration Finale, et Démo "Le Co-Founder IA"
+Philosophie : "La démo doit être magique, mais la robustesse derrière doit être une science." Nous utilisons le buffer pour chasser les derniers bugs et nous nous assurons que chaque aspect de notre plan blindé est validé.
+Jour 9 : Intégration Finale et Tests de Robustesse
+
+    Objectif : Assembler le flux complet et le soumettre à des scénarios de test critiques.
+    Actions :
+        Tests de Bout en Bout Manuels :
+            Exécution du scénario "Lancement Blog Tech" complet, de la création du projet à la complétion de la première tâche.
+            Focus sur les cas limites :
+                Tenter de créer un projet avec un nom déjà existant.
+                Tenter de compléter une tâche qui n'existe pas.
+                Envoyer un message ambigu pour voir si le TaskCompletionDetector se déclenche à tort (il ne devrait pas).
+        Validation de la Synchronisation Multi-Onglets :
+            Ouvrir Kensho dans deux onglets.
+            Créer un projet dans l'onglet 1. Vérifier qu'il apparaît dans la sidebar de l'onglet 2 en moins de 2 secondes.
+            Compléter une tâche dans l'onglet 2. Vérifier que la case se coche dans l'onglet 1.
+        Validation du Backup de Migration (Simulation) :
+            Créer un test unitaire qui simule une migration qui échoue.
+            Vérifier que le SQLiteManager attrape l'erreur, logue un message de rollback, et que la base de données est dans son état pré-migration.
+        Polish de l'UI :
+            S'assurer que le passage d'un projet à l'autre est fluide.
+            Ajouter des états de chargement si la récupération des tâches ou des messages prend du temps.
+            Affiner le design du ProjectDashboard pour qu'il soit clair et lisible.
+
+Jour 10 : Buffer, Documentation et Démo Finale
+
+    Objectif : Finaliser le sprint et présenter une démo convaincante qui prouve la nouvelle proposition de valeur de Kensho.
+    Actions :
+        Buffer : Utiliser le temps restant pour corriger les derniers bugs d'UI ou améliorer la performance d'une requête.
+        Documentation :
+            Mettre à jour ARCHITECTURE.md avec le schéma final des tables projects et project_tasks.
+            Ajouter un diagramme de séquence pour le flux de "complétion de tâche par l'IA".
+            Documenter le rôle et l'API du ProjectContextBuilder et du TaskCompletionDetector.
+        Préparation et Exécution de la Démo :
+    Critère de Validation Final du Sprint 7 :
+        Exécution de la Démo "Le Co-Founder IA" :
+            Scénario 1 (Expérience par Défaut) :
+                Action : Lancer Kensho pour la première fois.
+                Résultat Attendu : L'interface ressemble à un chat simple. Le projet "Général" est sélectionné, mais aucun dashboard n'est visible. L'expérience est non intimidante.
+            Scénario 2 (Création d'un Projet Structuré) :
+                Action : Cliquer sur "Organiser dans un Nouveau Projet". Créer un projet nommé "Lancement Blog Tech" avec l'objectif "Créer et lancer un blog sur l'IA locale".
+                Résultat Attendu : La sidebar affiche maintenant deux projets. Le ProjectDashboard apparaît, montrant le nom et l'objectif.
+            Scénario 3 (Gestion de Tâches par l'IA) :
+                Action : Taper : Kensho, définis les tâches pour ce projet. Les étapes sont : 1. Choisir une plateforme. 2. Rédiger 3 articles initiaux. 3. Définir une stratégie de promotion.
+                Résultat Attendu : Le ProjectDashboard se met à jour avec les 3 tâches, non cochées.
+            Scénario 4 (Complétion Intelligente) :
+                Action : Poser une question : Compare Ghost et Substack pour mon blog. Kensho répond. Puis dire : Ok, merci. Je pense que je vais partir sur Ghost.
+                Résultat Attendu : Kensho répond "Excellent choix. Je mets à jour la liste des tâches." et la case à cocher à côté de "Choisir une plateforme" est maintenant cochée. Le TaskCompletionDetector a fonctionné par similarité sémantique.
+            Scénario 5 (Contrôle Manuel) :
+                Action : Cliquer manuellement sur la case à cocher de la tâche "Rédiger 3 articles initiaux".
+                Résultat Attendu : La tâche se coche immédiatement. L'utilisateur garde le contrôle.
+
+Conclusion du Sprint 7
+Statut : ✅ Succès.
+Le Sprint 7 est terminé. C'est un tournant majeur. Kensho n'est plus un simple assistant, c'est un partenaire de projet. Il a une conscience de l'objectif, peut suivre une progression, et collabore activement avec l'utilisateur pour atteindre un but. C'est la fonctionnalité qui donne à Kensho une âme et une utilité à long terme.
