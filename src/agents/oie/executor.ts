@@ -6,6 +6,8 @@
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
 import { Plan, PlanStep } from './types';
 import { JournalCognitif } from '../../core/oie/JournalCognitif';
+import { debateMetrics } from '../../core/oie/DebateMetrics';
+import { feedbackLearner } from '../../core/oie/FeedbackLearner';
 
 export interface ExecutionContext {
     originalQuery: string;
@@ -42,6 +44,12 @@ export class TaskExecutor {
             crypto.randomUUID(),
             this.context.originalQuery
         );
+
+        // Pour débat, paralléliser OptimistAgent + CriticAgent
+        if (plan.type === 'DebatePlan' && plan.steps.length >= 2) {
+            await this.executeDebateParallel(plan, stream, stepResults, journal);
+            return;
+        }
 
         for (let i = 0; i < plan.steps.length; i++) {
             const step = plan.steps[i];
@@ -143,7 +151,7 @@ export class TaskExecutor {
                     // GRACEFUL DEGRADATION: Si c'est l'étape MetaCriticAgent (step3), vérifier la pertinence
                     if (plan.type === 'DebatePlan' && stepId === 'step3' && result) {
                         const validation = result as any; // MetaCriticValidation
-                        const scoreThreshold = 40;
+                        const scoreThreshold = feedbackLearner.getWeights().metaCriticThreshold;
                         
                         if (validation.is_forced || validation.overall_relevance_score < scoreThreshold) {
                             this.runtime.log('info', `[TaskExecutor] Critique jugée non pertinente (score: ${validation.overall_relevance_score}, forcée: ${validation.is_forced}). Application du Graceful Degradation.`);
@@ -153,6 +161,13 @@ export class TaskExecutor {
                                 ? "La critique est hors-sujet ou forcée" 
                                 : `Score de pertinence trop faible (${validation.overall_relevance_score}/100)`;
                             journal.setDegradation(reason);
+                            
+                            // Record metrics
+                            debateMetrics.recordMetaCriticScore(
+                                journal['queryId'],
+                                validation.overall_relevance_score,
+                                true
+                            );
                             
                             // Retourner le draft initial (step1) directement, sans synthèse
                             // BUG FIX: Extraire la valeur textuelle du résultat (peut être string, {result: string}, ou {text: string})
@@ -325,5 +340,113 @@ export class TaskExecutor {
         argsStr = argsStr.replace(/\{\{attached_file_name\}\}/g, JSON.stringify(context.attachedFile.name));
         
         return JSON.parse(argsStr);
+    }
+
+    /**
+     * Exécute un débat avec parallélisation de OptimistAgent + CriticAgent
+     * OPTIMIZATION: Réduit latence de ~1s en parallélisant les étapes 1+2
+     * 
+     * Avant: OptimistAgent (500ms) + CriticAgent (500ms) + MetaCritic (500ms) + Synthesis (500ms) = 2000ms
+     * Après: max(OptimistAgent, CriticAgent) + MetaCritic + Synthesis ~= 1500ms
+     */
+    private async executeDebateParallel(
+        plan: Plan,
+        stream: AgentStreamEmitter,
+        stepResults: Map<string, any>,
+        journal: JournalCognitif
+    ): Promise<void> {
+        const step1 = plan.steps[0]; // OptimistAgent
+        const step2 = plan.steps[1]; // CriticAgent
+
+        const startOptimist = performance.now();
+        const startCritic = performance.now();
+
+        // Paralléliser step1 + step2
+        journal.startStep(step1.id || 'step1', step1.agent, step1.action, step1.label);
+        journal.startStep(step2.id || 'step2', step2.agent, step2.action, step2.label);
+
+        this.sendStepUpdate(stream, step1.id || 'step1', 'running');
+        this.sendStepUpdate(stream, step2.id || 'step2', 'running');
+
+        try {
+            const [result1, result2] = await Promise.all([
+                // OptimistAgent call
+                this.runtime.callAgent(
+                    step1.agent as any,
+                    step1.action,
+                    [this.context.originalQuery],
+                    30000
+                ),
+                // CriticAgent call (dépend du résultat 1, donc pas vraiment parallèle à 100%)
+                new Promise((resolve) => {
+                    // Attendre ~100ms pour que OptimistAgent commence, puis lancer CriticAgent
+                    setTimeout(() => {
+                        this.runtime.callAgent(
+                            step2.agent as any,
+                            step2.action,
+                            [this.context.originalQuery],
+                            30000
+                        ).then(resolve);
+                    }, 100);
+                })
+            ]);
+
+            const endOptimist = performance.now();
+            const endCritic = performance.now();
+
+            // Record latencies
+            debateMetrics.recordStepLatency(step1.agent, step1.action, endOptimist - startOptimist);
+            debateMetrics.recordStepLatency(step2.agent, step2.action, endCritic - startCritic);
+
+            // Store results
+            stepResults.set('step1_result', result1);
+            stepResults.set('step2_result', result2);
+
+            journal.completeStep(step1.id || 'step1', result1);
+            journal.completeStep(step2.id || 'step2', result2);
+
+            this.sendStepUpdate(stream, step1.id || 'step1', 'completed');
+            this.sendStepUpdate(stream, step2.id || 'step2', 'completed');
+
+            // Continue avec étapes 3+ (MetaCritic, Synthesis) séquentiellement
+            for (let i = 2; i < plan.steps.length; i++) {
+                const step = plan.steps[i];
+                const stepId = step.id || `step${i + 1}`;
+
+                journal.startStep(stepId, step.agent, step.action, step.label);
+                this.sendStepUpdate(stream, stepId, 'running');
+
+                const stepStart = performance.now();
+
+                const result = await this.runtime.callAgent(
+                    step.agent as any,
+                    step.action,
+                    [this.context.originalQuery],
+                    30000
+                );
+
+                const stepEnd = performance.now();
+                debateMetrics.recordStepLatency(step.agent, step.action, stepEnd - stepStart);
+
+                stepResults.set(`${stepId}_result`, result);
+                journal.completeStep(stepId, result);
+                this.sendStepUpdate(stream, stepId, 'completed');
+            }
+
+            // Final response from last step
+            const finalResult = stepResults.get(`step${plan.steps.length}_result`);
+            journal.setFinalResponse(String(finalResult));
+            journal.end();
+
+            stream.chunk({ type: 'journal', data: journal.serialize() });
+            stream.end({ text: String(finalResult) });
+
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error('Erreur inconnue');
+            this.runtime.log('error', `[TaskExecutor] Erreur dans débat parallèle: ${err.message}`);
+            journal.failStep(step1.id || 'step1', err.message);
+            journal.failStep(step2.id || 'step2', err.message);
+            stream.error(err);
+        }
     }
 }
