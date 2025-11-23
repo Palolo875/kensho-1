@@ -1,23 +1,33 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, RotateCcw, Volume2, Copy, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, RotateCcw, Volume2, Copy, Loader2, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { ThoughtStream } from "./chat/ThoughtStream";
+import type { ThoughtStep } from "@/agents/oie/types";
 
 interface AIResponseProps {
   content: string;
   thinking?: string;
   statusMessage?: string;
   ocrProgress?: number;
+  thoughtProcess?: ThoughtStep[];
 }
 
-const AIResponse = ({ content, thinking, statusMessage, ocrProgress }: AIResponseProps) => {
+const AIResponse = ({ content, thinking, statusMessage, ocrProgress, thoughtProcess }: AIResponseProps) => {
   const [showThinking, setShowThinking] = useState(false);
   const [thinkingMode, setThinkingMode] = useState<"summary" | "detailed">("summary");
 
   return (
     <div className="px-4 md:px-8 py-6 group">
       <div className="max-w-4xl">
+        {/* ThoughtStream for Debate Process (Sprint 6) */}
+        {thoughtProcess && thoughtProcess.length > 0 && (
+          <div className="mb-4">
+            <ThoughtStream />
+          </div>
+        )}
+
         {/* Status Message with OCR Progress */}
         {statusMessage && (
           <div className="mb-4 p-3 bg-secondary/50 rounded-lg border border-border/50 flex items-center gap-3">
