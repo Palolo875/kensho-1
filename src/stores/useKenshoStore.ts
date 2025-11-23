@@ -81,6 +81,7 @@ interface KenshoState {
     activeProjectId: string | null;
     projects: Project[];
     projectTasks: Map<string, ProjectTask[]>; // Map projectId -> tasks
+    projectSyncChannel: BroadcastChannel | null; // Canal de synchronisation multi-onglets
 
     init: () => void;
     startLLMWorker: () => void;
@@ -406,21 +407,6 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         set({ downloads: Array.from(downloads.values()) });
     });
 
-    // Sprint 7: BroadcastChannel pour synchronisation multi-onglets
-    const projectSyncChannel = new BroadcastChannel('kensho_project_sync');
-    projectSyncChannel.onmessage = (event) => {
-        if (event.data.type === 'projects_updated') {
-            console.log('[KenshoStore] Synchronisation multi-onglets: rechargement des projets');
-            get().loadProjects();
-        } else if (event.data.type === 'tasks_updated') {
-            console.log('[KenshoStore] Synchronisation multi-onglets: rechargement des tâches');
-            const { projectId } = event.data;
-            if (projectId) {
-                get().loadProjectTasks(projectId);
-            }
-        }
-    };
-
     return {
     messages: loadMessagesFromLocalStorage(),
     modelProgress: { phase: 'idle', progress: 0, text: 'Initialisation...' },
@@ -444,6 +430,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     activeProjectId: null,
     projects: [],
     projectTasks: new Map(),
+    projectSyncChannel: null,
 
     /**
      * Initialise le système Kensho
@@ -461,7 +448,31 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         console.log('[KenshoStore] Initialisation...');
 
         const mainBus = new MessageBus('MainThread');
-        set({ mainBus, isInitialized: true });
+
+        // Sprint 7: Initialiser le BroadcastChannel pour synchronisation multi-onglets
+        const projectSyncChannel = new BroadcastChannel('kensho_project_sync');
+        projectSyncChannel.onmessage = (event) => {
+            if (event.data.type === 'projects_updated') {
+                console.log('[KenshoStore] Synchronisation multi-onglets: rechargement des projets');
+                get().loadProjects();
+            } else if (event.data.type === 'tasks_updated') {
+                console.log('[KenshoStore] Synchronisation multi-onglets: rechargement des tâches');
+                const { projectId } = event.data;
+                if (projectId) {
+                    get().loadProjectTasks(projectId);
+                }
+            }
+        };
+
+        set({ mainBus, projectSyncChannel, isInitialized: true });
+
+        // Cleanup au unload pour éviter les fuites de ressources
+        window.addEventListener('beforeunload', () => {
+            if (projectSyncChannel) {
+                projectSyncChannel.close();
+                console.log('[KenshoStore] BroadcastChannel fermé');
+            }
+        });
 
         // Démarrer la constellation de workers
         startConstellation(set);
@@ -958,9 +969,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             await loadProjects();
             
             // Sprint 7: Synchronisation multi-onglets
-            const projectSyncChannel = new BroadcastChannel('kensho_project_sync');
-            projectSyncChannel.postMessage({ type: 'projects_updated' });
-            projectSyncChannel.close();
+            const { projectSyncChannel } = get();
+            if (projectSyncChannel) {
+                projectSyncChannel.postMessage({ type: 'projects_updated' });
+            }
             
             toast.success('Projet créé', {
                 description: `Le projet "${name}" a été créé avec succès`,
@@ -995,9 +1007,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             await loadProjectTasks(projectId);
             
             // Sprint 7: Synchronisation multi-onglets
-            const projectSyncChannel = new BroadcastChannel('kensho_project_sync');
-            projectSyncChannel.postMessage({ type: 'tasks_updated', projectId });
-            projectSyncChannel.close();
+            const { projectSyncChannel } = get();
+            if (projectSyncChannel) {
+                projectSyncChannel.postMessage({ type: 'tasks_updated', projectId });
+            }
         } catch (error) {
             console.error('[KenshoStore] Erreur lors de la création de la tâche:', error);
         }
@@ -1026,9 +1039,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 await loadProjectTasks(projectId);
                 
                 // Sprint 7: Synchronisation multi-onglets
-                const projectSyncChannel = new BroadcastChannel('kensho_project_sync');
-                projectSyncChannel.postMessage({ type: 'tasks_updated', projectId });
-                projectSyncChannel.close();
+                const { projectSyncChannel } = get();
+                if (projectSyncChannel) {
+                    projectSyncChannel.postMessage({ type: 'tasks_updated', projectId });
+                }
             }
 
             console.log(`[KenshoStore] Tâche ${taskId} basculée`);
