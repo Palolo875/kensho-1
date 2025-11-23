@@ -134,12 +134,15 @@ runAgent({
                     console.log('[OIEAgent] 🧠 Début de la planification...');
                     runtime.log('info', 'Planification de la tâche avec LLMPlanner...');
                     
-                    const plannerContext = attachedFile ? {
-                        attachedFile: {
-                            name: attachedFile.name,
-                            type: attachedFile.type,
-                        }
-                    } : {};
+                    const plannerContext = {
+                        ...(attachedFile ? {
+                            attachedFile: {
+                                name: attachedFile.name,
+                                type: attachedFile.type,
+                            }
+                        } : {}),
+                        debateModeEnabled: payload.debateModeEnabled !== false // Sprint 6: Pass debate mode
+                    };
                     
                     const plan = await planner.generatePlan(query, plannerContext);
                     

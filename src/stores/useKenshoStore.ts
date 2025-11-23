@@ -74,6 +74,7 @@ interface KenshoState {
     ocrProgress: number;
     statusMessage: string | null;
     currentThoughtProcess: ThoughtStep[] | null; // Processus de pensée en cours (Sprint 6)
+    isDebateModeEnabled: boolean; // Active/désactive le mode débat (Sprint 6)
 
     init: () => void;
     startLLMWorker: () => void;
@@ -92,6 +93,7 @@ interface KenshoState {
     clearWorkerErrors: () => void;
     attachFile: (file: File) => void;
     detachFile: () => void;
+    setDebateModeEnabled: (enabled: boolean) => void;
 }
 
 /**
@@ -382,6 +384,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     uploadProgress: 0,
     ocrProgress: -1,
     statusMessage: null,
+    isDebateModeEnabled: true,
 
     /**
      * Initialise le système Kensho
@@ -499,7 +502,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         console.log('[KenshoStore] 🔍 Workers status:', workersReady);
 
         // Préparer le payload pour l'OIE
-        const oiePayload: any = { query: text.trim() };
+        const oiePayload: any = { 
+            query: text.trim(),
+            debateModeEnabled: get().isDebateModeEnabled // Sprint 6: Passer le mode débat
+        };
         if (attachedFile) {
             oiePayload.attachedFile = {
                 buffer: attachedFile.buffer,
@@ -798,6 +804,14 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         }
         console.log('[KenshoStore] ⛔ Tous les téléchargements annulés');
         set({ modelDownloadStarted: false, isLoadingPaused: false });
+    },
+
+    /**
+     * Active/désactive le mode débat (Sprint 6)
+     */
+    setDebateModeEnabled: (enabled: boolean) => {
+        console.log('[KenshoStore] Mode débat:', enabled ? 'activé ✅' : 'désactivé ❌');
+        set({ isDebateModeEnabled: enabled });
     }
     };
 });

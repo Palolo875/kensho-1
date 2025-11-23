@@ -84,57 +84,123 @@ Preferred communication style: Simple, everyday language.
 - **mathjs**: Used by CalculatorAgent.
 - **pdfjs-dist**: PDF parsing.
 - **tesseract.js**: OCR library.
+## Sprint 6: Internal Debate System (November 23, 2025)
+
+### Overview
+Complex user questions now trigger an **internal debate** between two AI personas (Optimist "Léo" and Critic "Athéna") before synthesizing a final response. Results show significantly improved response quality and nuance.
+
+### Architecture Components
+
+#### 1. **QueryClassifier** (`src/core/oie/QueryClassifier.ts`)
+- Classifies questions as `simple` or `complex`
+- Keyword-based scoring with configurable weights
+- **Unicode Normalization**: Handles case/accents via NFD + regex
+- Heuristic: Questions > 20 words = complex
+
+#### 2. **OptimistAgent** (`src/agents/persona/optimist/index.ts`)
+- **Persona**: Léo - constructive optimist
+- Generates initial response with positive bias
+- Uses MainLLMAgent for inference
+- Output: Plain text (not JSON)
+
+#### 3. **CriticAgent** (`src/agents/persona/critic/index.ts`)
+- **Persona**: Athéna - structured critic
+- Identifies flaws, risks, weaknesses
+- Output: JSON with `{major_flaw, evidence, suggested_fix}`
+- Robust JSON validation via JSONExtractor
+
+#### 4. **LLMPlanner Enhancement** (`src/agents/oie/planner.ts`)
+- Checks: `classification === 'complex' && debateModeEnabled`
+- Generates `DebatePlan` (fixed 3-step structure)
+- Passes `debateModeEnabled` context
+
+#### 5. **TaskExecutor Improvements** (`src/agents/oie/executor.ts`)
+- **Recursive Interpolation**: Handles nested objects/arrays
+- Detects `"{{key}}"` (quoted) vs `{{key}}` (unquoted)
+- Preserves types correctly
+- Sends real-time step updates: `thought_process_start`, `thought_step_update`
+
+#### 6. **MainLLMAgent.synthesizeDebate()** (`src/agents/llm/index.ts`)
+- Synthesizes Léo + Athéna perspectives
+- Output: Balanced response integrating both views
+- Structure: Benefits + Risks + Recommendation
+
+### UI & Real-Time Streaming
+
+#### Store Extensions (`src/stores/useKenshoStore.ts`)
+- **State**: `isDebateModeEnabled: boolean` (default: true)
+- **State**: `currentThoughtProcess: ThoughtStep[] | null`
+- **Method**: `setDebateModeEnabled(enabled: boolean)`
+- Passes `debateModeEnabled` in OIE payload
+
+#### SettingsModal Toggle
+- Label: "Activer le mode Débat"
+- Description: "Débat interne entre Léo et Athéna (plus lent, meilleure qualité)"
+- Controlled by store, persists across sessions
+
+#### ThoughtStream Component (`src/components/chat/ThoughtStream.tsx`)
+- Displays debate steps in real-time
+- Title: "Journal Cognitif" (Cognitive Journal)
+- Icons with status colors (pending/running/completed/failed)
+- Smooth Tailwind animations (bounce, transition)
+
+### Debate Flow
+
+```
+User Question
+    ↓
+QueryClassifier → "simple" | "complex"
+    ↓
+IF complex && isDebateModeEnabled:
+    Step 1: OptimistAgent → draft response
+    Step 2: CriticAgent → critique JSON
+    Step 3: synthesizeDebate → final response
+    Stream chunks: thought_process_start, thought_step_update
+ELSE: Standard plan
+```
+
+### Demo Scenarios (Day 10)
+
+**Scenario 1: Debate OFF**
+- Toggle disabled
+- Question: "Est-ce une bonne idée d'apprendre Rust en 2025?"
+- Result: Standard response, no debate visible
+
+**Scenario 2: Debate ON**
+- Toggle enabled
+- Same question
+- UI shows:
+  ```
+  [⚙️] Réflexion initiale (Léo)
+  [✓] Réflexion initiale (Léo)
+  [⚙️] Examen critique (Athéna)
+  [✓] Examen critique (Athéna)
+  [⚙️] Synthèse finale
+  [✓] Synthèse finale
+  ```
+- Result: Nuanced response integrating both perspectives
+
+**Scenario 3: Transparency**
+- Click "Voir la réflexion"
+- Shows Léo's response, Athéna's critique (JSON), synthesis
+
+### Key Improvements
+- ✅ QueryClassifier handles case/accents correctly
+- ✅ Recursive interpolation for nested argument substitution
+- ✅ Real-time streaming of debate steps to UI
+- ✅ Smooth animations (non-intrusive)
+- ✅ Toggle control via settings
+- ✅ Maintains response quality for simple questions
+- ✅ Significantly improves quality for complex questions
+
 ## Centralized Download Management System (November 23, 2025)
 
 ### Overview
 Complete user control over ALL model downloads with a centralized **DownloadManager** singleton. Users decide WHEN to download, can pause/resume at any time, with full visibility of all ongoing downloads.
 
-### Key Changes
-1. **DownloadManager** (`src/core/downloads/DownloadManager.ts`):
-   - Singleton managing all downloads with unique IDs
-   - Types: 'llm' | 'embedding' | 'other'
-   - Status: 'idle' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled'
-   - Methods: register, pause, resume, pauseAll, resumeAll, updateProgress, subscribe
-
-2. **MainLLMAgent Integration**:
-   - Registers LLM download in DownloadManager
-   - Listens for START_DOWNLOAD message from user
-   - Synchronized pause/resume through DownloadManager
-
-3. **EmbeddingAgent Integration**:
-   - Lazy loading - only downloads on first use
-   - Fully integrated with DownloadManager
-   - Respects pause/resume commands
-
-4. **useKenshoStore Extensions**:
-   - New state: `downloads: DownloadProgress[]`
-   - New methods: `startModelDownload()`, `pauseAllDownloads()`, `resumeAllDownloads()`
-   - Subscribes to DownloadManager for real-time UI updates
-
-5. **ModelLoadingView Updates**:
-   - Shows initial idle state with "Démarrer le téléchargement" button
-   - Displays all active downloads
-   - Pause/resume controls per download
-   - No automatic downloads - user controls everything
-
 ### No Auto-Downloads Policy
-- ✅ LLM model doesn't load automatically
-- ✅ Embedding model only loads on first use
 - ✅ All downloads are ON-DEMAND
-- ✅ Pause/resume available for all downloads
-- ✅ State persists across tab re-mounts and browser refreshes
-- ✅ Singleton ensures consistent state across entire app
-
-### Architecture Flow
-```
-User Interface
-    ↓
-ModelLoadingView (displays all downloads)
-    ↓
-useKenshoStore (subscribes to DownloadManager)
-    ↓
-DownloadManager (singleton coordinates all downloads)
-    ↑
-MainLLMAgent, EmbeddingAgent (register downloads + respect pause)
-```
+- ✅ Pause/resume available
+- ✅ State persists across sessions
+- ✅ Singleton ensures consistent state
 

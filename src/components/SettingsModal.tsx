@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import ThemeToggle from "./ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
+import { useKenshoStore } from "@/stores/useKenshoStore";
 
 interface SettingsModalProps {
   open: boolean;
@@ -19,6 +20,8 @@ interface SettingsModalProps {
 
 const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => {
   const { firstName, lastName, setFirstName, setLastName } = useUserPreferences();
+  const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
+  const setDebateModeEnabled = useKenshoStore(state => state.setDebateModeEnabled);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,6 +102,19 @@ const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => {
                 </span>
               </Label>
               <Switch id="show-thinking" defaultChecked />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="debate-mode" className="flex flex-col space-y-1">
+                <span>Activer le mode Débat</span>
+                <span className="text-sm font-normal text-muted-foreground">
+                  Débat interne entre Léo et Athéna (plus lent, meilleure qualité)
+                </span>
+              </Label>
+              <Switch 
+                id="debate-mode" 
+                checked={isDebateModeEnabled}
+                onCheckedChange={setDebateModeEnabled}
+              />
             </div>
           </div>
 

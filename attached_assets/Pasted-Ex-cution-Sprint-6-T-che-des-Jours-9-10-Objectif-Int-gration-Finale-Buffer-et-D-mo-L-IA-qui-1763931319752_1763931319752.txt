@@ -1,0 +1,62 @@
+Exécution : Sprint 6 - Tâche des Jours 9-10
+Objectif : Intégration Finale, Buffer, et Démo "L'IA qui Doute"
+Philosophie : "La preuve est dans la réponse." La complexité que nous avons ajoutée doit se traduire par une amélioration tangible de la qualité et de la nuance des réponses.
+Jour 9 : Intégration, Benchmark et Polish
+
+    Objectif : S'assurer que toutes les pièces fonctionnent ensemble et mesurer l'impact réel de notre travail.
+    Actions :
+        Intégration de l'UI :
+            Ajouter le toggle "Activer le mode Débat (plus lent)" dans les paramètres (SettingsView.tsx).
+            Ce toggle modifie une valeur dans notre store Zustand (isDebateModeEnabled).
+            Le CognitiveProcessor lira cette valeur (transmise dans le contexte de la tâche) pour décider quel type de plan générer.
+        Exécution du Benchmark de Validation :
+            Préparation : Créer une liste de 20 questions (10 simples, 10 complexes).
+            Exécution (Mode Débat Désactivé) :
+                Poser les 20 questions.
+                Enregistrer la latence médiane et la qualité perçue (note de 1 à 10) pour chaque réponse.
+            Exécution (Mode Débat Activé) :
+                Poser les 10 questions complexes à nouveau.
+                Enregistrer la latence médiane et la qualité perçue.
+            Analyse des Résultats :
+                Hypothèse à Valider : La latence pour les questions complexes en mode débat est ~3x plus élevée, mais la note de qualité augmente d'au moins 1.5 points. Pour les questions simples, la latence reste inchangée.
+                Action : Si les résultats sont décevants, utiliser le temps restant pour affiner les prompts des personas.
+        Polish de l'UI :
+            Affiner les animations du ThoughtStream pour qu'elles soient fluides et non intrusives.
+            Améliorer le formatage du "Journal Cognitif" pour une lisibilité maximale.
+
+Jour 10 : Buffer, Documentation et Démo Finale
+
+    Objectif : Finaliser le sprint et présenter une démo convaincante.
+    Actions :
+        Buffer : Utiliser le temps restant pour corriger les derniers bugs ou améliorer la clarté d'un message d'erreur.
+        Documentation :
+            Mettre à jour ARCHITECTURE.md avec un diagramme de séquence pour le DebatePlan.
+            Documenter le rôle et le prompt de chaque nouvel agent-persona.
+            Ajouter une section sur le QueryClassifier et sa logique de poids.
+        Préparation et Exécution de la Démo :
+    Critère de Validation Final du Sprint 6 :
+        Exécution de la Démo "L'IA qui Doute" :
+            Scénario 1 (Mode Débat Désactivé) :
+                Action : S'assurer que le toggle "Mode Débat" est désactivé.
+                Action : Poser la question complexe : Est-ce une bonne idée d'apprendre Rust en 2025 ?
+                Résultat Attendu : Kensho donne une réponse rapide et de qualité "standard", sans débat visible.
+            Scénario 2 (Mode Débat Activé) :
+                Action : Activer le toggle "Mode Débat".
+                Action : Poser la même question : Est-ce une bonne idée d'apprendre Rust en 2025 ?
+                Résultat Attendu (UI en temps réel) :
+                    Le ThoughtStream apparaît et affiche les étapes :
+                        [⚙️] Réflexion initiale (Léo)
+                        [⚙️] Examen critique (Athéna)
+                        [⚙️] Synthèse finale
+                    Les statuts des icônes se mettent à jour en temps réel.
+                Résultat Attendu (Réponse Finale) : La réponse finale est visiblement plus nuancée. Elle commence par les points positifs, puis intègre clairement les risques soulevés par la critique (ex: "Cependant, il est crucial de considérer le contexte : pour un débutant, la courbe d'apprentissage peut être abrupte..."), et se termine par une recommandation conditionnelle.
+            Scénario 3 (Transparence) :
+                Action : Cliquer sur le bouton "Voir la réflexion" sous la réponse finale.
+                Résultat Attendu : Le "Journal Cognitif" s'affiche, montrant clairement :
+                    La réponse initiale de Léo.
+                    L'objet JSON de la critique d'Athéna, avec major_flaw, evidence, et suggested_fix.
+                    L'étape de synthèse.
+
+Conclusion du Sprint 6
+Statut : ✅ Succès.
+Le Sprint 6 est terminé. Kensho a fait un bond qualitatif majeur. Il ne se contente plus de répondre, il raisonne. Il peut peser le pour et le contre, identifier ses propres angles morts, et produire des réponses d'une profondeur et d'une fiabilité bien supérieures. C'est une étape décisive vers notre objectif de créer un véritable partenaire cognitif.
