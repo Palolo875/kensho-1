@@ -1,7 +1,10 @@
 // src/ui/observatory/OrionObservatory.tsx
-import React from 'react';
+import React, { useState } from 'react';
 import { ConstellationView } from './ConstellationView';
 import { LogStreamView, LogEntry } from './LogStreamView';
+import { JournalCognitifView } from './JournalCognitifView';
+import { FeedbackPanel } from './FeedbackPanel';
+import { SerializedJournal } from '../../core/oie/JournalCognitif';
 
 interface OrionObservatoryProps {
     isOpen: boolean;
@@ -11,10 +14,21 @@ interface OrionObservatoryProps {
     epoch: number;
     logs: LogEntry[];
     onKillWorker: (name: string) => void;
+    journal?: SerializedJournal | null;
 }
 
-export function OrionObservatory({ isOpen, onClose, workers, leader, epoch, logs, onKillWorker }: OrionObservatoryProps) {
+export function OrionObservatory({ isOpen, onClose, workers, leader, epoch, logs, onKillWorker, journal }: OrionObservatoryProps) {
+    const [activeTab, setActiveTab] = useState<'constellation' | 'logs' | 'journal' | 'feedback'>('journal');
+
     if (!isOpen) return null;
+
+    const handleFeedback = (feedbackData: any) => {
+        // Store feedback in localStorage for now
+        const feedbackList = JSON.parse(localStorage.getItem('kensho_feedback') || '[]');
+        feedbackList.push(feedbackData);
+        localStorage.setItem('kensho_feedback', JSON.stringify(feedbackList));
+        console.log('[Feedback]', feedbackData);
+    };
 
     return (
         <div style={styles.overlay}>
@@ -23,14 +37,46 @@ export function OrionObservatory({ isOpen, onClose, workers, leader, epoch, logs
                     <h1 style={styles.title}>Orion Observatory</h1>
                     <button onClick={onClose} style={styles.closeButton}>&times;</button>
                 </div>
+                
+                <div style={styles.tabContainer}>
+                    {(['journal', 'constellation', 'logs', 'feedback'] as const).map((tab) => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            style={{
+                                ...styles.tabButton,
+                                backgroundColor: activeTab === tab ? '#3b82f6' : '#374151'
+                            }}
+                        >
+                            {tab === 'journal' && '📊 Journal'}
+                            {tab === 'constellation' && '🌌 Constellation'}
+                            {tab === 'logs' && '📝 Logs'}
+                            {tab === 'feedback' && '💬 Feedback'}
+                        </button>
+                    ))}
+                </div>
+
                 <div style={styles.content}>
-                    <ConstellationView
-                        workers={workers}
-                        leader={leader}
-                        epoch={epoch}
-                        onKillWorker={onKillWorker}
-                    />
-                    <LogStreamView logs={logs} />
+                    {activeTab === 'journal' && (
+                        <JournalCognitifView journal={journal || null} />
+                    )}
+                    {activeTab === 'constellation' && (
+                        <ConstellationView
+                            workers={workers}
+                            leader={leader}
+                            epoch={epoch}
+                            onKillWorker={onKillWorker}
+                        />
+                    )}
+                    {activeTab === 'logs' && (
+                        <LogStreamView logs={logs} />
+                    )}
+                    {activeTab === 'feedback' && journal && (
+                        <FeedbackPanel
+                            queryId={journal.queryId}
+                            onFeedback={handleFeedback}
+                        />
+                    )}
                 </div>
             </div>
         </div>
@@ -82,6 +128,25 @@ const styles = {
         cursor: 'pointer',
         padding: 0,
         lineHeight: 1
+    },
+    tabContainer: {
+        display: 'flex' as const,
+        gap: '0.5rem',
+        padding: '0.5rem 2rem',
+        backgroundColor: '#1f2937',
+        borderBottom: '1px solid #374151',
+        overflowX: 'auto' as const
+    },
+    tabButton: {
+        padding: '0.75rem 1rem',
+        border: 'none',
+        borderRadius: '0.375rem',
+        color: '#d1d5db',
+        fontSize: '0.875rem',
+        fontWeight: 'bold' as const,
+        cursor: 'pointer',
+        transition: 'background-color 0.2s ease',
+        whiteSpace: 'nowrap' as const
     },
     content: {
         padding: '2rem',

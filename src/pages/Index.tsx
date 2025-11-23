@@ -28,7 +28,7 @@ const Index = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { workers, leader, epoch, logs, isEnabled, startObservatory, killWorker } = useObservatory();
+  const { workers, leader, epoch, logs, journal, isEnabled, startObservatory, killWorker } = useObservatory();
 
   const init = useKenshoStore(state => state.init);
   const messages = useKenshoStore(state => state.messages);
@@ -147,6 +147,7 @@ const Index = () => {
         epoch={epoch}
         logs={logs}
         onKillWorker={killWorker}
+        journal={journal}
       />
 
       {/* Toast Notifications */}

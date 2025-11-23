@@ -16,15 +16,30 @@ export interface LogEntry {
     data?: any;
 }
 
+export interface SerializedJournal {
+    type: 'debate' | 'simple';
+    queryId: string;
+    userQuery: string;
+    startTime: number;
+    endTime?: number;
+    totalDuration?: number;
+    steps: any[];
+    finalResponse?: string;
+    degradationApplied?: boolean;
+    degradationReason?: string;
+}
+
 interface ObservatoryContextType {
     workers: WorkerStatus[];
     leader: string | null;
     epoch: number;
     logs: LogEntry[];
+    journal: SerializedJournal | null;
     isEnabled: boolean;
     startObservatory: () => void;
     stopObservatory: () => void;
     killWorker: (name: string) => void;
+    setJournal: (journal: SerializedJournal | null) => void;
 }
 
 const ObservatoryContext = createContext<ObservatoryContextType | null>(null);
@@ -46,6 +61,7 @@ export function ObservatoryProvider({ children }: ObservatoryProviderProps) {
     const [leader, setLeader] = useState<string | null>(null);
     const [epoch, setEpoch] = useState(0);
     const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [journal, setJournal] = useState<SerializedJournal | null>(null);
     const [isEnabled, setIsEnabled] = useState(false);
 
     const mainBusRef = useRef<MessageBus | null>(null);
@@ -206,10 +222,12 @@ export function ObservatoryProvider({ children }: ObservatoryProviderProps) {
                 leader,
                 epoch,
                 logs,
+                journal,
                 isEnabled,
                 startObservatory,
                 stopObservatory,
-                killWorker
+                killWorker,
+                setJournal
             }}
         >
             {children}

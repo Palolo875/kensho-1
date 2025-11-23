@@ -21,6 +21,7 @@ function App() {
     const [leader, setLeader] = useState<string | null>(null);
     const [epoch, setEpoch] = useState(0);
     const [logs, setLogs] = useState<any[]>([]);
+    const [journal, setJournal] = useState<any>(null);
 
     const mainBusRef = useRef<MessageBus | null>(null);
     const workersRef = useRef<{ [key: string]: Worker }>({});
@@ -136,6 +137,7 @@ function App() {
                 epoch={epoch}
                 logs={logs}
                 onKillWorker={handleKillWorker}
+                journal={journal}
             />
         </div>
     );

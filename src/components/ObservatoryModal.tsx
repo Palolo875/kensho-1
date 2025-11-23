@@ -22,6 +22,19 @@ export interface LogEntry {
     data?: any;
 }
 
+interface SerializedJournal {
+    type: 'debate' | 'simple';
+    queryId: string;
+    userQuery: string;
+    startTime: number;
+    endTime?: number;
+    totalDuration?: number;
+    steps: any[];
+    finalResponse?: string;
+    degradationApplied?: boolean;
+    degradationReason?: string;
+}
+
 interface ObservatoryModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -30,6 +43,7 @@ interface ObservatoryModalProps {
     epoch: number;
     logs: LogEntry[];
     onKillWorker: (name: string) => void;
+    journal?: SerializedJournal | null;
 }
 
 export function ObservatoryModal({
@@ -39,7 +53,8 @@ export function ObservatoryModal({
     leader,
     epoch,
     logs,
-    onKillWorker
+    onKillWorker,
+    journal
 }: ObservatoryModalProps) {
     const getLevelIcon = (level: string) => {
         switch (level) {
@@ -70,11 +85,82 @@ export function ObservatoryModal({
                     </DialogTitle>
                 </DialogHeader>
 
-                <Tabs defaultValue="constellation" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
+                <Tabs defaultValue="journal" className="w-full">
+                    <TabsList className="grid w-full grid-cols-3">
+                        <TabsTrigger value="journal">Journal</TabsTrigger>
                         <TabsTrigger value="constellation">Constellation</TabsTrigger>
                         <TabsTrigger value="logs">Logs</TabsTrigger>
                     </TabsList>
+
+                    <TabsContent value="journal" className="space-y-4">
+                        {journal ? (
+                            <div className="space-y-4">
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="flex items-center gap-2">
+                                            📊 Journal Cognitif
+                                            {journal.degradationApplied && (
+                                                <Badge variant="destructive">Graceful Degradation</Badge>
+                                            )}
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-xs text-muted-foreground">Requête</p>
+                                                <p className="font-mono text-sm">{journal.userQuery}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-muted-foreground">Durée</p>
+                                                <p className="font-mono text-sm">{journal.totalDuration?.toFixed(0)}ms</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <p className="text-xs text-muted-foreground mb-2">Étapes</p>
+                                            <div className="space-y-2">
+                                                {journal.steps.map((step: any, idx: number) => (
+                                                    <div key={idx} className="border-l-2 border-blue-500 pl-2 text-sm">
+                                                        <div className="flex items-center gap-2">
+                                                            <Badge variant="secondary">{step.status}</Badge>
+                                                            <span className="font-semibold">{step.agent}</span>
+                                                            <span className="text-xs text-muted-foreground">({step.duration?.toFixed(0)}ms)</span>
+                                                        </div>
+                                                        <p className="text-xs text-muted-foreground mt-1">{step.action}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {journal.degradationApplied && (
+                                            <Card className="bg-yellow-500/10 border-yellow-500">
+                                                <CardContent className="pt-4">
+                                                    <p className="text-sm"><strong>⚠️ Dégradation:</strong> {journal.degradationReason}</p>
+                                                </CardContent>
+                                            </Card>
+                                        )}
+
+                                        {journal.finalResponse && (
+                                            <div>
+                                                <p className="text-xs text-muted-foreground mb-2">Réponse Finale</p>
+                                                <pre className="text-xs bg-muted p-2 rounded max-h-[200px] overflow-auto">
+                                                    {journal.finalResponse}
+                                                </pre>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </div>
+                        ) : (
+                            <Card>
+                                <CardContent className="pt-6">
+                                    <p className="text-sm text-muted-foreground text-center">
+                                        En attente d'une réponse... Le journal cognitif apparaîtra ici.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </TabsContent>
 
                     <TabsContent value="constellation" className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
