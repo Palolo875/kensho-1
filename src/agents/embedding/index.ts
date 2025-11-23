@@ -1,8 +1,10 @@
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
 import { pipeline } from '@xenova/transformers';
+import { DownloadManager } from '../../core/downloads/DownloadManager';
 
 const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';
+const DOWNLOAD_ID = 'embedding-model';
 
 interface EmbedRequest {
   text: string;
@@ -23,18 +25,36 @@ runAgent({
     async function getExtractor(): Promise<any> {
       if (!extractor && !isLoadingModel) {
         isLoadingModel = true;
+        const dm = DownloadManager.getInstance();
+        dm.register(DOWNLOAD_ID, 'embedding', 'Modèle d\'embedding', (progress) => {
+          console.log(`[EmbeddingAgent] 📥 ${progress.name}: ${Math.round(progress.progress * 100)}%`);
+        });
+
         runtime.log('info', `[EmbeddingAgent] Chargement du modèle d'embedding: ${EMBEDDING_MODEL}...`);
         console.log(`[EmbeddingAgent] 🚀 Chargement du modèle: ${EMBEDDING_MODEL}`);
         try {
           extractor = await pipeline('feature-extraction', EMBEDDING_MODEL, {
             progress_callback: (progress: any) => {
+              // Vérifier si en pause
+              if (dm.isPaused(DOWNLOAD_ID)) {
+                dm.waitIfPaused(DOWNLOAD_ID);
+              }
               console.log(`[EmbeddingAgent] Chargement: ${progress.file} (${Math.round(progress.progress)}%)`);
+              dm.updateProgress(DOWNLOAD_ID, {
+                id: DOWNLOAD_ID,
+                type: 'embedding',
+                name: 'Modèle d\'embedding',
+                status: 'downloading',
+                progress: progress.progress / 100,
+              });
             }
           });
           runtime.log('info', '[EmbeddingAgent] Modèle d\'embedding prêt.');
           console.log('[EmbeddingAgent] ✅ Modèle d\'embedding prêt.');
+          dm.unregister(DOWNLOAD_ID);
         } catch (error) {
           isLoadingModel = false;
+          dm.unregister(DOWNLOAD_ID);
           throw error;
         }
       }

@@ -2,9 +2,11 @@
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
 import { ModelLoader } from '../../core/models/ModelLoader';
+import { DownloadManager } from '../../core/downloads/DownloadManager';
 import * as webllm from '@mlc-ai/web-llm';
 
 const MODEL_ID = 'Phi-3-mini-4k-instruct-q4f32_1-MLC'; // Upgrade Sprint 3 : Phi-3 pour une meilleure qualité
+const DOWNLOAD_ID = 'llm-model';
 
 // Paramètres de génération par défaut
 const DEFAULT_GENERATION_PARAMS = {
@@ -27,31 +29,47 @@ export interface GenerationParams {
 
 let engine: webllm.MLCEngine | null = null;
 let modelLoadingPromise: Promise<void> | null = null;
+const dm = DownloadManager.getInstance();
 
 // Le ModelLoader enverra ses mises à jour au thread principal via postMessage
 const modelLoader = new ModelLoader((progress) => {
     self.postMessage({ type: 'MODEL_PROGRESS', payload: progress });
+    // Mettre à jour le DownloadManager aussi
+    dm.updateProgress(DOWNLOAD_ID, {
+        id: DOWNLOAD_ID,
+        type: 'llm',
+        name: 'Modèle LLM (Phi-3)',
+        status: progress.phase === 'ready' ? 'completed' : 'downloading' as any,
+        progress: progress.progress,
+    });
 }, { allowPause: true });
 
 // Gérer les messages de pause/reprise/start du téléchargement
 self.addEventListener('message', (event) => {
     if (event.data.type === 'PAUSE_DOWNLOAD') {
         modelLoader.pause();
+        dm.pause(DOWNLOAD_ID);
     } else if (event.data.type === 'RESUME_DOWNLOAD') {
         modelLoader.resume();
+        dm.resume(DOWNLOAD_ID);
     } else if (event.data.type === 'START_DOWNLOAD') {
         // Démarrer le téléchargement à la demande de l'utilisateur
         if (!modelLoadingPromise) {
             console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle (sur demande):', MODEL_ID);
+            dm.register(DOWNLOAD_ID, 'llm', 'Modèle LLM (Phi-3)', (progress) => {
+                console.log(`[MainLLMAgent] 📥 ${progress.name}: ${Math.round(progress.progress * 100)}%`);
+            });
             modelLoadingPromise = modelLoader.loadModel(MODEL_ID).then(() => {
                 engine = modelLoader.getEngine();
                 console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
+                dm.unregister(DOWNLOAD_ID);
                 self.postMessage({
                     type: 'MODEL_PROGRESS',
                     payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
                 });
             }).catch((error) => {
                 console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
+                dm.unregister(DOWNLOAD_ID);
                 self.postMessage({
                     type: 'MODEL_ERROR',
                     payload: { message: error.message }

@@ -84,3 +84,57 @@ Preferred communication style: Simple, everyday language.
 - **mathjs**: Used by CalculatorAgent.
 - **pdfjs-dist**: PDF parsing.
 - **tesseract.js**: OCR library.
+## Centralized Download Management System (November 23, 2025)
+
+### Overview
+Complete user control over ALL model downloads with a centralized **DownloadManager** singleton. Users decide WHEN to download, can pause/resume at any time, with full visibility of all ongoing downloads.
+
+### Key Changes
+1. **DownloadManager** (`src/core/downloads/DownloadManager.ts`):
+   - Singleton managing all downloads with unique IDs
+   - Types: 'llm' | 'embedding' | 'other'
+   - Status: 'idle' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled'
+   - Methods: register, pause, resume, pauseAll, resumeAll, updateProgress, subscribe
+
+2. **MainLLMAgent Integration**:
+   - Registers LLM download in DownloadManager
+   - Listens for START_DOWNLOAD message from user
+   - Synchronized pause/resume through DownloadManager
+
+3. **EmbeddingAgent Integration**:
+   - Lazy loading - only downloads on first use
+   - Fully integrated with DownloadManager
+   - Respects pause/resume commands
+
+4. **useKenshoStore Extensions**:
+   - New state: `downloads: DownloadProgress[]`
+   - New methods: `startModelDownload()`, `pauseAllDownloads()`, `resumeAllDownloads()`
+   - Subscribes to DownloadManager for real-time UI updates
+
+5. **ModelLoadingView Updates**:
+   - Shows initial idle state with "Démarrer le téléchargement" button
+   - Displays all active downloads
+   - Pause/resume controls per download
+   - No automatic downloads - user controls everything
+
+### No Auto-Downloads Policy
+- ✅ LLM model doesn't load automatically
+- ✅ Embedding model only loads on first use
+- ✅ All downloads are ON-DEMAND
+- ✅ Pause/resume available for all downloads
+- ✅ State persists across tab re-mounts and browser refreshes
+- ✅ Singleton ensures consistent state across entire app
+
+### Architecture Flow
+```
+User Interface
+    ↓
+ModelLoadingView (displays all downloads)
+    ↓
+useKenshoStore (subscribes to DownloadManager)
+    ↓
+DownloadManager (singleton coordinates all downloads)
+    ↑
+MainLLMAgent, EmbeddingAgent (register downloads + respect pause)
+```
+

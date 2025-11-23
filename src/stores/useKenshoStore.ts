@@ -22,6 +22,7 @@
 import { create, StoreApi } from 'zustand';
 import { MessageBus } from '../core/communication/MessageBus';
 import { ModelLoaderProgress } from '../core/models/ModelLoader';
+import { DownloadManager, DownloadProgress } from '../core/downloads/DownloadManager';
 import { toast } from 'sonner';
 import { appConfig } from '../config/app.config';
 
@@ -57,6 +58,7 @@ interface AttachedFile {
 interface KenshoState {
     messages: Message[];
     modelProgress: ModelLoaderProgress;
+    downloads: DownloadProgress[];
     isKenshoWriting: boolean;
     mainBus: MessageBus | null;
     isInitialized: boolean;
@@ -79,6 +81,8 @@ interface KenshoState {
     startModelDownload: () => void;
     pauseModelDownload: () => void;
     resumeModelDownload: () => void;
+    pauseAllDownloads: () => void;
+    resumeAllDownloads: () => void;
     loadMessagesFromStorage: () => void;
     clearWorkerErrors: () => void;
     attachFile: (file: File) => void;
@@ -349,9 +353,17 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
     }
 };
 
-export const useKenshoStore = create<KenshoState>((set, get) => ({
+export const useKenshoStore = create<KenshoState>((set, get) => {
+    // S'abonner aux changements des téléchargements
+    const dm = DownloadManager.getInstance();
+    dm.subscribe((downloads) => {
+        set({ downloads: Array.from(downloads.values()) });
+    });
+
+    return {
     messages: loadMessagesFromLocalStorage(),
     modelProgress: { phase: 'idle', progress: 0, text: 'Initialisation...' },
+    downloads: [],
     isKenshoWriting: false,
     mainBus: null,
     isInitialized: false,
@@ -706,5 +718,26 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
             llmWorker.postMessage({ type: 'RESUME_DOWNLOAD' });
             set({ isLoadingPaused: false });
         }
-    }
-}));
+    },
+
+    /**
+     * Met en pause TOUS les téléchargements
+     */
+    pauseAllDownloads: () => {
+        const dm = DownloadManager.getInstance();
+        dm.pauseAll();
+        console.log('[KenshoStore] ⏸️ Tous les téléchargements mis en pause');
+        set({ isLoadingPaused: true });
+    },
+
+    /**
+     * Reprend TOUS les téléchargements
+     */
+    resumeAllDownloads: () => {
+        const dm = DownloadManager.getInstance();
+        dm.resumeAll();
+        console.log('[KenshoStore] ▶️ Tous les téléchargements repris');
+        set({ isLoadingPaused: false });
+    },
+    };
+});
