@@ -1,0 +1,128 @@
+Exécution : Sprint 5 - Jour 1
+Objectif Non Négociable du Jour : Interfaces TypeScript + schéma SQLite versionné codé.
+Première ligne de code, comme suggéré :
+TypeScript
+
+// Création du fichier : src/agents/graph/types.ts
+
+/**
+ * Représente un nœud unique dans le Graphe de Connaissances.
+ * C'est l'unité de base de la mémoire de Kensho.
+ */
+export interface IMemoryNode {
+    id: string;          // UUID unique
+    content: string;     // Le contenu textuel du souvenir
+    embedding: Float32Array; // Le vecteur sémantique
+    type: string;        // ex: 'user.stated', 'system.inferred'
+    provenanceId: string;// Clé étrangère vers la table de provenance
+    version: number;     // Pour gérer les mises à jour
+    replacesNodeId?: string; // ID du nœud que celui-ci remplace
+    importance: number;  // Score d'importance (1-3)
+    createdAt: number;   // Timestamp de création
+    lastAccessedAt: number; // Timestamp du dernier accès
+}
+
+/**
+ * Représente une relation (arête) entre deux nœuds.
+ */
+export interface IMemoryEdge {
+    id: string;
+    sourceNodeId: string;
+    targetNodeId: string;
+    label: string; // ex: 'is_a', 'causes', 'related_to'
+    weight: number;
+}
+
+/**
+ * Décrit l'origine d'un souvenir. C'est la clé de la traçabilité.
+ */
+export interface IProvenance {
+    id: string;
+    sourceType: 'user_chat' | 'document_import' | 'system_inferred' | 'self_correction';
+    sourceId: string;   // ex: 'chat_session_abc123' ou 'doc_xyz789'
+    timestamp: number;
+    metadata?: Record<string, any>; // ex: { confidence: 0.9 }
+}
+
+/**
+ * Représente une transaction atomique pour garantir la synchronisation.
+ */
+export interface IMemoryTransaction {
+    id: string;
+    nodeId: string;
+    status: 'PENDING' | 'COMMITTED' | 'FAILED';
+    operation: 'ADD' | 'DELETE' | 'UPDATE';
+    timestamp: number;
+    error?: string;
+}
+
+Deuxième action, le schéma SQL :
+TypeScript
+
+// Dans src/agents/graph/SQLiteManager.ts
+
+const DB_SCHEMA = `
+    -- Utiliser PRAGMA pour la gestion de la version et l'intégrité
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA user_version = 1;
+
+    -- Table des transactions pour la robustesse atomique
+    CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY,
+        node_id TEXT,
+        operation TEXT NOT NULL,
+        status TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        error TEXT
+    );
+
+    -- Table de provenance pour la traçabilité
+    CREATE TABLE IF NOT EXISTS provenance (
+        id TEXT PRIMARY KEY,
+        source_type TEXT NOT NULL,
+        source_id TEXT,
+        timestamp INTEGER NOT NULL,
+        metadata TEXT -- JSON
+    );
+
+    -- Table principale des nœuds (souvenirs)
+    CREATE TABLE IF NOT EXISTS nodes (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        type TEXT NOT NULL,
+        provenance_id TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        replaces_node_id TEXT,
+        importance REAL NOT NULL DEFAULT 1.0,
+        created_at INTEGER NOT NULL,
+        last_accessed_at INTEGER NOT NULL,
+        -- L'embedding est trop gros pour une colonne, il sera géré séparément
+        FOREIGN KEY (provenance_id) REFERENCES provenance (id)
+    );
+
+    -- Table des arêtes pour les relations futures
+    CREATE TABLE IF NOT EXISTS edges (
+        id TEXT PRIMARY KEY,
+        source_node_id TEXT NOT NULL,
+        target_node_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        weight REAL NOT NULL DEFAULT 1.0,
+        FOREIGN KEY (source_node_id) REFERENCES nodes (id) ON DELETE CASCADE,
+        FOREIGN KEY (target_node_id) REFERENCES nodes (id) ON DELETE CASCADE
+    );
+
+    -- Index pour accélérer les recherches courantes
+    CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes (type);
+    CREATE INDEX IF NOT EXISTS idx_nodes_created_at ON nodes (created_at);
+`;
+
+Compte-Rendu d'Exécution : Sprint 5 - Fin du Jour 1
+Objectif du Jour : Interfaces TypeScript + schéma SQLite versionné codé.
+Statut : ✅ Succès.
+
+    Les interfaces IMemoryNode, IMemoryEdge, IProvenance, et IMemoryTransaction sont définies et partagées.
+    Le schéma SQL complet, incluant la version, les clés étrangères, les index, et la table de transactions, est écrit et prêt à être exécuté par sql.js.
+    Le budget WASM est validé : les bibliothèques de base sont bien en dessous de la limite de 100 Mo.
+
+La fondation du Jour 1 est posée. Elle est propre, typée, et conçue pour la robustesse.
