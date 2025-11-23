@@ -5,6 +5,7 @@
 
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
 import { Plan, PlanStep } from './types';
+import { JournalCognitif } from '../../core/oie/JournalCognitif';
 
 export interface ExecutionContext {
     originalQuery: string;
@@ -19,6 +20,7 @@ export interface ExecutionContext {
  * Le TaskExecutor exécute un plan d'action généré par le LLMPlanner.
  * Il gère le chaînage des étapes et le streaming de la réponse finale.
  * Il envoie aussi les mises à jour de statut à l'UI pour la transparence.
+ * Il crée un JournalCognitif pour tracer toutes les étapes de réflexion.
  */
 export class TaskExecutor {
     constructor(
@@ -33,11 +35,21 @@ export class TaskExecutor {
      */
     public async execute(plan: Plan, stream: AgentStreamEmitter): Promise<void> {
         const stepResults = new Map<string, any>();
+        
+        // Créer un JournalCognitif pour tracer les étapes
+        const journal = new JournalCognitif(
+            plan.type === 'DebatePlan' ? 'debate' : 'simple',
+            crypto.randomUUID(),
+            this.context.originalQuery
+        );
 
         for (let i = 0; i < plan.steps.length; i++) {
             const step = plan.steps[i];
             const isLastStep = i === plan.steps.length - 1;
             const stepId = step.id || `step${i + 1}`;
+
+            // Enregistrer le début de l'étape dans le journal
+            journal.startStep(stepId, step.agent, step.action, step.label);
 
             // Envoyer le statut 'running' à l'UI via le stream
             this.sendStepUpdate(stream, stepId, 'running');
@@ -122,13 +134,60 @@ export class TaskExecutor {
                     stepResults.set(resultKey, result);
                     this.runtime.log('info', `[TaskExecutor] Résultat de l'étape ${i + 1}: ${JSON.stringify(result).substring(0, 100)}`);
                     
+                    // Enregistrer le succès dans le journal
+                    journal.completeStep(stepId, result);
+                    
                     // Envoyer le statut 'completed' avec le résultat à l'UI
                     this.sendStepUpdate(stream, stepId, 'completed', result);
+                    
+                    // GRACEFUL DEGRADATION: Si c'est l'étape MetaCriticAgent (step3), vérifier la pertinence
+                    if (plan.type === 'DebatePlan' && stepId === 'step3' && result) {
+                        const validation = result as any; // MetaCriticValidation
+                        const scoreThreshold = 40;
+                        
+                        if (validation.is_forced || validation.overall_relevance_score < scoreThreshold) {
+                            this.runtime.log('info', `[TaskExecutor] Critique jugée non pertinente (score: ${validation.overall_relevance_score}, forcée: ${validation.is_forced}). Application du Graceful Degradation.`);
+                            
+                            // Marquer le journal avec le degradation
+                            const reason = validation.is_forced 
+                                ? "La critique est hors-sujet ou forcée" 
+                                : `Score de pertinence trop faible (${validation.overall_relevance_score}/100)`;
+                            journal.setDegradation(reason);
+                            
+                            // Retourner le draft initial (step1) directement, sans synthèse
+                            // BUG FIX: Extraire la valeur textuelle du résultat (peut être string, {result: string}, ou {text: string})
+                            const draftResult = stepResults.get('step1_result');
+                            let draftResponse: string;
+                            if (typeof draftResult === 'string') {
+                                draftResponse = draftResult;
+                            } else if (draftResult && typeof draftResult === 'object') {
+                                // Essayer .result d'abord (format message bus), puis .text, sinon stringify
+                                draftResponse = (draftResult as any).result || (draftResult as any).text || JSON.stringify(draftResult);
+                            } else {
+                                draftResponse = String(draftResult);
+                            }
+                            
+                            journal.setFinalResponse(draftResponse);
+                            journal.end();
+                            
+                            this.runtime.log('info', '[TaskExecutor] Retour du draft initial sans synthèse.');
+                            
+                            // Envoyer le journal via chunk (canal dédié)
+                            stream.chunk({ type: 'journal', data: journal.serialize() });
+                            
+                            // Terminer le stream avec le format standard {text: string}
+                            stream.end({ text: draftResponse });
+                            return;
+                        }
+                    }
                 }
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
                 this.runtime.log('error', `[TaskExecutor] L'étape ${i + 1} a échoué: ${errorMessage}`);
+                
+                // Enregistrer l'échec dans le journal
+                journal.failStep(stepId, errorMessage);
                 
                 // Envoyer le statut 'failed' à l'UI
                 this.sendStepUpdate(stream, stepId, 'failed', undefined, errorMessage);
@@ -143,7 +202,13 @@ export class TaskExecutor {
                     [fallbackPrompt],
                     {
                         onChunk: (chunk) => stream.chunk(chunk),
-                        onEnd: (final) => stream.end(final),
+                        onEnd: (final) => {
+                            const finalResponse = (final as any).text || fallbackPrompt;
+                            journal.setFinalResponse(finalResponse);
+                            journal.end();
+                            stream.chunk({ type: 'journal', data: journal.serialize() });
+                            stream.end(final);
+                        },
                         onError: (err) => stream.error(err),
                     }
                 );

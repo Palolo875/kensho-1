@@ -1,0 +1,174 @@
+Exécution : Sprint 8 - Tâche des Jours 7-8
+Objectif : Implémenter l'Interface de Transparence et de Feedback Actif
+Philosophie : "La confiance naît de la transparence. L'amélioration naît du feedback." Nous allons donner à l'utilisateur une vue claire sur le raisonnement de l'IA et un moyen simple de dire si ce raisonnement a été utile.
+Sous-Étape 3.1 : Mise à Jour du CognitiveProcessor pour le Journaling
+Le processeur doit maintenant construire et retourner un JournalCognitif détaillé.
+Fichier : src/core/oie/CognitiveProcessor.ts (extrait)
+TypeScript
+
+// ... (dans la méthode run)
+
+// Après l'exécution du plan par le TaskExecutor
+const { finalResponse, journal } = await this.taskExecutor.execute(plan, context);
+
+// Enrichir le journal avec des informations finales
+journal.setFinalResponse(finalResponse);
+journal.end();
+
+// Envoyer la réponse finale et le journal à l'UI
+this.runtime.sendToUI('final-response', {
+    queryId: this.task.id,
+    content: finalResponse,
+    journal: journal.serialize() // Sérialiser le journal pour le transport
+});
+
+    Commentaire : Le CognitiveProcessor ne retourne plus une simple chaîne de caractères, mais un objet contenant la réponse et le journal sérialisé.
+
+Sous-Étape 3.2 : Mise à Jour de l'UI (JournalCognitif.tsx et ChatMessage.tsx)
+Nous allons créer les composants React pour afficher ces nouvelles informations.
+Fichier : src/ui/components/JournalCognitif.tsx
+TypeScript
+
+// src/ui/components/JournalCognitif.tsx
+import React from 'react';
+import { SerializedJournal } from '../../core/oie/JournalCognitif';
+
+interface JournalProps {
+  journal: SerializedJournal;
+}
+
+// Un composant pour afficher une seule étape du journal
+const JournalStep: React.FC<{ step: any }> = ({ step }) => (
+    <div className="journal-step">
+        <h4>{step.title} ({step.duration.toFixed(0)}ms)</h4>
+        <pre>{step.content}</pre>
+        {step.meta && <small>Meta: {JSON.stringify(step.meta)}</small>}
+    </div>
+);
+
+export const JournalCognitif: React.FC<JournalProps> = ({ journal }) => {
+    if (!journal || journal.type !== 'debate') return null;
+
+    return (
+        <div className="journal-container">
+            <h3>Processus de Réflexion ({journal.totalDuration.toFixed(0)}ms)</h3>
+            {journal.steps.map((step, index) => (
+                <JournalStep key={index} step={step} />
+            ))}
+        </div>
+    );
+};
+
+Fichier : src/ui/components/ChatMessage.tsx (extrait)
+TypeScript
+
+// ...
+
+const ChatMessage: React.FC<{ message: Message }> = ({ message }) => {
+    const [showJournal, setShowJournal] = useState(false);
+
+    // ...
+
+    return (
+        <div className={`message ${message.role}`}>
+            {/* ... (contenu du message) */}
+
+            {message.journal && message.journal.type === 'debate' && (
+                <div className="message-actions">
+                    <button onClick={() => setShowJournal(!showJournal)}>
+                        🧠 {showJournal ? 'Masquer' : 'Voir'} la réflexion
+                    </button>
+                    
+                    {/* NOUVEAU : Boutons de satisfaction */}
+                    <div className="satisfaction-buttons">
+                        <button title="Utile" onClick={() => logSatisfaction(message.id, 5)}>🎯</button>
+                        <button title="Moyen" onClick={() => logSatisfaction(message.id, 3)}>🤷</button>
+                        <button title="Inutile" onClick={() => logSatisfaction(message.id, 1)}>💩</button>
+                    </div>
+                </div>
+            )}
+
+            {showJournal && message.journal && <JournalCognitif journal={message.journal} />}
+        </div>
+    );
+};
+
+    Commentaire : Le ChatMessage affiche maintenant conditionnellement le bouton "Voir la réflexion" et les nouveaux boutons de satisfaction si un journal de débat est présent. Le JournalCognitif itère sur les étapes enregistrées pour les afficher.
+
+Sous-Étape 3.3 : Implémentation du Stockage du Feedback
+Nous devons créer la logique pour enregistrer le feedback de l'utilisateur.
+Fichier : src/lib/db.ts (extrait de SQLiteManager)
+TypeScript
+
+// ... (dans la méthode initializeSchema)
+
+// NOUVELLE TABLE
+db.run(`
+    CREATE TABLE IF NOT EXISTS debate_feedback (
+        id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        query_id TEXT NOT NULL,
+        satisfaction_score INTEGER NOT NULL,
+        timestamp INTEGER NOT NULL
+    )
+`);
+
+Fichier : src/ui/hooks/useChat.ts (extrait)
+TypeScript
+
+// ...
+
+const useChat = () => {
+    // ...
+
+    const logSatisfaction = (queryId: string, score: number) => {
+        console.log(`Satisfaction pour ${queryId}: ${score}/5`);
+        // Envoyer un message au GraphWorker pour enregistrer le feedback
+        // Note : On pourrait créer un 'FeedbackAgent' dédié plus tard.
+        runtime.callAgent('GraphWorker', 'logDebateFeedback', [{
+            queryId,
+            score
+        }]);
+    };
+
+    return { messages, sendMessage, logSatisfaction };
+};
+
+Fichier : src/agents/GraphWorker/index.ts (extrait)
+TypeScript
+
+// ... (dans defineAgent)
+
+public: {
+    // ... (méthodes existantes)
+
+    async logDebateFeedback(args: { queryId: string, score: number }): Promise<void> {
+        const message = this.sqliteManager.db.exec(
+            "SELECT trace_id FROM messages WHERE id = ?", 
+            [args.queryId]
+        )[0]?.values[0]?.[0];
+
+        if (!message) {
+            console.error(`[GraphWorker] Impossible de trouver le trace_id pour le message ${args.queryId}`);
+            return;
+        }
+
+        this.sqliteManager.db.run(
+            "INSERT INTO debate_feedback (id, trace_id, query_id, satisfaction_score, timestamp) VALUES (?, ?, ?, ?, ?)",
+            [crypto.randomUUID(), message.trace_id, args.queryId, args.score, Date.now()]
+        );
+        this.sqliteManager.setDirty(); // Marquer la DB pour sauvegarde
+    }
+}
+
+    Commentaire : Nous avons ajouté une nouvelle table pour le feedback. L'UI appelle une nouvelle méthode de l'agent GraphWorker qui enregistre le score de satisfaction, en le liant au traceId de la conversation pour une analyse future par le DebateOptimizer.
+
+Conclusion de la Tâche
+
+    Statut : ✅ Terminé.
+    Livrables :
+        Un composant JournalCognitif qui affiche les étapes d'un débat.
+        Des boutons de satisfaction sur les messages issus d'un débat.
+        La logique backend pour stocker ce feedback de manière persistante.
+
+L'utilisateur ne voit plus une boîte noire qui "réfléchit", mais un partenaire dont il peut suivre le raisonnement et évaluer la performance. C'est une étape fondamentale pour la confiance et l'amélioration continue.

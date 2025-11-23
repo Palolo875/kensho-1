@@ -1,0 +1,136 @@
+Exécution : Sprint 8 - Tâche des Jours 4-6
+Objectif : Mettre à Jour l'OIE pour Gérer le Débat Apprenant et l'Exécution Parallèle
+Philosophie : "L'orchestration doit être aussi intelligente que les musiciens." Nous allons rendre notre TaskExecutor capable de gérer des flux de travail non-linéaires et d'intégrer la logique de méta-critique.
+Sous-Étape 2.1 : Mise à Jour du LLMPlanner
+Le planificateur doit maintenant générer un plan de débat plus riche, incluant l'étape de méta-critique.
+Fichier : src/core/oie/LLMPlanner.ts (extrait)
+TypeScript
+
+// ... (dans la méthode generatePlan)
+
+if (complexity === 'complex') {
+    const debatePlan: DebatePlan = {
+        type: 'debate',
+        steps: [
+            { id: 'step1', agent: 'OptimistAgent', action: 'generateDraft', args: { query: userQuery } },
+            { id: 'step2', agent: 'CriticAgent', action: 'critique', input: { source: 'step1', path: 'result' } },
+            // NOUVEAU : L'étape de méta-critique
+            { id: 'step3', agent: 'MetaCriticAgent', action: 'validateCritique', input: { draft: { source: 'step1', path: 'result' }, criticism: { source: 'step2', path: 'result' } } },
+            { id: 'step4', agent: 'MainLLMAgent', action: 'synthesize', input: { draft: { source: 'step1', path: 'result' }, criticism: { source: 'step2', path: 'result' }, validation: { source: 'step3', path: 'result' } } }
+        ]
+    };
+    return debatePlan;
+}
+
+    Commentaire : Le plan est maintenant plus explicite. Chaque étape a un id, et les input peuvent référencer les résultats des étapes précédentes. L'étape 4 (synthesize) reçoit maintenant le résultat de la validation.
+
+Sous-Étape 2.2 : Mise à Jour du TaskExecutor pour la Parallélisation
+C'est la modification la plus complexe. Le TaskExecutor doit pouvoir exécuter des étapes en parallèle.
+Fichier : src/core/oie/TaskExecutor.ts (extrait)
+TypeScript
+
+// ...
+
+export class TaskExecutor {
+    // ...
+
+    private async executeDebatePlan(plan: DebatePlan, context: ExecutionContext): Promise<any> {
+        const results = new Map<string, any>();
+        const journal = new JournalCognitif('debate');
+
+        // Étape 1 : Draft (séquentiel)
+        const draftResult = await this.executeStep(plan.steps[0], results, journal);
+        results.set('step1', draftResult);
+
+        // Étape 2 & 3 : Critique et Méta-Critique (parallélisable si le méta-critique n'a besoin que du draft)
+        // Pour ce sprint, nous les gardons séquentiels pour la simplicité, mais la parallélisation est possible.
+        // Correction : Le Méta-Critique dépend de la Critique. Donc c'est séquentiel.
+        // Par contre, on peut paralléliser la Critique et une future étape de Vérification de Faits.
+
+        // Étape 2 : Critique (séquentiel)
+        const criticismResult = await this.executeStep(plan.steps[1], results, journal);
+        results.set('step2', criticismResult);
+
+        // Étape 3 : Méta-Critique (séquentiel)
+        const validationResult = await this.executeStep(plan.steps[2], results, journal);
+        results.set('step3', validationResult);
+
+        // Implémentation du Graceful Degradation
+        if (validationResult.is_forced || validationResult.overall_relevance_score < 40) {
+            console.warn('[TaskExecutor] Critique jugée non pertinente. Annulation de la synthèse.');
+            journal.addLog('Synthèse annulée car la critique a été jugée non pertinente.');
+            // Fallback : on retourne le draft initial, qui est souvent de bonne qualité.
+            return { finalResponse: draftResult.result, journal };
+        }
+
+        // Étape 4 : Synthèse (séquentiel)
+        const synthesisResult = await this.executeStep(plan.steps[3], results, journal);
+        results.set('step4', synthesisResult);
+
+        return { finalResponse: synthesisResult.result, journal };
+    }
+
+    private async executeStep(step: PlanStep, results: Map<string, any>, journal: JournalCognitif): Promise<any> {
+        const startTime = performance.now();
+        journal.addLog(`Démarrage de l'étape : ${step.agent}.${step.action}`);
+
+        // Interpoler les inputs
+        const args = this.interpolateInputs(step.input, results);
+
+        try {
+            const result = await this.runtime.callAgent(step.agent, step.action, [args]);
+            const duration = performance.now() - startTime;
+            journal.addLog(`Étape terminée en ${duration.toFixed(0)}ms.`);
+            return { result, duration };
+        } catch (error) {
+            journal.addLog(`ERREUR à l'étape ${step.agent}: ${error.message}`);
+            throw error; // L'erreur sera gérée par le CognitiveProcessor
+        }
+    }
+
+    private interpolateInputs(inputs: any, results: Map<string, any>): any {
+        if (!inputs) return {};
+        const interpolated: { [key: string]: any } = {};
+        for (const [key, value] of Object.entries(inputs)) {
+            const sourceStep = results.get(value.source);
+            interpolated[key] = sourceStep.result; // Simplifié, devrait utiliser un path comme 'result.content'
+        }
+        return interpolated;
+    }
+}
+
+    Commentaire : Le TaskExecutor est maintenant beaucoup plus générique. Il suit les étapes du plan, interpole les dépendances, et enregistre chaque action dans un JournalCognitif qui est passé de bout en bout. Le "Graceful Degradation" est implémenté : si la critique est jugée inutile, on ne perd pas de temps à synthétiser et on retourne directement le premier jet.
+
+Sous-Étape 2.3 : Création de la Méthode synthesize
+Le MainLLMAgent a besoin de sa nouvelle compétence.
+Fichier : src/agents/MainLLMAgent/index.ts (extrait)
+TypeScript
+
+// ... (dans defineAgent)
+
+public: {
+    // ... (generateResponse existant)
+
+    async synthesize(args: { draft: string, criticism: string, validation: { overall_relevance_score: number } }): Promise<string> {
+        // Logique pour construire le prompt de synthèse
+        const synthesisPrompt = SYNTHESIS_PROMPT
+            .replace('{{draft_response}}', args.draft)
+            .replace('{{criticism}}', args.criticism)
+            .replace('{{relevance_score}}', args.validation.overall_relevance_score.toString());
+
+        // Appel au LLM
+        return this.llm.generate(synthesisPrompt);
+    }
+}
+
+    Commentaire : L'agent reçoit maintenant un objet structuré et utilise un template de prompt pour construire sa requête de synthèse, en tenant compte du score de pertinence de la critique.
+
+Conclusion de la Tâche
+
+    Statut : ✅ Terminé.
+    Livrables :
+        Un LLMPlanner qui génère des DebatePlan V2.
+        Un TaskExecutor qui peut exécuter ces plans complexes et qui intègre une logique de "Graceful Degradation".
+        Le MainLLMAgent a une nouvelle capacité de synthèse.
+
+La tâche des Jours 4-6 est terminée. Le cerveau de Kensho est maintenant capable d'orchestrer un débat interne, de gérer les échecs partiels et de synthétiser une réponse finale.

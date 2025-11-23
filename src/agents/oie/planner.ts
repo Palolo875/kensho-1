@@ -108,13 +108,14 @@ export class LLMPlanner {
     }
     
     /**
-     * Crée un DebatePlan fixe pour les questions complexes
-     * Le plan est toujours le même : Optimiste -> Critique -> Synthèse
+     * Crée un DebatePlan V2 fixe pour les questions complexes
+     * Le plan inclut maintenant une étape de méta-critique pour valider la pertinence
+     * Plan : Optimiste -> Critique -> Méta-Critique -> Synthèse (avec Graceful Degradation)
      */
     private createDebatePlan(userQuery: string): Plan {
         return {
             type: 'DebatePlan',
-            thought: 'Cette question nécessite une réflexion approfondie. Je vais procéder par débat interne.',
+            thought: 'Cette question nécessite une réflexion approfondie. Je vais procéder par débat interne avec validation de pertinence.',
             steps: [
                 {
                     id: 'step1',
@@ -132,12 +133,23 @@ export class LLMPlanner {
                 },
                 {
                     id: 'step3',
+                    agent: 'MetaCriticAgent',
+                    action: 'validateCritique',
+                    args: {
+                        draft: '{{step1_result}}',
+                        criticism: '{{step2_result}}'
+                    },
+                    label: 'Validation de la critique (Arbitre)'
+                },
+                {
+                    id: 'step4',
                     agent: 'MainLLMAgent',
                     action: 'synthesizeDebate',
                     args: {
                         originalQuery: userQuery,
                         draftResponse: '{{step1_result}}',
-                        critique: '{{step2_result}}'
+                        critique: '{{step2_result}}',
+                        validation: '{{step3_result}}'
                     },
                     label: 'Synthèse finale'
                 }

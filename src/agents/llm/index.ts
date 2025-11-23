@@ -304,9 +304,9 @@ runAgent({
         runtime.registerStreamMethod(
             'synthesizeDebate',
             async (payload: any, stream: AgentStreamEmitter) => {
-                console.log('[MainLLMAgent] 🧠 Synthèse de débat demandée');
+                console.log('[MainLLMAgent] 🧠 Synthèse de débat demandée (Sprint 8)');
                 
-                const { originalQuery, draftResponse, critique } = payload.args?.[0] || payload;
+                const { originalQuery, draftResponse, critique, validation } = payload.args?.[0] || payload;
                 
                 if (!engine) {
                     const error = new Error('Le moteur LLM n\'est pas encore prêt. Veuillez patienter...');
@@ -316,7 +316,17 @@ runAgent({
                     return;
                 }
                 
-                // Construire le prompt de synthèse
+                // Sprint 8: Construire le prompt de synthèse avec validation de pertinence
+                const validationInfo = validation ? `
+
+**VALIDATION DE LA CRITIQUE (Arbitre) :**
+Score de pertinence : ${validation.overall_relevance_score}/100
+Point le plus pertinent : ${validation.most_relevant_point}
+Critique forcée : ${validation.is_forced ? 'Oui' : 'Non'}
+
+➡️ Cette validation t'indique à quel point la critique est pertinente pour la question posée.
+` : '';
+                
                 const SYNTHESIS_PROMPT = `Tu es un assistant IA qui doit synthétiser un débat interne pour fournir une réponse équilibrée et nuancée.
 
 **CONTEXTE :**
@@ -326,17 +336,21 @@ Question originale : "${originalQuery}"
 ${draftResponse}
 
 **CRITIQUE (Athéna) :**
-${typeof critique === 'object' ? JSON.stringify(critique, null, 2) : critique}
+${typeof critique === 'object' ? JSON.stringify(critique, null, 2) : critique}${validationInfo}
 
 **TA MISSION :**
 Synthétise ces deux perspectives pour fournir une réponse finale qui :
 1. Reconnaît les points forts identifiés par Léo
-2. Intègre les préoccupations légitimes d'Athéna
-3. Fournit une recommandation équilibrée et nuancée
-4. Reste claire et actionnable pour l'utilisateur
+2. Intègre les préoccupations légitimes d'Athéna${validation ? `
+3. Prends en compte le score de pertinence de la critique (${validation.overall_relevance_score}/100)
+   - Si le score est élevé (>70), accorde plus de poids aux préoccupations d'Athéna
+   - Si le score est moyen (40-70), trouve un équilibre
+   - Si le score est faible (<40), privilégie l'analyse de Léo` : ''}
+4. Fournit une recommandation équilibrée et nuancée
+5. Reste claire et actionnable pour l'utilisateur
 
 **RÈGLES :**
-- Ne mentionne PAS Léo ni Athéna dans ta réponse
+- Ne mentionne PAS Léo, Athéna, ou l'Arbitre dans ta réponse
 - Parle directement à l'utilisateur
 - Sois concis (moins de 250 mots)
 - Fournis une réponse pratique et équilibrée
