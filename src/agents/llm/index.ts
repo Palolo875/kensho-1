@@ -149,12 +149,27 @@ runAgent({
 
                 console.log('[MainLLMAgent] ✅ Prompt valide:', prompt.substring(0, 50) + '...');
 
+                // Sprint 7: Enrichir le system prompt avec contexte projet si actif
+                let systemPrompt = customParams?.system_prompt ?? DEFAULT_SYSTEM_PROMPT;
+                if (typeof window !== 'undefined') {
+                    const kenshoStore = (window as any)?.useKenshoStore?.getState?.();
+                    if (kenshoStore?.activeProjectId && kenshoStore?.projects) {
+                        const activeProject = kenshoStore.projects.find((p: any) => p.id === kenshoStore.activeProjectId);
+                        const projectTasks = kenshoStore.projectTasks?.get(kenshoStore.activeProjectId) || [];
+                        if (activeProject) {
+                            const ProjectContextBuilder = require('../../core/oie/ProjectContextBuilder').ProjectContextBuilder;
+                            const projectContext = ProjectContextBuilder.buildProjectContext(activeProject, projectTasks);
+                            systemPrompt = DEFAULT_SYSTEM_PROMPT + '\n' + projectContext;
+                        }
+                    }
+                }
+
                 // Fusionner les paramètres par défaut avec les paramètres personnalisés
                 const params: Required<GenerationParams> = {
                     temperature: customParams?.temperature ?? DEFAULT_GENERATION_PARAMS.temperature,
                     max_tokens: customParams?.max_tokens ?? DEFAULT_GENERATION_PARAMS.max_tokens,
                     top_p: customParams?.top_p ?? DEFAULT_GENERATION_PARAMS.top_p,
-                    system_prompt: customParams?.system_prompt ?? DEFAULT_SYSTEM_PROMPT,
+                    system_prompt: systemPrompt,
                 };
 
                 // Valider les paramètres

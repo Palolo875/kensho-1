@@ -6,6 +6,8 @@ import { TaskExecutor } from './executor';
 import { GraphWorker } from '../graph';
 import { MemoryRetriever } from '../graph/MemoryRetriever';
 import type { Intent } from '../intent-classifier';
+import { ProjectContextBuilder } from '../../core/oie/ProjectContextBuilder';
+import { TaskCompletionDetector } from '../../core/oie/TaskCompletionDetector';
 
 runAgent({
     name: 'OIEAgent',
@@ -134,6 +136,18 @@ runAgent({
                     console.log('[OIEAgent] 🧠 Début de la planification...');
                     runtime.log('info', 'Planification de la tâche avec LLMPlanner...');
                     
+                    // Sprint 7: Enrichir la requête avec le contexte du projet si actif
+                    let enrichedQuery = query;
+                    const kenshoStore = (window as any)?.useKenshoStore?.getState?.();
+                    if (kenshoStore?.activeProjectId && kenshoStore?.projects) {
+                        const activeProject = kenshoStore.projects.find((p: any) => p.id === kenshoStore.activeProjectId);
+                        const projectTasks = kenshoStore.projectTasks?.get(kenshoStore.activeProjectId) || [];
+                        if (activeProject) {
+                            enrichedQuery = ProjectContextBuilder.enrichPromptWithProjectContext(query, activeProject, projectTasks);
+                            console.log('[OIEAgent] 📋 Contexte projet ajouté à la requête');
+                        }
+                    }
+                    
                     const plannerContext = {
                         ...(attachedFile ? {
                             attachedFile: {
@@ -144,7 +158,7 @@ runAgent({
                         debateModeEnabled: payload.debateModeEnabled !== false // Sprint 6: Pass debate mode
                     };
                     
-                    const plan = await planner.generatePlan(query, plannerContext);
+                    const plan = await planner.generatePlan(enrichedQuery, plannerContext);
                     
                     console.log('[OIEAgent] 📋 Plan généré:', plan);
                     runtime.log('info', `Plan généré: "${plan.thought}"`);
@@ -180,7 +194,37 @@ runAgent({
                     };
                     
                     const executor = new TaskExecutor(runtime, executionContext);
-                    await executor.execute(plan, stream);
+                    
+                    // Sprint 7: Créer un wrapper pour capturer la réponse et détecter les tâches complétées
+                    const responseCollector = {
+                        chunks: [] as any[],
+                        wrappedStream: {
+                            chunk: (chunk: any) => {
+                                responseCollector.chunks.push(chunk);
+                                stream.chunk(chunk);
+                            },
+                            end: (data: any) => stream.end(data),
+                            error: (err: Error) => stream.error(err)
+                        } as any
+                    };
+                    
+                    await executor.execute(plan, responseCollector.wrappedStream);
+                    
+                    // Sprint 7: Détection automatique des tâches complétées
+                    if (kenshoStore?.activeProjectId && kenshoStore?.projects && ProjectContextBuilder.detectProjectMention(query)) {
+                        const activeProject = kenshoStore.projects.find((p: any) => p.id === kenshoStore.activeProjectId);
+                        const projectTasks = kenshoStore.projectTasks?.get(kenshoStore.activeProjectId) || [];
+                        if (activeProject && projectTasks.length > 0) {
+                            const responseText = responseCollector.chunks.map(c => c.text || c.data || '').join('');
+                            const completedTasks = TaskCompletionDetector.detectCompletedTasks(responseText, projectTasks);
+                            if (completedTasks.length > 0) {
+                                console.log(`[OIEAgent] ✨ ${completedTasks.length} tâche(s) détectée(s) comme complétée(s)`);
+                                for (const task of completedTasks) {
+                                    await runtime.callAgent('GraphWorker', 'toggleTask', [task.id]);
+                                }
+                            }
+                        }
+                    }
                     
                     console.log('[OIEAgent] ✅ Exécution terminée');
                     
