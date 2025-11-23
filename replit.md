@@ -65,11 +65,13 @@ Preferred communication style: Simple, everyday language.
     - **Atomic Transactions**: Garantit la cohérence entre SQLite et HNSW via un journal de transactions avec rollback automatique.
     - **Cross-System Validation**: Validation croisée entre la base de données et l'index vectoriel pour éviter les incohérences.
     - **Crash Resilience**: Conçu pour survivre aux rechargements brutaux (F5) sans corruption de données.
+    - **Public Getters**: getSQLiteManager() et getHNSWManager() pour accès encapsulé aux managers (résout issues de bundler avec private fields).
 - **SQLiteManager**: Gestion de la base de données SQLite avec persistance sur IndexedDB.
     - **Schema Versionné**: Utilise PRAGMA user_version pour la gestion des migrations.
     - **Automatic Checkpointing**: Sauvegarde automatique toutes les 30 secondes avec optimisation dirty flag.
     - **Transaction Journal**: Table de transactions pour la traçabilité et le diagnostic des échecs.
     - **Foreign Keys**: Contraintes d'intégrité référentielle pour garantir la cohérence des données.
+    - **Column Order (nodes table)**: id, content, type, provenance_id, version, replaces_node_id, importance, created_at, last_accessed_at, embedding.
 - **HNSWManager**: Index de recherche vectorielle avec Lazy Loading pour démarrage rapide.
     - **Lazy Initialization**: Ne bloque pas le démarrage de l'application, reconstruction en arrière-plan.
     - **Linear Search Fallback**: Utilise une recherche linéaire pour les petites bases (<300 nœuds) avant que l'index soit prêt.
@@ -79,17 +81,20 @@ Preferred communication style: Simple, everyday language.
     - **Model**: Utilise Xenova/all-MiniLM-L6-v2 (384 dimensions) via @xenova/transformers.
     - **Batching**: Traitement par batch toutes les 500ms pour optimiser les performances.
     - **Rate Limiting**: File d'attente pour éviter la surcharge et garantir un traitement efficace.
-    - **Lazy Loading**: Le modèle est chargé uniquement à la première utilisation.
+    - **Lazy Loading**: Le modèle est chargé uniquement à la première utilisation (dans getExtractor, pas au démarrage).
+    - **Worker Tracking**: Tracé dans __kensho_workers['EmbeddingAgent'] pour l'orchestration.
 - **IntentClassifierAgent**: Agent de classification d'intention pour comprendre les commandes utilisateur.
     - **Hot Path**: Patterns regex ultra-rapides pour détecter MEMORIZE, FORGET, et CHAT.
     - **High Confidence**: Confiance de 0.90-0.99 pour les patterns reconnus, 0.5 pour CHAT par défaut.
     - **Multilingual**: Supporte les commandes en français ("retiens que", "oublie", etc.).
     - **Lightweight**: Aucune dépendance LLM, classification instantanée.
+    - **Worker Tracking**: Tracé dans __kensho_workers['IntentClassifierAgent'] pour l'orchestration.
 - **MemoryRetriever**: Système de récupération intelligente de souvenirs.
     - **Wide Recall**: Récupère top-20 candidats via recherche vectorielle HNSW.
     - **Re-ranking**: Score composite basé sur similarité (60%), récence (20%), et importance (20%).
     - **Recency Decay**: Décroissance exponentielle avec demi-vie de 30 jours.
     - **Final Selection**: Retourne les 3 meilleurs souvenirs après re-ranking.
+    - **Column Mapping**: Correct mapping de colonnes SQLite dans rowToNode (ordre: id, content, type, provenance_id, version, replaces_node_id, importance, created_at, last_accessed_at, embedding).
 - **Data Model**:
     - **IMemoryNode**: Nœud de mémoire avec contenu, embedding (384D), type, provenance, et métadonnées de versionnement.
     - **IMemoryEdge**: Relation étiquetée avec poids entre deux nœuds.
@@ -99,7 +104,7 @@ Preferred communication style: Simple, everyday language.
 
 ### User Interface
 - **Chat Interface**: Built with React and Zustand for state management.
-    - **Zustand Store (useKenshoStore)**: LocalStorage persistence for conversation history, worker error tracking, and auto-save.
+    - **Zustand Store (useKenshoStore)**: LocalStorage persistence for conversation history, worker error tracking, and auto-save. Initializes EmbeddingAgent and IntentClassifierAgent workers with global tracking.
     - **ChatInput Component**: User input with validation, character limits, and dynamic placeholders.
     - **ChatView**: Message display with auto-scroll and responsive layout.
     - **ModelLoadingView Component**: Enhanced loading UX with phase-specific icons, progress bar, and contextual hints.
@@ -135,3 +140,16 @@ Preferred communication style: Simple, everyday language.
 - **ESLint**: Code linting.
 - **PostCSS**: CSS processing.
 - **Tailwind CSS**: Utility-first styling.
+
+## Recent Changes (Sprint 5 - Final Fixes)
+
+**Date**: November 23, 2025
+
+### Critical Fixes Applied:
+1. **Private Field Access Issue**: Added public getters `getSQLiteManager()` and `getHNSWManager()` to GraphWorker to resolve bundler compatibility issues with TypeScript private fields.
+2. **OIEAgent Integration**: Updated to use public getters instead of private field access, added proper error handling for MEMORIZE operations with ensureReady() calls.
+3. **MemoryRetriever Column Mapping**: Corrected rowToNode() method to use correct column order from SQLite schema (id→0, content→1, type→2, provenance_id→3, version→4, replaces_node_id→5, importance→6, created_at→7, last_accessed_at→8, embedding→9).
+4. **EmbeddingAgent Lazy Loading**: Removed eager getExtractor() call during initialization - model now loads only on first embed request.
+5. **Worker Tracking**: Updated useKenshoStore to properly track EmbeddingAgent and IntentClassifierAgent workers in global __kensho_workers object for orchestration.
+
+All fixes have been validated and the application compiles without errors. The workflow is running successfully on port 5000.
