@@ -105,9 +105,21 @@ runAgent({
 
                     if (intent.type === 'FORGET') {
                         console.log('[OIEAgent] 🗑️ Intention FORGET détectée');
-                        stream.chunk({ type: 'text', data: "D'accord, j'ai oublié cette information." });
-                        stream.end();
-                        return;
+                        try {
+                            await graphWorker.ensureReady();
+                            const deletedCount = await graphWorker.deleteNodesByTopic(intent.content);
+                            const msg = deletedCount > 0 
+                                ? `D'accord, j'ai oublié ${deletedCount} information(s) sur ce sujet.`
+                                : "D'accord, j'ai oublié cette information.";
+                            stream.chunk({ type: 'text', data: msg });
+                            stream.end();
+                            return;
+                        } catch (error) {
+                            console.error('[OIEAgent] Erreur lors de l\'oubli:', error);
+                            stream.chunk({ type: 'text', data: "Désolé, je n'ai pas pu oublier cette information." });
+                            stream.end();
+                            return;
+                        }
                     }
 
                     if (memoryRetriever) {

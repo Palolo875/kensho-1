@@ -55,7 +55,19 @@ export class MemoryRetriever {
       return { node: c.node, score: compositeScore };
     });
 
-    const finalMemories = rankedCandidates
+    // Grouper par replaces_node_id pour ne garder que la version la plus récente
+    const versionedMap = new Map<string, { node: any; score: number; baseId: string }>();
+    
+    for (const rc of rankedCandidates) {
+      const baseId = rc.node.replacesNodeId || rc.node.id;
+      const existing = versionedMap.get(baseId);
+      
+      if (!existing || rc.node.version > existing.node.version) {
+        versionedMap.set(baseId, { node: rc.node, score: rc.score, baseId });
+      }
+    }
+
+    const finalMemories = Array.from(versionedMap.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, FINAL_K)
       .map(r => r.node);

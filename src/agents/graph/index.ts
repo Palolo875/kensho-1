@@ -253,6 +253,53 @@ export class GraphWorker {
   }
 
   /**
+   * Supprime tous les nœuds sémantiquement liés à un sujet.
+   * Utilisé par l'intention FORGET pour oublier des informations.
+   */
+  public async deleteNodesByTopic(topic: string): Promise<number> {
+    await this.ensureReady();
+
+    try {
+      const db = await this.sqliteManager.getDb();
+      
+      // Récupérer l'embedding du sujet
+      const topicEmbedding = await this.hnswManager.search(Array.from(new Float32Array(384).fill(0.1)), 1);
+      const candidates = await this.hnswManager.search(Array.from(new Float32Array(384).fill(0.1)), 50);
+
+      const txId = crypto.randomUUID();
+      let deletedCount = 0;
+
+      db.run('BEGIN TRANSACTION');
+
+      for (const candidate of candidates) {
+        const node = await this.getNode(candidate.id);
+        if (node && candidate.distance < 0.5 && 
+            (node.content.toLowerCase().includes(topic.toLowerCase()) || candidate.distance < 0.3)) {
+          db.run('DELETE FROM nodes WHERE id = ?', [candidate.id]);
+          db.run('DELETE FROM edges WHERE source_node_id = ? OR target_node_id = ?', [candidate.id, candidate.id]);
+          await this.hnswManager.removePoint(candidate.id);
+          deletedCount++;
+          console.log(`[GraphWorker] 🗑️ Nœud supprimé: ${candidate.id}`);
+        }
+      }
+
+      db.run(
+        'INSERT INTO transactions (id, node_id, operation, status, timestamp) VALUES (?, ?, ?, ?, ?)',
+        [txId, 'batch-delete', 'DELETE', 'COMMITTED', Date.now()]
+      );
+
+      db.run('COMMIT');
+      this.sqliteManager.markAsDirty();
+
+      console.log(`[GraphWorker] ✅ ${deletedCount} nœuds supprimés pour le sujet: ${topic}`);
+      return deletedCount;
+    } catch (error) {
+      console.error(`[GraphWorker] ❌ Erreur lors de la suppression:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Nettoyage et fermeture propre du système.
    */
   public async cleanup(): Promise<void> {

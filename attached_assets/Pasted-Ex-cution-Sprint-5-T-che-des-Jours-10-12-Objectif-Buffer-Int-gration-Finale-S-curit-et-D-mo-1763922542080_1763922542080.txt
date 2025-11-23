@@ -1,0 +1,55 @@
+Exécution : Sprint 5 - Tâche des Jours 10-12
+Objectif : Buffer, Intégration Finale, Sécurité et Démo "L'IA qui se Souvient"
+Philosophie : "La confiance se gagne dans les détails." Nous utilisons le buffer pour polir, sécuriser et documenter, en nous assurant que la fonctionnalité est non seulement impressionnante, mais aussi robuste et digne de confiance.
+Jour 10 : Intégration Finale et Débogage
+
+    Objectif : Assembler le flux complet et chasser les bugs d'intégration.
+    Actions :
+        Tests de Bout en Bout : Exécution manuelle du scénario "Projet Phénix" complet dans l'environnement de développement.
+        Utilisation de l'Observatory :
+            Vérifier que l'appel à l'IntentClassifierAgent est visible.
+            Vérifier que l'appel au GraphWorker pour addNode est correct.
+            Lors de la question de rappel, vérifier que l'appel au MemoryRetriever est fait et qu'il retourne les bons souvenirs.
+            Inspecter le prompt final envoyé au LLMPlanner pour confirmer que la section "SOUVENIRS PERTINENTS" est bien présente et correctement remplie.
+        Débogage : Correction des problèmes typiques d'intégration (mauvais nom de méthode, payload incorrect, erreur de sérialisation, etc.).
+
+Jour 11 : Sécurité et Robustesse
+
+    Objectif : Implémenter les dernières exigences de sécurité et de robustesse que nous avons identifiées.
+    Actions :
+        Implémentation de la Commande "Oublie" :
+            Ajouter la méthode deleteNodesByTopic au GraphWorker. Cette méthode prend un sujet, trouve tous les nœuds sémantiquement liés via une recherche HNSW, et les supprime de SQLite et de l'index HNSW (en utilisant le journal de transaction).
+            Connecter cette méthode à l'intention FORGET dans le CognitiveProcessor.
+        Implémentation de l'Export Chiffré :
+            Ajouter un bouton "Exporter ma mémoire" dans l'Observatory.
+            Au clic, le GraphWorker exporte la base SQLite en Uint8Array.
+            Une fonction utilitaire demande un mot de passe à l'utilisateur et utilise l'API SubtleCrypto du navigateur pour chiffrer les données (AES-GCM).
+            Le blob chiffré est proposé au téléchargement.
+        Gestion des Conflits (v1) :
+            Modifier la méthode addNode pour qu'elle recherche d'abord un nœud sémantiquement très similaire. Si elle en trouve un, elle crée le nouveau nœud avec le champ replacesNodeId pointant vers l'ancien, et incrémente le champ version.
+            Modifier le MemoryRetriever pour que, s'il récupère plusieurs versions d'un même fait, il ne retourne que la plus récente (celle avec la version la plus élevée).
+
+Jour 12 : Buffer, Documentation et Démo Finale
+
+    Objectif : Finaliser le sprint et valider le succès.
+    Actions :
+        Buffer : Utiliser le temps restant pour corriger les derniers bugs ou améliorer la performance d'une requête SQL.
+        Documentation : Mettre à jour ARCHITECTURE.md avec un diagramme de séquence montrant le nouveau flux du CognitiveProcessor (Intent -> Recall -> Plan -> Execute). Documenter le schéma de la base de données de la mémoire.
+        Préparation de la Démo : S'assurer que l'environnement de démo est propre et que le scénario est maîtrisé.
+    Critère de Validation Final du Sprint 5 :
+        Exécution de la Démo "Projet Phénix Étendu" :
+            Action : Ouvrir Kensho. Taper : Kensho, retiens que mon projet secret s'appelle "Projet Phénix" et qu'il est confidentiel.
+            Vérifier : Kensho répond "C'est noté."
+            Action : Recharger la page (F5).
+            Vérifier : L'application redémarre sans erreur.
+            Action : Poser la question : Quel est le statut de mon projet secret ?
+            Résultat Attendu : Kensho répond : "Vous faites référence au 'Projet Phénix'. Vous m'avez indiqué qu'il est confidentiel, donc je n'ai pas d'informations sur son statut, mais je sais que c'est le nom de votre projet secret."
+            Action : Taper : En fait, le Projet Phénix est maintenant public.
+            Vérifier : Kensho répond "C'est noté."
+            Action : Poser à nouveau : Quel est le statut de mon projet secret ?
+            Résultat Attendu : Kensho répond : "Le 'Projet Phénix' est maintenant public. Je n'ai pas d'informations spécifiques sur son statut actuel. Comment puis-je vous aider à ce sujet ?" (Il utilise la dernière information et ne mentionne plus la confidentialité).
+            Action : Taper : Oublie tout sur le projet Phénix.
+            Vérifier : Kensho répond "D'accord, j'ai oublié cette information."
+            Action : Poser une dernière fois : Quel est le statut de mon projet secret ?
+            Résultat Attendu : Kensho répond : "Je n'ai aucune information concernant un 'projet secret' dans ma mémoire."
+

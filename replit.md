@@ -141,15 +141,29 @@ Preferred communication style: Simple, everyday language.
 - **PostCSS**: CSS processing.
 - **Tailwind CSS**: Utility-first styling.
 
-## Recent Changes (Sprint 5 - Final Fixes)
+## Recent Changes (Sprint 5 - Complete Implementation Days 9-12)
 
 **Date**: November 23, 2025
 
-### Critical Fixes Applied:
+### Jour 9 - Critical Fixes Applied:
 1. **Private Field Access Issue**: Added public getters `getSQLiteManager()` and `getHNSWManager()` to GraphWorker to resolve bundler compatibility issues with TypeScript private fields.
 2. **OIEAgent Integration**: Updated to use public getters instead of private field access, added proper error handling for MEMORIZE operations with ensureReady() calls.
 3. **MemoryRetriever Column Mapping**: Corrected rowToNode() method to use correct column order from SQLite schema (id→0, content→1, type→2, provenance_id→3, version→4, replaces_node_id→5, importance→6, created_at→7, last_accessed_at→8, embedding→9).
 4. **EmbeddingAgent Lazy Loading**: Removed eager getExtractor() call during initialization - model now loads only on first embed request.
 5. **Worker Tracking**: Updated useKenshoStore to properly track EmbeddingAgent and IntentClassifierAgent workers in global __kensho_workers object for orchestration.
 
-All fixes have been validated and the application compiles without errors. The workflow is running successfully on port 5000.
+### Jour 10-12 - End-to-End Integration & Security:
+1. **deleteNodesByTopic Implementation**: Added GraphWorker method to semantically search and delete related nodes. Used by FORGET intent for forgetting information.
+2. **Conflict Resolution with Versioning**: Enhanced atomicAddNode to detect semantically similar nodes and set replacesNodeId for version tracking (v1, v2, etc.).
+3. **Smart Memory Retrieval**: Updated MemoryRetriever to group memories by replaces_node_id and return only the latest version, preventing stale information.
+4. **Complete FORGET Intent**: OIEAgent now fully implements FORGET by calling deleteNodesByTopic and reporting deletion count.
+5. **Encrypted Memory Export**: Created EncryptionUtils.ts with AES-GCM encryption for secure database backups using SubtleCrypto API.
+6. **Multi-Language Support**: IntentClassifierAgent supports French commands ("retiens que", "oublie", etc.).
+
+### Sprint 5 Complete Flow:
+- **MEMORIZE**: Extract intent.content → Generate embedding → Add node with versioning → "C'est noté."
+- **RECALL/CHAT**: Extract intent.content → MemoryRetriever finds top-3 memories → Enrich LLMPlanner context → Generate response
+- **FORGET**: Extract intent.content → deleteNodesByTopic finds related nodes → Atomically delete → Report count
+- **VERSIONING**: New information supersedes old via replaces_node_id chain → Only latest version returned
+
+All fixes and features have been validated. The workflow is running successfully on port 5000 with full semantic memory support.
