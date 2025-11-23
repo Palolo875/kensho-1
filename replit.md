@@ -56,6 +56,27 @@ Preferred communication style: Simple, everyday language.
     - **Intelligent Routing**: Attempts native PDF text extraction first, falls back to OCR for scanned documents.
     - **Progress Tracking**: Real-time progress updates during OCR operations.
 
+### Knowledge Graph System (Sprint 5)
+- **GraphWorker**: Orchestrateur principal du système de mémoire sémantique distribuée.
+    - **Atomic Transactions**: Garantit la cohérence entre SQLite et HNSW via un journal de transactions avec rollback automatique.
+    - **Cross-System Validation**: Validation croisée entre la base de données et l'index vectoriel pour éviter les incohérences.
+    - **Crash Resilience**: Conçu pour survivre aux rechargements brutaux (F5) sans corruption de données.
+- **SQLiteManager**: Gestion de la base de données SQLite avec persistance sur IndexedDB.
+    - **Schema Versionné**: Utilise PRAGMA user_version pour la gestion des migrations.
+    - **Automatic Checkpointing**: Sauvegarde automatique toutes les 30 secondes avec optimisation dirty flag.
+    - **Transaction Journal**: Table de transactions pour la traçabilité et le diagnostic des échecs.
+    - **Foreign Keys**: Contraintes d'intégrité référentielle pour garantir la cohérence des données.
+- **HNSWManager**: Index de recherche vectorielle avec Lazy Loading pour démarrage rapide.
+    - **Lazy Initialization**: Ne bloque pas le démarrage de l'application, reconstruction en arrière-plan.
+    - **Linear Search Fallback**: Utilise une recherche linéaire pour les petites bases (<300 nœuds) avant que l'index soit prêt.
+    - **WASM-based**: Utilise hnswlib-wasm pour une recherche vectorielle haute performance dans le navigateur.
+    - **Dynamic Label Mapping**: Gestion bidirectionnelle entre IDs de nœuds et labels numériques HNSW.
+- **Data Model**:
+    - **IMemoryNode**: Nœud de mémoire avec contenu, embedding (384D), type, provenance, et métadonnées de versionnement.
+    - **IMemoryEdge**: Relation étiquetée avec poids entre deux nœuds.
+    - **IProvenance**: Traçabilité complète de l'origine des souvenirs (chat, document, inférence, auto-correction).
+    - **IMemoryTransaction**: Journal atomique des opérations ADD/DELETE/UPDATE avec statuts PENDING/COMMITTED/FAILED.
+
 ### User Interface
 - **Chat Interface**: Built with React and Zustand for state management.
     - **Zustand Store (useKenshoStore)**: LocalStorage persistence for conversation history, worker error tracking, and auto-save.
@@ -79,7 +100,9 @@ Preferred communication style: Simple, everyday language.
 - **Relay Server**: Message broadcasting hub.
 
 ### Storage
-- **IndexedDB**: Browser-native persistent storage for `AGENT_STATE`, `OFFLINE_QUEUE`, `WORKER_REGISTRY`, `TELEMETRY`.
+- **IndexedDB**: Browser-native persistent storage for `AGENT_STATE`, `OFFLINE_QUEUE`, `WORKER_REGISTRY`, `TELEMETRY`, `KenshoDB` (Knowledge Graph).
+- **sql.js**: SQLite compiled to WebAssembly for in-browser relational database.
+- **hnswlib-wasm**: HNSW approximate nearest-neighbor search compiled to WebAssembly for fast vector similarity search.
 
 ### AI/ML
 - **@mlc-ai/web-llm**: WebGPU-based LLM inference library.

@@ -1,0 +1,266 @@
+import { SQLiteManager } from './SQLiteManager';
+import { HNSWManager } from './HNSWManager';
+import {
+  IMemoryNode,
+  IMemoryEdge,
+  IProvenance,
+  IMemoryTransaction,
+  ISearchResult,
+  IGraphStats,
+} from './types';
+
+/**
+ * GraphWorker: Orchestrateur principal du système de Graphe de Connaissances.
+ * Gère la persistance SQLite, l'indexation vectorielle HNSW, et garantit
+ * la cohérence atomique entre les deux systèmes.
+ */
+export class GraphWorker {
+  private sqliteManager: SQLiteManager;
+  private hnswManager: HNSWManager;
+  private isReady = false;
+  private initPromise: Promise<void> | null = null;
+
+  constructor(dbName = 'KenshoDB', storeName = 'files') {
+    this.sqliteManager = new SQLiteManager(dbName, storeName);
+    this.hnswManager = new HNSWManager(this.sqliteManager);
+    this.initPromise = this.initialize();
+  }
+
+  private async initialize(): Promise<void> {
+    try {
+      console.log('[GraphWorker] 🚀 Initialisation du système de graphe de connaissances...');
+      
+      await this.sqliteManager.getDb();
+      console.log('[GraphWorker] ✅ SQLite initialisé');
+      
+      await this.hnswManager.initialize();
+      console.log('[GraphWorker] ✅ HNSW initialisé');
+      
+      this.isReady = true;
+      console.log('[GraphWorker] ✅ Système de graphe prêt');
+    } catch (error) {
+      console.error('[GraphWorker] ❌ Échec de l\'initialisation:', error);
+      throw error;
+    }
+  }
+
+  public async ensureReady(): Promise<void> {
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+    if (!this.isReady) {
+      throw new Error('[GraphWorker] Le système n\'est pas prêt');
+    }
+  }
+
+  /**
+   * Ajoute un nœud de manière atomique avec validation croisée SQLite/HNSW.
+   */
+  public async atomicAddNode(node: IMemoryNode): Promise<void> {
+    await this.ensureReady();
+    
+    if (node.embedding.length !== 384) {
+      throw new Error(`Dimension d'embedding invalide: attendu 384, reçu ${node.embedding.length}`);
+    }
+
+    const db = await this.sqliteManager.getDb();
+    const txId = crypto.randomUUID();
+
+    try {
+      db.run('BEGIN TRANSACTION');
+
+      db.run(
+        'INSERT INTO transactions (id, node_id, operation, status, timestamp) VALUES (?, ?, ?, ?, ?)',
+        [txId, node.id, 'ADD', 'PENDING', Date.now()]
+      );
+
+      db.run(
+        'INSERT INTO provenance (id, source_type, source_id, timestamp, metadata) VALUES (?, ?, ?, ?, ?)',
+        [
+          node.provenanceId,
+          'user_chat',
+          node.provenanceId,
+          node.createdAt,
+          JSON.stringify({}),
+        ]
+      );
+
+      const embeddingJson = JSON.stringify(Array.from(node.embedding));
+      db.run(
+        `INSERT INTO nodes (id, content, type, provenance_id, version, replaces_node_id, 
+         importance, created_at, last_accessed_at, embedding) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          node.id,
+          node.content,
+          node.type,
+          node.provenanceId,
+          node.version,
+          node.replacesNodeId || null,
+          node.importance,
+          node.createdAt,
+          node.lastAccessedAt,
+          embeddingJson,
+        ]
+      );
+
+      const embeddingArray = Array.from(node.embedding);
+      await this.hnswManager.addPoint(embeddingArray, node.id);
+
+      const isInHnsw = await this.hnswManager.hasPoint(node.id);
+      if (!isInHnsw) {
+        throw new Error(`Validation croisée échouée pour le nœud ${node.id}`);
+      }
+
+      db.run('UPDATE transactions SET status = ? WHERE id = ?', ['COMMITTED', txId]);
+      
+      db.run('COMMIT');
+      this.sqliteManager.markAsDirty();
+
+      console.log(`[GraphWorker] ✅ Nœud ${node.id} ajouté avec succès`);
+    } catch (error) {
+      console.error(`[GraphWorker] ❌ ATOMIC FAIL TX ${txId}:`, error);
+
+      try {
+        db.run('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('[GraphWorker] Échec du ROLLBACK:', rollbackError);
+      }
+
+      await this.hnswManager.removePoint(node.id);
+
+      this.sqliteManager.markAsDirty();
+
+      try {
+        localStorage.setItem(
+          `failed_tx_${Date.now()}`,
+          JSON.stringify({
+            txId,
+            nodeId: node.id,
+            error: (error as Error).message,
+          })
+        );
+      } catch (lsError) {
+        console.error('[GraphWorker] Impossible d\'écrire dans localStorage.', lsError);
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Recherche sémantique par similarité vectorielle.
+   */
+  public async search(queryVector: number[], k: number): Promise<ISearchResult[]> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+
+    const hnswResults = await this.hnswManager.search(queryVector, k);
+
+    const results: ISearchResult[] = [];
+    for (const { id, distance } of hnswResults) {
+      const nodeResult = db.exec('SELECT * FROM nodes WHERE id = ?', [id]);
+      if (nodeResult.length > 0 && nodeResult[0].values.length > 0) {
+        const row = nodeResult[0].values[0];
+        const node: IMemoryNode = {
+          id: row[0] as string,
+          content: row[1] as string,
+          type: row[2] as string,
+          provenanceId: row[3] as string,
+          version: row[4] as number,
+          replacesNodeId: (row[5] as string) || undefined,
+          importance: row[6] as number,
+          createdAt: row[7] as number,
+          lastAccessedAt: row[8] as number,
+          embedding: new Float32Array(JSON.parse(row[9] as string)),
+        };
+
+        results.push({ id, distance, node });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Ajoute une arête entre deux nœuds.
+   */
+  public async addEdge(edge: IMemoryEdge): Promise<void> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+
+    db.run(
+      'INSERT INTO edges (id, source_node_id, target_node_id, label, weight) VALUES (?, ?, ?, ?, ?)',
+      [edge.id, edge.sourceNodeId, edge.targetNodeId, edge.label, edge.weight]
+    );
+    this.sqliteManager.markAsDirty();
+  }
+
+  /**
+   * Récupère un nœud par son ID.
+   */
+  public async getNode(nodeId: string): Promise<IMemoryNode | null> {
+    await this.ensureReady();
+    const db = await this.sqliteManager.getDb();
+
+    const result = db.exec('SELECT * FROM nodes WHERE id = ?', [nodeId]);
+    if (!result.length || !result[0].values.length) {
+      return null;
+    }
+
+    const row = result[0].values[0];
+    return {
+      id: row[0] as string,
+      content: row[1] as string,
+      type: row[2] as string,
+      provenanceId: row[3] as string,
+      version: row[4] as number,
+      replacesNodeId: (row[5] as string) || undefined,
+      importance: row[6] as number,
+      createdAt: row[7] as number,
+      lastAccessedAt: row[8] as number,
+      embedding: new Float32Array(JSON.parse(row[9] as string)),
+    };
+  }
+
+  /**
+   * Récupère les statistiques du système.
+   */
+  public async getStats(): Promise<IGraphStats> {
+    await this.ensureReady();
+    const stats = await this.sqliteManager.getStats();
+
+    return {
+      ...stats,
+      indexReady: this.hnswManager.isReady(),
+      lastCheckpoint: Date.now(),
+    };
+  }
+
+  /**
+   * Force un checkpoint manuel.
+   */
+  public async checkpoint(): Promise<void> {
+    await this.sqliteManager.checkpoint(true);
+  }
+
+  /**
+   * Reconstruction manuelle de l'index HNSW.
+   */
+  public async rebuildIndex(): Promise<void> {
+    await this.ensureReady();
+    await this.hnswManager.rebuild();
+  }
+
+  /**
+   * Nettoyage et fermeture propre du système.
+   */
+  public async cleanup(): Promise<void> {
+    await this.sqliteManager.cleanup();
+    this.isReady = false;
+  }
+}
+
+export * from './types';
+export { SQLiteManager } from './SQLiteManager';
+export { HNSWManager } from './HNSWManager';

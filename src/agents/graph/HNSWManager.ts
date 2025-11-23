@@ -17,6 +17,7 @@ export class HNSWManager {
   private nodeIdToLabel: Map<string, number> = new Map();
   private labelToNodeId: Map<number, string> = new Map();
   private nextLabel = 0;
+  private pendingPoints: Map<string, number[]> = new Map();
 
   constructor(private readonly sqliteManager: SQLiteManager) {}
 
@@ -66,11 +67,24 @@ export class HNSWManager {
     const db = await this.sqliteManager.getDb();
     const result = db.exec('SELECT id, embedding FROM nodes WHERE embedding IS NOT NULL');
 
+    const pendingToAdd = new Map(this.pendingPoints);
+    this.pendingPoints.clear();
+
     if (!result.length || !result[0].values.length) {
       this.index = new this.hnswlib.HierarchicalNSW('l2', EMBEDDING_DIMENSION, '');
-      this.index.initIndex(1, 16, 200, 100);
+      this.index.initIndex(Math.max(1, pendingToAdd.size), 16, 200, 100);
+      this.index.setEfSearch(50);
       this.isIndexReady = true;
       console.log('[HNSWManager] Index vide initialisé.');
+
+      if (pendingToAdd.size > 0) {
+        for (const [nodeId, embedding] of pendingToAdd.entries()) {
+          const label = this.nodeIdToLabel.get(nodeId);
+          if (label !== undefined) {
+            this.index.addPoint(embedding, label, false);
+          }
+        }
+      }
       return;
     }
 
@@ -78,7 +92,7 @@ export class HNSWManager {
     console.log(`[HNSWManager] Chargement de ${rows.length} embeddings...`);
 
     this.index = new this.hnswlib.HierarchicalNSW('l2', EMBEDDING_DIMENSION, '');
-    this.index.initIndex(rows.length, 16, 200, 100);
+    this.index.initIndex(rows.length + pendingToAdd.size, 16, 200, 100);
     this.index.setEfSearch(50);
 
     this.nodeIdToLabel.clear();
@@ -97,12 +111,24 @@ export class HNSWManager {
         this.labelToNodeId.set(label, nodeId);
 
         this.index.addPoint(embeddingArray, label, false);
+        pendingToAdd.delete(nodeId);
       } catch (err) {
         console.error(`[HNSWManager] Erreur lors du parsing de l'embedding pour ${nodeId}:`, err);
       }
     }
 
     this.isIndexReady = true;
+
+    if (pendingToAdd.size > 0) {
+      console.log(`[HNSWManager] 🔄 Ajout de ${pendingToAdd.size} points créés pendant le rebuild...`);
+      for (const [nodeId, embedding] of pendingToAdd.entries()) {
+        const label = this.nodeIdToLabel.get(nodeId);
+        if (label !== undefined) {
+          this.index.addPoint(embedding, label, false);
+        }
+      }
+    }
+
     const duration = performance.now() - startTime;
     console.log(`[HNSWManager] ✅ Index reconstruit avec ${rows.length} éléments en ${duration.toFixed(0)}ms.`);
   }
@@ -136,11 +162,15 @@ export class HNSWManager {
   }
 
   public async addPoint(embedding: number[], nodeId: string): Promise<void> {
+    const label = this.nextLabel++;
+    this.nodeIdToLabel.set(nodeId, label);
+    this.labelToNodeId.set(label, nodeId);
+    
     if (this.isIndexReady && this.index) {
-      const label = this.nextLabel++;
-      this.nodeIdToLabel.set(nodeId, label);
-      this.labelToNodeId.set(label, nodeId);
       this.index.addPoint(embedding, label, false);
+      this.pendingPoints.delete(nodeId);
+    } else {
+      this.pendingPoints.set(nodeId, embedding);
     }
   }
 
@@ -150,10 +180,18 @@ export class HNSWManager {
 
   public async removePoint(nodeId: string): Promise<void> {
     const label = this.nodeIdToLabel.get(nodeId);
-    if (label !== undefined && this.index) {
+    if (label !== undefined) {
+      if (this.isIndexReady && this.index) {
+        try {
+          this.index.markDelete(label);
+        } catch (err) {
+          console.warn(`[HNSWManager] Impossible de marquer le point ${label} comme supprimé:`, err);
+        }
+      }
       this.nodeIdToLabel.delete(nodeId);
       this.labelToNodeId.delete(label);
     }
+    this.pendingPoints.delete(nodeId);
   }
 
   private async linearSearch(
