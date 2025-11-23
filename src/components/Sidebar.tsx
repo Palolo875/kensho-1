@@ -1,8 +1,11 @@
-import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity } from "lucide-react";
+import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useProjects } from "@/hooks/useProjects";
+import { CreateProjectDialog } from "./CreateProjectDialog";
 
 interface SidebarProps {
   onOpenSettings: () => void;
@@ -17,6 +20,13 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
   const isMobile = useIsMobile();
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const { projects, activeProjectId, setActiveProjectId } = useProjects();
+
+  const filteredProjects = projects.filter(p => 
+    p.name.toLowerCase().includes(projectSearchTerm.toLowerCase())
+  );
 
   // Use external state if provided (for mobile), otherwise use internal state
   const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen;
@@ -118,6 +128,56 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
           </Button>
         </div>
 
+        {/* Sprint 7: Projects Section */}
+        {!isCollapsed && (
+          <div className="px-2 my-4 flex-1 overflow-hidden flex flex-col">
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold px-2 text-muted-foreground">Projets</h3>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6"
+                  onClick={() => setShowCreateProject(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <Input
+                type="text"
+                placeholder="Rechercher..."
+                value={projectSearchTerm}
+                onChange={(e) => setProjectSearchTerm(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
+            <nav className="flex-1 overflow-y-auto">
+              <div className="space-y-1">
+                {filteredProjects.map(project => (
+                  <button
+                    key={project.id}
+                    onClick={() => setActiveProjectId(project.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left",
+                      project.id === activeProjectId
+                        ? "bg-primary/20 text-primary font-medium"
+                        : "hover:bg-sidebar-accent/60"
+                    )}
+                  >
+                    <FolderOpen className="h-4 w-4 flex-shrink-0" />
+                    <span className="truncate">{project.name}</span>
+                  </button>
+                ))}
+                {filteredProjects.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic px-3 py-2">
+                    Aucun projet trouvé
+                  </p>
+                )}
+              </div>
+            </nav>
+          </div>
+        )}
+
         <div className="flex-1" />
 
         {/* Bottom Actions */}
@@ -145,6 +205,9 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
             {!isCollapsed && <span className="ml-3">Profil</span>}
           </Button>
         </div>
+
+        {/* Create Project Dialog */}
+        <CreateProjectDialog open={showCreateProject} onOpenChange={setShowCreateProject} />
       </aside>
     );
   }

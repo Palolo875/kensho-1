@@ -29,11 +29,8 @@ runAgent({
             return await graphWorker.atomicAddNode(payload.node);
         });
 
-        runtime.registerMethod('search', async (payload: { embedding: number[] | Float32Array; k: number }) => {
-            const embeddingArray = payload.embedding instanceof Float32Array 
-                ? Array.from(payload.embedding) 
-                : payload.embedding;
-            return await graphWorker.search(new Float32Array(embeddingArray), payload.k);
+        runtime.registerMethod('search', async (payload: { embedding: number[]; k: number }) => {
+            return await graphWorker.search(payload.embedding, payload.k);
         });
 
         runtime.registerMethod('addEdge', async (payload: { edge: any }) => {

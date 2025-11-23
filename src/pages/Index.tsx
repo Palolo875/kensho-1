@@ -10,6 +10,7 @@ import { ObservatoryModal } from "@/components/ObservatoryModal";
 import { ModelLoadingView } from "@/components/ModelLoadingView";
 import { WorkerStatusIndicator } from "@/components/WorkerStatusIndicator";
 import { PlanView } from "@/components/PlanView";
+import { ProjectDashboard } from "@/components/ProjectDashboard";
 import { useObservatory } from "@/contexts/ObservatoryContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { cn } from "@/lib/utils";
@@ -96,6 +97,9 @@ const Index = () => {
         "pt-16 md:pt-4"
       )}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
+          {/* Sprint 7: Project Dashboard */}
+          <ProjectDashboard />
+
           {messages.length === 0 ? (
             <TimeBasedGreeting />
           ) : (
