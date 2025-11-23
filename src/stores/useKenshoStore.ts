@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { appConfig } from '../config/app.config';
 import { ThoughtStep } from '../agents/oie/types';
 import { Project, ProjectTask } from '../agents/graph/types';
+import { TaskCompletionDetector } from '../core/oie/TaskCompletionDetector';
 
 
 const STORAGE_KEY = 'kensho_conversation_history';
@@ -668,6 +669,49 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                             currentThoughtProcess: null
                         };
                     });
+
+                    // Sprint 7 Phase 3: Détection automatique des tâches complétées (UI-side approach)
+                    (async () => {
+                        const state = get();
+                        if (!state.activeProjectId || state.projects.length === 0) {
+                            return; // Pas de projet actif, pas de détection
+                        }
+
+                        const activeProject = state.projects.find(p => p.id === state.activeProjectId);
+                        if (!activeProject) return;
+
+                        const projectTasks = state.projectTasks.get(state.activeProjectId) || [];
+                        if (projectTasks.length === 0) {
+                            return; // Pas de tâches à vérifier
+                        }
+
+                        // Obtenir la réponse complète du dernier message
+                        const lastMessage = state.messages[state.messages.length - 1];
+                        if (!lastMessage || lastMessage.author !== 'kensho') {
+                            return;
+                        }
+
+                        const aiResponse = lastMessage.text;
+                        console.log('[KenshoStore] 🔍 Analyse de la réponse pour détection de tâches...');
+
+                        // Détecter les tâches complétées
+                        const completedTasks = TaskCompletionDetector.detectCompletedTasks(aiResponse, projectTasks);
+
+                        if (completedTasks.length > 0) {
+                            console.log(`[KenshoStore] ✨ ${completedTasks.length} tâche(s) détectée(s) comme complétée(s)`);
+                            
+                            // Marquer chaque tâche comme complétée
+                            for (const task of completedTasks) {
+                                await get().toggleTask(task.id);
+                            }
+
+                            // Notification à l'utilisateur
+                            toast.success(`${completedTasks.length} tâche(s) complétée(s)`, {
+                                description: completedTasks.map(t => `• ${t.text}`).join('\n'),
+                                duration: 5000
+                            });
+                        }
+                    })();
                 },
                 onError: (error) => {
                     console.error('[KenshoStore] ❌ Erreur de stream:', error);
