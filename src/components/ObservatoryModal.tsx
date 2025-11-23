@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Crown, Activity, AlertCircle, Info, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SAMPLE_JOURNAL } from "@/utils/sampleJournal";
 
 export interface WorkerStatus {
     name: string;
@@ -93,73 +94,73 @@ export function ObservatoryModal({
                     </TabsList>
 
                     <TabsContent value="journal" className="space-y-4">
-                        {journal ? (
+                        {journal || SAMPLE_JOURNAL ? (
                             <div className="space-y-4">
                                 <Card>
                                     <CardHeader>
                                         <CardTitle className="flex items-center gap-2">
                                             📊 Journal Cognitif
-                                            {journal.degradationApplied && (
+                                            {(journal || SAMPLE_JOURNAL)?.degradationApplied && (
                                                 <Badge variant="destructive">Graceful Degradation</Badge>
+                                            )}
+                                            {!journal && (
+                                                <Badge variant="outline" className="ml-auto">Exemple</Badge>
                                             )}
                                         </CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
+                                        {!journal && (
+                                            <div className="bg-blue-500/10 border border-blue-500 rounded p-3 mb-4">
+                                                <p className="text-xs text-blue-600"><strong>💡 Exemple:</strong> Voici à quoi ressemble un débat complet. Posez une question pour voir votre propre journal.</p>
+                                            </div>
+                                        )}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <p className="text-xs text-muted-foreground">Requête</p>
-                                                <p className="font-mono text-sm">{journal.userQuery}</p>
+                                                <p className="font-mono text-sm">{(journal || SAMPLE_JOURNAL)?.userQuery}</p>
                                             </div>
                                             <div>
                                                 <p className="text-xs text-muted-foreground">Durée</p>
-                                                <p className="font-mono text-sm">{journal.totalDuration?.toFixed(0)}ms</p>
+                                                <p className="font-mono text-sm">{(journal || SAMPLE_JOURNAL)?.totalDuration?.toFixed(0)}ms</p>
                                             </div>
                                         </div>
                                         
                                         <div>
                                             <p className="text-xs text-muted-foreground mb-2">Étapes</p>
                                             <div className="space-y-2">
-                                                {journal.steps.map((step: any, idx: number) => (
+                                                {(journal || SAMPLE_JOURNAL)?.steps.map((step: any, idx: number) => (
                                                     <div key={idx} className="border-l-2 border-blue-500 pl-2 text-sm">
                                                         <div className="flex items-center gap-2">
                                                             <Badge variant="secondary">{step.status}</Badge>
                                                             <span className="font-semibold">{step.agent}</span>
                                                             <span className="text-xs text-muted-foreground">({step.duration?.toFixed(0)}ms)</span>
                                                         </div>
-                                                        <p className="text-xs text-muted-foreground mt-1">{step.action}</p>
+                                                        <p className="text-xs text-muted-foreground mt-1">{step.label}</p>
                                                     </div>
                                                 ))}
                                             </div>
                                         </div>
 
-                                        {journal.degradationApplied && (
+                                        {(journal || SAMPLE_JOURNAL)?.degradationApplied && (
                                             <Card className="bg-yellow-500/10 border-yellow-500">
                                                 <CardContent className="pt-4">
-                                                    <p className="text-sm"><strong>⚠️ Dégradation:</strong> {journal.degradationReason}</p>
+                                                    <p className="text-sm"><strong>⚠️ Dégradation:</strong> {(journal || SAMPLE_JOURNAL)?.degradationReason}</p>
                                                 </CardContent>
                                             </Card>
                                         )}
 
-                                        {journal.finalResponse && (
+                                        {(journal || SAMPLE_JOURNAL)?.finalResponse && (
                                             <div>
                                                 <p className="text-xs text-muted-foreground mb-2">Réponse Finale</p>
                                                 <pre className="text-xs bg-muted p-2 rounded max-h-[200px] overflow-auto">
-                                                    {journal.finalResponse}
+                                                    {(journal || SAMPLE_JOURNAL)?.finalResponse}
                                                 </pre>
                                             </div>
                                         )}
                                     </CardContent>
                                 </Card>
                             </div>
-                        ) : (
-                            <Card>
-                                <CardContent className="pt-6">
-                                    <p className="text-sm text-muted-foreground text-center">
-                                        En attente d'une réponse... Le journal cognitif apparaîtra ici.
-                                    </p>
-                                </CardContent>
-                            </Card>
-                        )}
+                        ) : null}
                     </TabsContent>
 
                     <TabsContent value="constellation" className="space-y-4">
