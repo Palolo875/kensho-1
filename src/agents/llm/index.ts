@@ -29,10 +29,17 @@ export interface GenerationParams {
 
 let engine: webllm.MLCEngine | null = null;
 let modelLoadingPromise: Promise<void> | null = null;
+let isDownloadCancelled = false;
 const dm = DownloadManager.getInstance();
 
 // Le ModelLoader enverra ses mises à jour au thread principal via postMessage
 const modelLoader = new ModelLoader((progress) => {
+    // Vérifier si l'utilisateur a annulé
+    if (isDownloadCancelled) {
+        console.log('[MainLLMAgent] ⛔ Téléchargement annulé par l\'utilisateur');
+        return;
+    }
+    
     self.postMessage({ type: 'MODEL_PROGRESS', payload: progress });
     // Mettre à jour le DownloadManager aussi
     dm.updateProgress(DOWNLOAD_ID, {
@@ -44,7 +51,7 @@ const modelLoader = new ModelLoader((progress) => {
     });
 }, { allowPause: true });
 
-// Gérer les messages de pause/reprise/start du téléchargement
+// Gérer les messages de pause/reprise/start/cancel du téléchargement
 self.addEventListener('message', (event) => {
     if (event.data.type === 'PAUSE_DOWNLOAD') {
         modelLoader.pause();
@@ -52,7 +59,21 @@ self.addEventListener('message', (event) => {
     } else if (event.data.type === 'RESUME_DOWNLOAD') {
         modelLoader.resume();
         dm.resume(DOWNLOAD_ID);
+    } else if (event.data.type === 'CANCEL_DOWNLOAD') {
+        // Annuler complètement le téléchargement
+        console.log('[MainLLMAgent] ⛔ Annulation du téléchargement demandée');
+        isDownloadCancelled = true;
+        modelLoader.cancel();
+        dm.markCancelled(DOWNLOAD_ID);
+        modelLoadingPromise = null;
+        engine = null;
+        self.postMessage({
+            type: 'MODEL_PROGRESS',
+            payload: { phase: 'idle', progress: 0, text: 'Téléchargement annulé' }
+        });
     } else if (event.data.type === 'START_DOWNLOAD') {
+        // Réinitialiser isDownloadCancelled si c'est un nouveau téléchargement
+        isDownloadCancelled = false;
         // Démarrer le téléchargement à la demande de l'utilisateur
         if (!modelLoadingPromise) {
             console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle (sur demande):', MODEL_ID);

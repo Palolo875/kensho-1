@@ -40,6 +40,7 @@ export class ModelLoader {
     private readonly progressCallback: ProgressCallback;
     private readonly options: Required<ModelLoaderOptions>;
     private isPaused: boolean = false;
+    private isCancelled: boolean = false;
     private pauseResolver: (() => void) | null = null;
     private startTime: number = 0;
     private lastProgressUpdate: number = 0;
@@ -52,6 +53,31 @@ export class ModelLoader {
 
     public getEngine(): webllm.MLCEngine | null {
         return this.engine;
+    }
+
+    /**
+     * Annule complètement le téléchargement
+     */
+    public cancel(): void {
+        this.isCancelled = true;
+        this.isPaused = false;
+        if (this.pauseResolver) {
+            this.pauseResolver();
+            this.pauseResolver = null;
+        }
+        console.log('[ModelLoader] ⛔ Téléchargement annulé');
+        this.progressCallback({
+            phase: 'downloading',
+            progress: this.lastProgressUpdate,
+            text: '⛔ Téléchargement annulé',
+        });
+    }
+
+    /**
+     * Vérifie si le téléchargement est annulé
+     */
+    public isCancelledFlag(): boolean {
+        return this.isCancelled;
     }
 
     /**
@@ -85,6 +111,10 @@ export class ModelLoader {
      * Vérifie si le téléchargement est en pause et attend si nécessaire
      */
     private async checkPause(): Promise<void> {
+        // Si annulé, arrêter complètement
+        if (this.isCancelled) {
+            throw new Error('Download cancelled by user');
+        }
         if (this.isPaused) {
             await new Promise<void>((resolve) => {
                 this.pauseResolver = resolve;

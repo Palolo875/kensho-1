@@ -25,6 +25,7 @@ interface DownloadTask {
   type: DownloadType;
   name: string;
   isPaused: boolean;
+  isCancelled: boolean;
   pauseResolver: (() => void) | null;
   onProgress: (progress: DownloadProgress) => void;
 }
@@ -57,6 +58,7 @@ export class DownloadManager {
       type,
       name,
       isPaused: false,
+      isCancelled: false,
       pauseResolver: null,
       onProgress,
     });
@@ -151,6 +153,26 @@ export class DownloadManager {
       this.cancel(id);
     }
     console.log(`[DownloadManager] ❌ Tous les téléchargements annulés`);
+  }
+
+  /**
+   * Marque un téléchargement comme annulé (arrêt complet)
+   */
+  public markCancelled(id: string, error?: string): void {
+    const download = this.downloads.get(id);
+    if (download) {
+      download.isCancelled = true;
+      console.log(`[DownloadManager] ❌ Téléchargement marqué comme annulé: ${id}`);
+      this.notifyListeners();
+    }
+  }
+
+  /**
+   * Vérifie si un téléchargement est annulé
+   */
+  public isCancelled(id: string): boolean {
+    const download = this.downloads.get(id);
+    return download?.isCancelled ?? false;
   }
 
   /**

@@ -204,6 +204,7 @@ export function ModelLoadingView() {
     const startModelDownload = useKenshoStore(state => state.startModelDownload);
     const pauseModelDownload = useKenshoStore(state => state.pauseModelDownload);
     const resumeModelDownload = useKenshoStore(state => state.resumeModelDownload);
+    const cancelModelDownload = useKenshoStore(state => state.cancelModelDownload);
     const [showDetails, setShowDetails] = useState(false);
     const storageStats = useStorageStats();
 
@@ -330,18 +331,30 @@ export function ModelLoadingView() {
                         </div>
                         <div className="flex gap-2 shrink-0">
                             {modelProgress.phase === 'downloading' && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={handlePauseToggle}
-                                    title={isPaused ? "Reprendre" : "Mettre en pause"}
-                                >
-                                    {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                                    <span className="sr-only">{isPaused ? "Reprendre" : "Pause"}</span>
-                                </Button>
+                                <>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={handlePauseToggle}
+                                        title={isPaused ? "Reprendre" : "Mettre en pause"}
+                                    >
+                                        {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                                        <span className="sr-only">{isPaused ? "Reprendre" : "Pause"}</span>
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive hover:text-destructive"
+                                        onClick={cancelModelDownload}
+                                        title="Annuler le téléchargement"
+                                    >
+                                        <X className="h-4 w-4" />
+                                        <span className="sr-only">Annuler</span>
+                                    </Button>
+                                </>
                             )}
-                            {modelProgress.phase !== 'error' && (
+                            {modelProgress.phase !== 'error' && modelProgress.phase !== 'downloading' && (
                                 <Button
                                     variant="ghost"
                                     size="icon"

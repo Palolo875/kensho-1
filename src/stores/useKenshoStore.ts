@@ -81,8 +81,10 @@ interface KenshoState {
     startModelDownload: () => void;
     pauseModelDownload: () => void;
     resumeModelDownload: () => void;
+    cancelModelDownload: () => void;
     pauseAllDownloads: () => void;
     resumeAllDownloads: () => void;
+    cancelAllDownloads: () => void;
     loadMessagesFromStorage: () => void;
     clearWorkerErrors: () => void;
     attachFile: (file: File) => void;
@@ -739,5 +741,31 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         console.log('[KenshoStore] ▶️ Tous les téléchargements repris');
         set({ isLoadingPaused: false });
     },
+
+    /**
+     * Annule complètement le téléchargement du modèle LLM
+     */
+    cancelModelDownload: () => {
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            console.log('[KenshoStore] ⛔ Annulation du téléchargement du modèle');
+            llmWorker.postMessage({ type: 'CANCEL_DOWNLOAD' });
+            set({ modelDownloadStarted: false, isLoadingPaused: false });
+        }
+    },
+
+    /**
+     * Annule TOUS les téléchargements
+     */
+    cancelAllDownloads: () => {
+        const dm = DownloadManager.getInstance();
+        dm.cancelAll();
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            llmWorker.postMessage({ type: 'CANCEL_DOWNLOAD' });
+        }
+        console.log('[KenshoStore] ⛔ Tous les téléchargements annulés');
+        set({ modelDownloadStarted: false, isLoadingPaused: false });
+    }
     };
 });
