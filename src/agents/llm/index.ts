@@ -26,37 +26,47 @@ export interface GenerationParams {
 }
 
 let engine: webllm.MLCEngine | null = null;
+let modelLoadingPromise: Promise<void> | null = null;
 
 // Le ModelLoader enverra ses mises à jour au thread principal via postMessage
 const modelLoader = new ModelLoader((progress) => {
     self.postMessage({ type: 'MODEL_PROGRESS', payload: progress });
 }, { allowPause: true });
 
-// Gérer les messages de pause/reprise du téléchargement
+// Gérer les messages de pause/reprise/start du téléchargement
 self.addEventListener('message', (event) => {
     if (event.data.type === 'PAUSE_DOWNLOAD') {
         modelLoader.pause();
     } else if (event.data.type === 'RESUME_DOWNLOAD') {
         modelLoader.resume();
+    } else if (event.data.type === 'START_DOWNLOAD') {
+        // Démarrer le téléchargement à la demande de l'utilisateur
+        if (!modelLoadingPromise) {
+            console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle (sur demande):', MODEL_ID);
+            modelLoadingPromise = modelLoader.loadModel(MODEL_ID).then(() => {
+                engine = modelLoader.getEngine();
+                console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
+                self.postMessage({
+                    type: 'MODEL_PROGRESS',
+                    payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
+                });
+            }).catch((error) => {
+                console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
+                self.postMessage({
+                    type: 'MODEL_ERROR',
+                    payload: { message: error.message }
+                });
+            });
+        }
     }
 });
 
-// Charger le modèle dès le démarrage du worker
-console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle:', MODEL_ID);
-modelLoader.loadModel(MODEL_ID).then(() => {
-    engine = modelLoader.getEngine();
-    console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
-    // Poster un message final indiquant que le modèle est prêt
-    self.postMessage({
-        type: 'MODEL_PROGRESS',
-        payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
-    });
-}).catch((error) => {
-    console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
-    self.postMessage({
-        type: 'MODEL_ERROR',
-        payload: { message: error.message }
-    });
+// NE PAS charger automatiquement le modèle
+// L'utilisateur décidera quand démarrer le téléchargement
+console.log('[MainLLMAgent] ⏳ Prêt à recevoir la commande de téléchargement du modèle');
+self.postMessage({
+    type: 'MODEL_PROGRESS',
+    payload: { phase: 'idle', progress: 0, text: 'En attente du démarrage du téléchargement...' }
 });
 
 runAgent({

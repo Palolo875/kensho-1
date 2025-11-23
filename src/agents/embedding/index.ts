@@ -18,16 +18,25 @@ runAgent({
   name: 'EmbeddingAgent',
   init: async (runtime: AgentRuntime) => {
     let extractor: any = null;
+    let isLoadingModel = false;
 
     async function getExtractor(): Promise<any> {
-      if (!extractor) {
+      if (!extractor && !isLoadingModel) {
+        isLoadingModel = true;
         runtime.log('info', `[EmbeddingAgent] Chargement du modèle d'embedding: ${EMBEDDING_MODEL}...`);
-        extractor = await pipeline('feature-extraction', EMBEDDING_MODEL, {
-          progress_callback: (progress: any) => {
-            console.log(`[EmbeddingAgent] Chargement: ${progress.file} (${Math.round(progress.progress)}%)`);
-          }
-        });
-        runtime.log('info', '[EmbeddingAgent] Modèle d\'embedding prêt.');
+        console.log(`[EmbeddingAgent] 🚀 Chargement du modèle: ${EMBEDDING_MODEL}`);
+        try {
+          extractor = await pipeline('feature-extraction', EMBEDDING_MODEL, {
+            progress_callback: (progress: any) => {
+              console.log(`[EmbeddingAgent] Chargement: ${progress.file} (${Math.round(progress.progress)}%)`);
+            }
+          });
+          runtime.log('info', '[EmbeddingAgent] Modèle d\'embedding prêt.');
+          console.log('[EmbeddingAgent] ✅ Modèle d\'embedding prêt.');
+        } catch (error) {
+          isLoadingModel = false;
+          throw error;
+        }
       }
       return extractor;
     }

@@ -62,6 +62,7 @@ interface KenshoState {
     isInitialized: boolean;
     isLoadingMinimized: boolean;
     isLoadingPaused: boolean;
+    modelDownloadStarted: boolean;
     workerErrors: WorkerError[];
     workersReady: WorkerStatus;
     attachedFile: AttachedFile | null;
@@ -75,6 +76,9 @@ interface KenshoState {
     clearMessages: () => void;
     setLoadingMinimized: (minimized: boolean) => void;
     setLoadingPaused: (paused: boolean) => void;
+    startModelDownload: () => void;
+    pauseModelDownload: () => void;
+    resumeModelDownload: () => void;
     loadMessagesFromStorage: () => void;
     clearWorkerErrors: () => void;
     attachFile: (file: File) => void;
@@ -353,6 +357,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
     isInitialized: false,
     isLoadingMinimized: false,
     isLoadingPaused: false,
+    modelDownloadStarted: false,
     workerErrors: [],
     workersReady: { llm: false, oie: false, telemetry: false },
     attachedFile: null,
@@ -659,5 +664,47 @@ export const useKenshoStore = create<KenshoState>((set, get) => ({
      */
     detachFile: () => {
         set({ attachedFile: null, uploadProgress: 0 });
+    },
+
+    /**
+     * Démarre le téléchargement du modèle LLM (à la demande de l'utilisateur)
+     */
+    startModelDownload: () => {
+        const state = get();
+        if (state.modelDownloadStarted) {
+            console.log('[KenshoStore] Téléchargement déjà démarré');
+            return;
+        }
+        
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            console.log('[KenshoStore] 🚀 Demande de démarrage du téléchargement du modèle');
+            llmWorker.postMessage({ type: 'START_DOWNLOAD' });
+            set({ modelDownloadStarted: true });
+        }
+    },
+
+    /**
+     * Met en pause le téléchargement du modèle
+     */
+    pauseModelDownload: () => {
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            console.log('[KenshoStore] ⏸️ Mise en pause du téléchargement');
+            llmWorker.postMessage({ type: 'PAUSE_DOWNLOAD' });
+            set({ isLoadingPaused: true });
+        }
+    },
+
+    /**
+     * Reprend le téléchargement du modèle
+     */
+    resumeModelDownload: () => {
+        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        if (llmWorker) {
+            console.log('[KenshoStore] ▶️ Reprise du téléchargement');
+            llmWorker.postMessage({ type: 'RESUME_DOWNLOAD' });
+            set({ isLoadingPaused: false });
+        }
     }
 }));

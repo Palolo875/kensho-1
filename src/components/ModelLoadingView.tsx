@@ -201,20 +201,18 @@ export function ModelLoadingView() {
     const isPaused = useKenshoStore(state => state.isLoadingPaused);
     const setMinimized = useKenshoStore(state => state.setLoadingMinimized);
     const setPaused = useKenshoStore(state => state.setLoadingPaused);
-    const startLLMWorker = useKenshoStore(state => state.startLLMWorker);
+    const startModelDownload = useKenshoStore(state => state.startModelDownload);
+    const pauseModelDownload = useKenshoStore(state => state.pauseModelDownload);
+    const resumeModelDownload = useKenshoStore(state => state.resumeModelDownload);
     const [showDetails, setShowDetails] = useState(false);
     const storageStats = useStorageStats();
 
-    // Référence au worker LLM pour contrôler la pause
+    // Contrôler la pause/reprise du téléchargement
     const handlePauseToggle = () => {
-        setPaused(!isPaused);
-        // Envoyer un message au worker pour pause/reprise
-        const workers = (window as any).__kensho_workers || {};
-        const llmWorker = workers['MainLLMAgent'];
-        if (llmWorker) {
-            llmWorker.postMessage({
-                type: isPaused ? 'RESUME_DOWNLOAD' : 'PAUSE_DOWNLOAD'
-            });
+        if (isPaused) {
+            resumeModelDownload();
+        } else {
+            pauseModelDownload();
         }
     };
 
@@ -372,21 +370,22 @@ export function ModelLoadingView() {
                     </div>
 
                     {/* Bouton de démarrage pour lazy loading */}
-                    {modelProgress.phase === 'idle' && !appConfig.llm.autoload && appConfig.llm.enabled && (
+                    {modelProgress.phase === 'idle' && appConfig.llm.enabled && (
                         <div className="space-y-4">
                             <div className="text-center text-sm text-muted-foreground">
                                 Le modèle IA n'est pas encore chargé. Taille du téléchargement : ~2 GB
                             </div>
                             <Button 
-                                onClick={startLLMWorker}
+                                onClick={startModelDownload}
                                 className="w-full gap-2"
                                 size="lg"
                             >
                                 <Sparkles className="w-4 h-4" />
-                                Charger le modèle IA
+                                Démarrer le téléchargement
                             </Button>
                             <div className="text-xs text-muted-foreground text-center">
-                                Le modèle sera téléchargé une seule fois et mis en cache pour les prochaines utilisations
+                                Le modèle sera téléchargé une seule fois et mis en cache pour les prochaines utilisations.
+                                Vous pouvez mettre en pause ou reprendre à tout moment.
                             </div>
                         </div>
                     )}
