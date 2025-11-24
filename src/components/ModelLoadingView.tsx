@@ -241,8 +241,8 @@ export function ModelLoadingView() {
         return `${(mb / 1024).toFixed(2)} GB`;
     };
 
-    // Ne rien afficher si le modèle est prêt
-    if (modelProgress.phase === 'ready') {
+    // Ne rien afficher si pas en cours de chargement
+    if (!modelProgress.phase || modelProgress.phase === 'idle') {
         return null;
     }
 
@@ -314,12 +314,30 @@ export function ModelLoadingView() {
     }
 
     // Version complète (dialog)
+    const handleCloseDialog = () => {
+        if (modelProgress.phase === 'idle' || modelProgress.phase === 'error') {
+            setMinimized(true);
+        }
+    };
+
     return (
-        <Dialog open={true}>
+        <Dialog open={true} onOpenChange={(open) => {
+            if (!open) {
+                setMinimized(true);
+            }
+        }}>
             <DialogContent 
                 className="sm:max-w-md"
-                onPointerDownOutside={(e) => e.preventDefault()}
-                onEscapeKeyDown={(e) => e.preventDefault()}
+                onPointerDownOutside={(e) => {
+                    if (modelProgress.phase === 'idle' || modelProgress.phase === 'error') {
+                        e.preventDefault();
+                    }
+                }}
+                onEscapeKeyDown={(e) => {
+                    if (modelProgress.phase === 'downloading' || modelProgress.phase === 'compiling' || modelProgress.phase === 'checking_gpu') {
+                        e.preventDefault();
+                    }
+                }}
             >
                 <DialogHeader>
                     <div className="flex items-start justify-between">
@@ -354,7 +372,19 @@ export function ModelLoadingView() {
                                     </Button>
                                 </>
                             )}
-                            {modelProgress.phase !== 'error' && modelProgress.phase !== 'downloading' && (
+                            {modelProgress.phase === 'idle' && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => setMinimized(true)}
+                                    title="Fermer"
+                                >
+                                    <X className="h-4 w-4" />
+                                    <span className="sr-only">Fermer</span>
+                                </Button>
+                            )}
+                            {modelProgress.phase !== 'error' && modelProgress.phase !== 'downloading' && modelProgress.phase !== 'idle' && (
                                 <Button
                                     variant="ghost"
                                     size="icon"

@@ -7,31 +7,33 @@ import { GraphWorker } from '../graph';
 import { MemoryRetriever } from '../graph/MemoryRetriever';
 import type { Intent } from '../intent-classifier';
 
-runAgent({
-    name: 'OIEAgent',
-    init: (runtime: AgentRuntime) => {
-        console.log('[OIEAgent] 🚀 Initialisation...');
-        runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
-        console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
+try {
+    runAgent({
+        name: 'OIEAgent',
+        init: (runtime: AgentRuntime) => {
+            try {
+                console.log('[OIEAgent] 🚀 Initialisation...');
+                runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
+                console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
 
-        const planner = new LLMPlanner(runtime);
-        const graphWorker = new GraphWorker();
-        let memoryRetriever: MemoryRetriever | null = null;
-        let isReady = false;
+                const planner = new LLMPlanner(runtime);
+                const graphWorker = new GraphWorker();
+                let memoryRetriever: MemoryRetriever | null = null;
+                let isReady = false;
 
-        // Initialisation avec barrier pour éviter les race conditions
-        graphWorker.ensureReady().then(() => {
-          console.log('[OIEAgent] GraphWorker initialisé');
-          const sqliteManager = graphWorker.getSQLiteManager();
-          const hnswManager = graphWorker.getHNSWManager();
-          memoryRetriever = new MemoryRetriever(runtime, sqliteManager, hnswManager);
-          console.log('[OIEAgent] MemoryRetriever initialisé');
-          isReady = true; // Barrier: marquer prêt une fois les deux ressources initialisées
-          console.log('[OIEAgent] ✅ Système prêt à traiter les requêtes');
-        }).catch(err => {
-          console.error('[OIEAgent] Échec de l\'initialisation du GraphWorker:', err);
-          isReady = false;
-        });
+                // Initialisation avec barrier pour éviter les race conditions
+                graphWorker.ensureReady().then(() => {
+                  console.log('[OIEAgent] GraphWorker initialisé');
+                  const sqliteManager = graphWorker.getSQLiteManager();
+                  const hnswManager = graphWorker.getHNSWManager();
+                  memoryRetriever = new MemoryRetriever(runtime, sqliteManager, hnswManager);
+                  console.log('[OIEAgent] MemoryRetriever initialisé');
+                  isReady = true; // Barrier: marquer prêt une fois les deux ressources initialisées
+                  console.log('[OIEAgent] ✅ Système prêt à traiter les requêtes');
+                }).catch(err => {
+                  console.error('[OIEAgent] Échec de l\'initialisation du GraphWorker:', err);
+                  isReady = false;
+                });
 
         // L'OIE expose une seule méthode de stream : 'executeQuery'
         runtime.registerStreamMethod(
