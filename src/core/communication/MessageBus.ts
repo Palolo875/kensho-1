@@ -12,7 +12,7 @@ import {
     MessageRouter,
     StreamCallbacks
 } from './managers';
-import { MetricsCollector } from '../metrics';
+import { MetricsCollector } from '../monitoring';
 import { payloadValidator } from './validation';
 
 // Re-export StreamCallbacks for public API compatibility
