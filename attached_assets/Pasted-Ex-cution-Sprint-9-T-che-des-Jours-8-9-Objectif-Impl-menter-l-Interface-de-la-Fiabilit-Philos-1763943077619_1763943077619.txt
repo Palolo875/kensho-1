@@ -1,0 +1,160 @@
+Exécution : Sprint 9 - Tâche des Jours 8-9
+Objectif : Implémenter l'Interface de la Fiabilité
+Philosophie : "La transparence n'est pas une option, c'est une fonctionnalité." Nous allons donner à l'utilisateur une vue claire et intuitive sur le processus de vérification des faits, transformant la confiance d'un sentiment en une certitude visuelle.
+Sous-Étape 3.1 : Mise à Jour du SynthesizerAgent et du CognitiveProcessor
+Le synthétiseur doit maintenant utiliser le rapport de vérification riche et le processeur doit transmettre les sources à l'UI.
+Fichier : src/agents/personas/synthesizer-prompt-v3.ts (Nouveau)
+TypeScript
+
+export const SYNTHESIZER_PROMPT_V3 = (draft: string, critique: string, verificationReport: VerificationResult[]): string => {
+    const verificationSummary = verificationReport.length > 0 ? `
+# RAPPORT DE VÉRIFICATION FACTUELLE
+Voici le résultat de la vérification des faits du brouillon initial. Tu DOIS en tenir compte.
+${verificationReport.map(v => `- Affirmation : "${v.claim}" -> Statut : ${v.status} (Confiance: ${(v.confidenceScore * 100).toFixed(0)}%)`).join('\n')}
+
+# RÈGLES DE SYNTHÈSE BASÉES SUR LES FAITS
+- Si un fait est 'VERIFIED' avec une confiance > 80%, tu peux l'affirmer avec assurance.
+- Si un fait est 'VERIFIED' avec une confiance < 80%, tu dois le nuancer (ex: "il semble que...", "selon une source...").
+- Si un fait est 'UNKNOWN', tu dois l'omettre ou le présenter comme une spéculation non vérifiée.
+- Si un fait est 'CONTRADICTED' ou 'AMBIGUOUS', tu DOIS mentionner l'incertitude ou le conflit des sources. C'est un point crucial de ta crédibilité.
+`.trim() : '# RAPPORT DE VÉRIFICATION FACTUELLE\nAucune vérification de faits n\'a été effectuée.';
+
+    return `
+# RÔLE : Synthétiseur Final
+# MISSION : Améliorer le BROUILLON en intégrant la CRITIQUE et en respectant impérativement le RAPPORT DE VÉRIFICATION FACTUELLE pour produire une réponse finale, nuancée et factuellement juste.
+
+# BROUILLON INITIAL
+${draft}
+
+# CRITIQUE CONSTRUCTIVE
+${critique}
+
+${verificationSummary}
+
+# TA RÉPONSE FINALE AMÉLIORÉE :
+`;
+};
+
+Fichier : src/core/oie/CognitiveProcessor.ts (extrait)
+TypeScript
+
+// ... dans la méthode run, après l'exécution du plan
+
+const { finalResponse, journal } = await this.taskExecutor.execute(plan, context);
+
+// Extraire les sources uniques du journal pour les attacher au message
+const verificationStep = journal.getStepById('step3_factcheck');
+const sources = new Map<string, any>();
+if (verificationStep && verificationStep.result) {
+    const verificationResults: VerificationResult[] = verificationStep.result;
+    for (const result of verificationResults) {
+        if (result.evidence && !sources.has(result.evidence.sourceNodeId)) {
+            sources.set(result.evidence.sourceNodeId, {
+                id: result.evidence.sourceNodeId,
+                title: result.evidence.content.substring(0, 70) + '...' // Titre simplifié
+            });
+        }
+    }
+}
+
+// Envoyer la réponse finale, le journal, ET les sources à l'UI
+this.runtime.sendToUI('final-response', {
+    queryId: this.task.id,
+    content: finalResponse,
+    journal: journal.serialize(),
+    sources: Array.from(sources.values()) // Convertir la map en tableau
+});
+
+    Commentaire : Le SynthesizerAgent a maintenant des instructions très claires sur comment gérer chaque statut de vérification. Le CognitiveProcessor agit comme un filtre, extrayant les sources uniques utilisées pendant la vérification pour les fournir proprement à l'interface utilisateur.
+
+Sous-Étape 3.2 : Mise à Jour de l'Interface (JournalCognitif et ChatMessage)
+Nous créons les composants React pour afficher ces nouvelles informations.
+Fichier : src/ui/components/JournalCognitif.tsx (mise à jour)
+TypeScript
+
+// ... imports
+import { VerificationResult } from '../../types/verification';
+
+// Nouveau sous-composant pour afficher le résultat d'une vérification
+const VerificationResultItem: React.FC<{ result: VerificationResult }> = ({ result }) => {
+    const getStatusIcon = () => {
+        switch (result.status) {
+            case 'VERIFIED': return '✅';
+            case 'CONTRADICTED': return '❌';
+            case 'AMBIGUOUS': return '🟡';
+            case 'UNKNOWN': return '⚠️';
+            default: return '❓';
+        }
+    };
+
+    return (
+        <div className="verification-item">
+            <span>{getStatusIcon()} {result.claim}</span>
+            <small>(Confiance: {(result.confidenceScore * 100).toFixed(0)}%)</small>
+            {result.evidence && <p className="evidence">Source: "{result.evidence.content.substring(0, 100)}..."</p>}
+        </div>
+    );
+};
+
+// ... dans le composant JournalStep
+// Si l'étape est la vérification des faits, on utilise notre nouveau composant
+if (step.id === 'step3_factcheck' && Array.isArray(step.result)) {
+    return (
+        <div className="journal-step">
+            <h4>{step.title} ({step.duration.toFixed(0)}ms)</h4>
+            <div className="verification-list">
+                {(step.result as VerificationResult[]).map((res, i) => (
+                    <VerificationResultItem key={i} result={res} />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+Fichier : src/ui/components/ChatMessage.tsx (mise à jour)
+TypeScript
+
+// ...
+
+// Nouveau sous-composant pour le footer des sources
+const SourcesFooter: React.FC<{ sources: any[] }> = ({ sources }) => (
+    <div className="sources-footer">
+        <strong>Sources consultées :</strong>
+        <div className="sources-list">
+            {sources.map(source => (
+                <span key={source.id} className="source-badge" title={source.title}>
+                    📄 {source.title.substring(0, 30)}...
+                </span>
+            ))}
+        </div>
+    </div>
+);
+
+// Dans le composant ChatMessage
+const ChatMessage: React.FC<{ message: Message }> = ({ message }) => {
+    // ...
+    return (
+        <div className={`message ${message.role}`}>
+            <div className="message-content">{message.content}</div>
+            
+            {/* ... (actions comme "Voir la réflexion" et satisfaction) */}
+
+            {/* NOUVEAU : Affichage du footer des sources */}
+            {message.sources && message.sources.length > 0 && (
+                <SourcesFooter sources={message.sources} />
+            )}
+
+            {showJournal && message.journal && <JournalCognitif journal={message.journal} />}
+        </div>
+    );
+};
+
+    Commentaire : Le JournalCognitif peut maintenant afficher une liste détaillée des affirmations vérifiées, avec un statut visuel clair (✅, 🟡, ⚠️, ❌). Le ChatMessage affiche un footer simple et propre listant les documents consultés, comme nous l'avions décidé pour rester pragmatique.
+
+Conclusion de la Tâche
+
+    Statut : ✅ Terminé.
+    Livrables :
+        Un SynthesizerAgent qui module sa réponse en fonction de la fiabilité des faits.
+        Un JournalCognitif qui offre une transparence totale sur le processus de vérification.
+        Un ChatMessage qui affiche les sources utilisées, renforçant la confiance de l'utilisateur.

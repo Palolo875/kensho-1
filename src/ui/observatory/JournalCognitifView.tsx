@@ -1,6 +1,7 @@
 // src/ui/observatory/JournalCognitifView.tsx
 import React from 'react';
 import { SerializedJournal, JournalStep } from '../../core/oie/JournalCognitif';
+import type { VerificationResult } from '../../types/verification';
 
 interface JournalCognitifViewProps {
     journal: SerializedJournal | null;
@@ -45,6 +46,46 @@ export function JournalCognitifView({ journal }: JournalCognitifViewProps) {
         if (ms < 1000) return `${ms.toFixed(0)}ms`;
         return `${(ms / 1000).toFixed(1)}s`;
     };
+
+    const getVerificationStatusIcon = (status: string) => {
+        switch (status) {
+            case 'VERIFIED': return '✅';
+            case 'CONTRADICTED': return '❌';
+            case 'AMBIGUOUS': return '🟡';
+            case 'UNKNOWN': return '⚠️';
+            default: return '❓';
+        }
+    };
+
+    const VerificationResultItem: React.FC<{ result: VerificationResult }> = ({ result }) => (
+        <div style={styles.verificationItem}>
+            <div style={styles.verificationHeader}>
+                <span style={styles.verificationIcon}>{getVerificationStatusIcon(result.status)}</span>
+                <span style={styles.verificationClaim}>{result.claim}</span>
+                <span style={styles.verificationScore}>
+                    Confiance: {(result.confidenceScore * 100).toFixed(0)}%
+                </span>
+            </div>
+            {result.evidence && (
+                <div style={styles.verificationEvidence}>
+                    <span style={styles.evidenceLabel}>Source:</span>
+                    <span style={styles.evidenceContent}>
+                        "{result.evidence.content.substring(0, 100)}{result.evidence.content.length > 100 ? '...' : ''}"
+                    </span>
+                </div>
+            )}
+            {result.contradictoryEvidence && result.contradictoryEvidence.length > 0 && (
+                <div style={styles.contradictoryEvidence}>
+                    <span style={styles.contradictoryLabel}>Preuves contradictoires:</span>
+                    {result.contradictoryEvidence.map((evidence, idx) => (
+                        <div key={idx} style={styles.contradictoryItem}>
+                            "{evidence.content.substring(0, 80)}"
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div style={styles.container}>
@@ -103,11 +144,21 @@ export function JournalCognitifView({ journal }: JournalCognitifViewProps) {
                         {step.result && (
                             <div style={styles.stepResult}>
                                 <span style={styles.resultLabel}>Résultat:</span>
-                                <div style={styles.resultContent}>
-                                    {typeof step.result === 'string'
-                                        ? step.result.substring(0, 200) + (step.result.length > 200 ? '...' : '')
-                                        : JSON.stringify(step.result, null, 2).substring(0, 200) + '...'}
-                                </div>
+                                {/* Cas spécial: résultats de vérification */}
+                                {step.agent === 'FactCheckerAgent' && Array.isArray(step.result) && 
+                                 step.result.length > 0 && step.result[0].hasOwnProperty('status') ? (
+                                    <div style={styles.verificationList}>
+                                        {(step.result as VerificationResult[]).map((res, i) => (
+                                            <VerificationResultItem key={i} result={res} />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={styles.resultContent}>
+                                        {typeof step.result === 'string'
+                                            ? step.result.substring(0, 200) + (step.result.length > 200 ? '...' : '')
+                                            : JSON.stringify(step.result, null, 2).substring(0, 200) + '...'}
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -342,5 +393,68 @@ const styles = {
         lineHeight: '1.6',
         whiteSpace: 'pre-wrap' as const,
         wordBreak: 'break-word' as const
+    },
+    verificationList: {
+        display: 'flex' as const,
+        flexDirection: 'column' as const,
+        gap: '0.75rem',
+        marginTop: '0.75rem'
+    },
+    verificationItem: {
+        padding: '0.75rem',
+        backgroundColor: '#111827',
+        borderLeft: '3px solid #60a5fa',
+        borderRadius: '0.25rem',
+        fontSize: '0.9rem'
+    },
+    verificationHeader: {
+        display: 'flex' as const,
+        alignItems: 'center' as const,
+        gap: '0.5rem',
+        marginBottom: '0.5rem'
+    },
+    verificationIcon: {
+        fontSize: '1.25rem'
+    },
+    verificationClaim: {
+        flex: 1,
+        color: '#e5e7eb',
+        fontWeight: '500' as const
+    },
+    verificationScore: {
+        fontSize: '0.85rem',
+        color: '#9ca3af'
+    },
+    verificationEvidence: {
+        display: 'flex' as const,
+        flexDirection: 'column' as const,
+        gap: '0.25rem',
+        paddingLeft: '1.5rem',
+        fontSize: '0.85rem'
+    },
+    evidenceLabel: {
+        color: '#60a5fa',
+        fontWeight: '500' as const
+    },
+    evidenceContent: {
+        color: '#d1d5db',
+        fontStyle: 'italic' as const
+    },
+    contradictoryEvidence: {
+        display: 'flex' as const,
+        flexDirection: 'column' as const,
+        gap: '0.25rem',
+        paddingLeft: '1.5rem',
+        marginTop: '0.5rem',
+        fontSize: '0.85rem',
+        borderLeft: '2px solid #ef4444'
+    },
+    contradictoryLabel: {
+        color: '#ef4444',
+        fontWeight: '500' as const
+    },
+    contradictoryItem: {
+        color: '#fca5a5',
+        fontSize: '0.8rem'
     }
 };
