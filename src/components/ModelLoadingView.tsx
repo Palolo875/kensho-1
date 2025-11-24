@@ -242,7 +242,7 @@ export function ModelLoadingView() {
     };
 
     // Ne rien afficher si pas en cours de chargement
-    if (!modelProgress.phase || modelProgress.phase === 'idle') {
+    if (!modelProgress.phase) {
         return null;
     }
 
@@ -372,7 +372,7 @@ export function ModelLoadingView() {
                                     </Button>
                                 </>
                             )}
-                            {modelProgress.phase === 'idle' && (
+                            {!modelProgress.phase && (
                                 <Button
                                     variant="ghost"
                                     size="icon"
@@ -384,7 +384,7 @@ export function ModelLoadingView() {
                                     <span className="sr-only">Fermer</span>
                                 </Button>
                             )}
-                            {modelProgress.phase !== 'error' && modelProgress.phase !== 'downloading' && modelProgress.phase !== 'idle' && (
+                            {modelProgress.phase !== 'error' && modelProgress.phase !== 'downloading' && modelProgress.phase && (
                                 <Button
                                     variant="ghost"
                                     size="icon"
@@ -413,7 +413,7 @@ export function ModelLoadingView() {
                     </div>
 
                     {/* Bouton de démarrage pour lazy loading */}
-                    {modelProgress.phase === 'idle' && appConfig.llm.enabled && (
+                    {!modelProgress.phase && appConfig.llm.enabled && (
                         <div className="space-y-4">
                             <div className="text-center text-sm text-muted-foreground">
                                 Le modèle IA n'est pas encore chargé. Taille du téléchargement : ~2 GB
@@ -434,7 +434,7 @@ export function ModelLoadingView() {
                     )}
 
                     {/* Barre de progression */}
-                    {modelProgress.phase !== 'error' && modelProgress.phase !== 'idle' && (
+                    {modelProgress.phase !== 'error' && modelProgress.phase && (
                         <div className="space-y-4">
                             <div className="space-y-2">
                                 <Progress 

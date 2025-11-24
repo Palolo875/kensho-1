@@ -7,88 +7,86 @@ import { GraphWorker } from '../graph';
 import { MemoryRetriever } from '../graph/MemoryRetriever';
 import type { Intent } from '../intent-classifier';
 
-try {
-    runAgent({
-        name: 'OIEAgent',
-        init: (runtime: AgentRuntime) => {
-            try {
-                console.log('[OIEAgent] 🚀 Initialisation...');
-                runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
-                console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
+runAgent({
+    name: 'OIEAgent',
+    init: (runtime: AgentRuntime) => {
+        console.log('[OIEAgent] 🚀 Initialisation...');
+        runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
+        console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
 
-                const planner = new LLMPlanner(runtime);
-                const graphWorker = new GraphWorker();
-                let memoryRetriever: MemoryRetriever | null = null;
-                let isReady = false;
+        const planner = new LLMPlanner(runtime);
+        const graphWorker = new GraphWorker();
+        let memoryRetriever: MemoryRetriever | null = null;
+        let isReady = false;
 
-                // Initialisation avec barrier pour éviter les race conditions
-                graphWorker.ensureReady().then(() => {
-                  console.log('[OIEAgent] GraphWorker initialisé');
-                  const sqliteManager = graphWorker.getSQLiteManager();
-                  const hnswManager = graphWorker.getHNSWManager();
-                  memoryRetriever = new MemoryRetriever(runtime, sqliteManager, hnswManager);
-                  console.log('[OIEAgent] MemoryRetriever initialisé');
-                  isReady = true; // Barrier: marquer prêt une fois les deux ressources initialisées
-                  console.log('[OIEAgent] ✅ Système prêt à traiter les requêtes');
-                }).catch(err => {
-                  console.error('[OIEAgent] Échec de l\'initialisation du GraphWorker:', err);
-                  isReady = false;
-                });
+        // Initialisation avec barrier pour éviter les race conditions
+        graphWorker.ensureReady().then(() => {
+            console.log('[OIEAgent] GraphWorker initialisé');
+            const sqliteManager = graphWorker.getSQLiteManager();
+            const hnswManager = graphWorker.getHNSWManager();
+            memoryRetriever = new MemoryRetriever(runtime, sqliteManager, hnswManager);
+            console.log('[OIEAgent] MemoryRetriever initialisé');
+            isReady = true;
+            console.log('[OIEAgent] ✅ Système prêt à traiter les requêtes');
+        }).catch(err => {
+            console.error('[OIEAgent] Échec de l\'initialisation du GraphWorker:', err);
+            isReady = false;
+        });
 
         // L'OIE expose une seule méthode de stream : 'executeQuery'
         runtime.registerStreamMethod(
             'executeQuery',
             async (payload: any, stream: AgentStreamEmitter) => {
-                console.log('[OIEAgent] 📨 Requête reçue:', payload);
-                
-                // Barrier: Attendre que le système soit prêt avant de traiter
-                if (!isReady) {
-                    console.warn('[OIEAgent] ⏳ Système en cours d\'initialisation, requête mise en attente');
-                    let retries = 0;
-                    while (!isReady && retries < 100) {
-                        await new Promise(resolve => setTimeout(resolve, 50));
-                        retries++;
-                    }
+                try {
+                    console.log('[OIEAgent] 📨 Requête reçue:', payload);
+                    
+                    // Barrier: Attendre que le système soit prêt avant de traiter
                     if (!isReady) {
-                        const error = new Error('OIEAgent not ready after initialization timeout');
-                        console.error('[OIEAgent] ❌', error.message);
+                        console.warn('[OIEAgent] ⏳ Système en cours d\'initialisation, requête mise en attente');
+                        let retries = 0;
+                        while (!isReady && retries < 100) {
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                            retries++;
+                        }
+                        if (!isReady) {
+                            const error = new Error('OIEAgent not ready after initialization timeout');
+                            console.error('[OIEAgent] ❌', error.message);
+                            stream.error(error);
+                            return;
+                        }
+                    }
+                    
+                    // Validation du payload
+                    if (!payload || typeof payload.query !== 'string') {
+                        const error = new Error('Invalid payload: query must be a non-empty string');
+                        console.error('[OIEAgent] ❌ Payload invalide:', payload);
+                        runtime.log('error', error.message);
                         stream.error(error);
                         return;
                     }
-                }
-                
-                // Validation du payload
-                if (!payload || typeof payload.query !== 'string') {
-                    const error = new Error('Invalid payload: query must be a non-empty string');
-                    console.error('[OIEAgent] ❌ Payload invalide:', payload);
-                    runtime.log('error', error.message);
-                    stream.error(error);
-                    return;
-                }
 
-                const { query, attachedFile } = payload;
-                
-                // Rejeter les queries vides ou trop courtes
-                if (query.trim().length === 0) {
-                    const error = new Error('Query cannot be empty');
-                    console.error('[OIEAgent] ❌ Query vide');
-                    runtime.log('error', error.message);
-                    stream.error(error);
-                    return;
-                }
+                    const { query, attachedFile } = payload;
+                    
+                    // Rejeter les queries vides ou trop courtes
+                    if (query.trim().length === 0) {
+                        const error = new Error('Query cannot be empty');
+                        console.error('[OIEAgent] ❌ Query vide');
+                        runtime.log('error', error.message);
+                        stream.error(error);
+                        return;
+                    }
 
-                if (query.trim().length < 2) {
-                    const error = new Error('Query is too short (minimum 2 characters)');
-                    console.error('[OIEAgent] ❌ Query trop courte');
-                    runtime.log('error', error.message);
-                    stream.error(error);
-                    return;
-                }
+                    if (query.trim().length < 2) {
+                        const error = new Error('Query is too short (minimum 2 characters)');
+                        console.error('[OIEAgent] ❌ Query trop courte');
+                        runtime.log('error', error.message);
+                        stream.error(error);
+                        return;
+                    }
 
-                console.log('[OIEAgent] 🎯 Query valide:', query);
-                runtime.log('info', `Nouvelle requête reçue: "${query}"`);
+                    console.log('[OIEAgent] 🎯 Query valide:', query);
+                    runtime.log('info', `Nouvelle requête reçue: "${query}"`);
 
-                try {
                     console.log('[OIEAgent] 🔍 Classification de l\'intention...');
                     const intent = await runtime.callAgent<Intent>(
                         'IntentClassifierAgent', 'classify', [{ text: query }]
@@ -164,7 +162,7 @@ try {
                                 type: attachedFile.type,
                             }
                         } : {}),
-                        debateModeEnabled: payload.debateModeEnabled !== false // Sprint 6: Pass debate mode
+                        debateModeEnabled: payload.debateModeEnabled !== false
                     };
                     
                     const plan = await planner.generatePlan(query, plannerContext);
@@ -173,11 +171,9 @@ try {
                     runtime.log('info', `Plan généré: "${plan.thought}"`);
                     runtime.log('info', `Plan contient ${plan.steps.length} étape(s)`);
 
-                    // Envoyer le plan à l'UI pour affichage
                     stream.chunk({ type: 'plan', data: plan });
                     console.log('[OIEAgent] 📤 Plan envoyé à l\'UI');
                     
-                    // Si c'est un DebatePlan, envoyer la structure des étapes de pensée
                     if (plan.type === 'DebatePlan' && plan.steps) {
                         const thoughtSteps = plan.steps.map(step => ({
                             id: step.id || 'unknown',
@@ -188,11 +184,9 @@ try {
                         console.log('[OIEAgent] 📤 Structure du processus de pensée envoyée à l\'UI');
                     }
 
-                    // 2. Exécution avec le TaskExecutor
                     console.log('[OIEAgent] ⚙️ Début de l\'exécution du plan...');
                     runtime.log('info', 'Exécution du plan avec TaskExecutor...');
                     
-                    // Préparer le contexte d'exécution
                     const executionContext = {
                         originalQuery: query,
                         attachedFile: attachedFile ? {
@@ -206,7 +200,6 @@ try {
                     await executor.execute(plan, stream);
                     
                     console.log('[OIEAgent] ✅ Exécution terminée');
-                    
                 } catch (error) {
                     const err = error instanceof Error ? error : new Error('Erreur inconnue');
                     console.error('[OIEAgent] ❌ Erreur durant l\'orchestration:', err);
@@ -216,7 +209,6 @@ try {
             }
         );
 
-        // Méthode pour obtenir la liste des agents disponibles
         runtime.registerMethod('getAvailableAgents', () => {
             return {
                 available: ['MainLLMAgent', 'CalculatorAgent', 'UniversalReaderAgent'],
