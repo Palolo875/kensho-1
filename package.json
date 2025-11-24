@@ -28,7 +28,9 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint . --fix",
-    "quality": "npm run type-check && npm run lint && npm run format:check"
+    "quality": "npm run type-check && npm run lint && npm run format:check",
+    "seed:demo": "tsx scripts/seed-demo-data.ts",
+    "demo:guide": "tsx scripts/demo-scenarios.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
