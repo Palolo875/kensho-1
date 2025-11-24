@@ -1,0 +1,182 @@
+Exécution : Sprint 9 - Tâche des Jours 5-7
+Objectif : Implémenter la Vérification en 2 Étapes et Mettre à Jour l'Orchestration
+Philosophie : "Chercher largement, vérifier précisément." Nous n'allons pas nous contenter d'une vague similarité. Nous allons utiliser une recherche sémantique pour trouver les candidats, puis un LLM pour juger de la preuve.
+Sous-Étape 2.1 : Définition de la Structure de Données VerificationResult
+Avant de coder, nous devons définir précisément ce que nous allons manipuler. C'est la concrétisation de notre discussion sur les failles.
+Fichier : src/types/verification.ts (Nouveau fichier)
+TypeScript
+
+export interface Evidence {
+    sourceNodeId: string;
+    content: string;
+    // La 'nuance' sera extraite par le LLM de vérification si le contexte est important
+    nuance?: string; 
+}
+
+export interface VerificationResult {
+    claim: string;
+    status: 'VERIFIED' | 'CONTRADICTED' | 'AMBIGUOUS' | 'UNKNOWN';
+    // Score de 0.0 à 1.0, basé sur la similarité sémantique du meilleur candidat
+    confidenceScore: number; 
+    // La preuve principale qui supporte ou contredit le claim
+    evidence: Evidence | null;
+    // Preuves additionnelles en cas d'ambiguïté ou de contradiction
+    contradictoryEvidence?: Evidence[];
+}
+
+    Commentaire : Cette interface est notre contrat. Elle est riche et contient toutes les informations nécessaires pour que le SynthesizerAgent et l'UI puissent prendre des décisions nuancées.
+
+Sous-Étape 2.2 : Le Prompt de Vérification
+Ce prompt est crucial. Il doit être très contraint pour être rapide, peu coûteux, et fiable.
+Fichier : src/agents/personas/claim-verifier-prompt.ts
+TypeScript
+
+export const CLAIM_VERIFIER_PROMPT = (claim: string, memories: string[]): string => `
+# RÔLE : Juge Factuel
+
+# MISSION :
+Évalue si l'AFFIRMATION est directement supportée, contredite, ou non mentionnée par les SOUVENIRS fournis.
+
+# AFFIRMATION À VÉRIFIER :
+"${claim}"
+
+# SOUVENIRS DE CONNAISSANCE :
+${memories.map((m, i) => `SOUVENIR ${i + 1}: "${m}"`).join('\n')}
+
+# INSTRUCTIONS STRICTES :
+1.  Lis l'AFFIRMATION et chaque SOUVENIR.
+2.  Compare l'AFFIRMATION aux SOUVENIRS.
+3.  Réponds avec UN SEUL mot parmi les suivants :
+    - **VERIFIED** : Si au moins un souvenir confirme explicitement l'affirmation.
+    - **CONTRADICTED** : Si au moins un souvenir contredit explicitement l'affirmation.
+    - **AMBIGUOUS** : Si les souvenirs se contredisent entre eux à propos de l'affirmation.
+    - **UNKNOWN** : Si aucun souvenir ne contient d'information pertinente pour confirmer ou infirmer l'affirmation.
+
+# TON VERDICT (un seul mot) :
+`;
+
+    Commentaire : Ce prompt est conçu pour un LLM "juge". Il est minimaliste et force une réponse courte et standardisée, ce qui le rend très efficace et facile à parser.
+
+Sous-Étape 2.3 : La Méthode findEvidence V2 dans le GraphWorker
+C'est ici que nous implémentons la logique de vérification en 2 étapes.
+Fichier : src/agents/GraphWorker/index.ts (extrait de la méthode findEvidence)
+TypeScript
+
+// ... dans la définition de l'agent GraphWorker
+
+// Ajout de la dépendance vers le MainLLMAgent pour la 2ème étape de vérification
+dependencies: ['EmbeddingAgent', 'HNSWManager', 'SQLiteManager', 'MainLLMAgent'], 
+
+// ... dans init()
+
+public: {
+    // ... autres méthodes
+    
+    async findEvidence(claim: string): Promise<VerificationResult> {
+        const embeddingAgent = context.getAgent('EmbeddingAgent');
+        const hnswManager = context.getAgent('HNSWManager');
+        const llm = context.getAgent('MainLLMAgent');
+
+        // --- ÉTAPE 1 : RECHERCHE SÉMANTIQUE LARGE ---
+        const claimEmbedding = await embeddingAgent.embed(claim);
+        // On récupère les 3 meilleurs candidats pour détecter les contradictions
+        const candidates = await hnswManager.search(claimEmbedding, 3);
+
+        if (candidates.length === 0) {
+            return { claim, status: 'UNKNOWN', confidenceScore: 0, evidence: null };
+        }
+
+        const bestCandidate = candidates[0];
+        const candidateMemories = candidates.map(c => c.metadata.content);
+
+        // --- ÉTAPE 2 : VÉRIFICATION PRÉCISE PAR LLM ---
+        const verifierPrompt = CLAIM_VERIFIER_PROMPT(claim, candidateMemories);
+        const verdict = (await llm.generate(verifierPrompt, { maxTokens: 10 })).trim().toUpperCase();
+
+        let status: VerificationResult['status'] = 'UNKNOWN';
+        if (verdict.includes('VERIFIED')) status = 'VERIFIED';
+        else if (verdict.includes('CONTRADICTED')) status = 'CONTRADICTED';
+        else if (verdict.includes('AMBIGUOUS')) status = 'AMBIGUOUS';
+
+        // Si le statut est UNKNOWN malgré des candidats, c'est que la similarité sémantique
+        // était un faux positif. On retourne UNKNOWN avec un score de confiance faible.
+        if (status === 'UNKNOWN') {
+            return { claim, status: 'UNKNOWN', confidenceScore: bestCandidate.similarity, evidence: null };
+        }
+
+        // Construire le rapport final
+        const result: VerificationResult = {
+            claim,
+            status,
+            confidenceScore: bestCandidate.similarity,
+            evidence: {
+                sourceNodeId: bestCandidate.id,
+                content: bestCandidate.metadata.content,
+            },
+            // Si ambigu ou contredit, on ajoute les autres preuves
+            contradictoryEvidence: (status === 'AMBIGUOUS' || status === 'CONTRADICTED') && candidates.length > 1
+                ? candidates.slice(1).map(c => ({ sourceNodeId: c.id, content: c.metadata.content }))
+                : []
+        };
+
+        return result;
+    }
+}
+
+    Commentaire : Cette méthode est le cœur de notre sprint. Elle orchestre la recherche sémantique (Étape 1) et la vérification logique par LLM (Étape 2) pour produire un VerificationResult riche et nuancé.
+
+Sous-Étape 2.4 : Mise à Jour de l'Orchestration (Séquentielle)
+Enfin, nous mettons à jour le FactCheckerAgent pour qu'il utilise cette nouvelle méthode et nous nous assurons que le TaskExecutor appelle les étapes dans le bon ordre (séquentiel).
+Fichier : src/agents/FactCheckerAgent/index.ts (mise à jour de la méthode verify)
+TypeScript
+
+// ... dans la méthode verify()
+
+// 1. Extraire les claims de manière robuste
+const claims = await hybridExtractor.extract(text);
+console.log(`[FactCheckerAgent] Extracted ${claims.length} claims:`, claims);
+
+if (claims.length === 0) {
+    return [];
+}
+
+// 2. Vérifier chaque claim en appelant le GraphWorker
+const graphWorker = context.getAgent('GraphWorker');
+const verificationResults = await Promise.all(
+    claims.map(claim => graphWorker.findEvidence(claim))
+);
+
+console.log('[FactCheckerAgent] Verification results:', verificationResults);
+return verificationResults;
+
+Fichier : src/core/oie/LLMPlanner.ts (plan séquentiel)
+TypeScript
+
+// ... dans generatePlan pour un 'complex' query
+
+const debatePlan: DebatePlan = {
+    type: 'debate_v2',
+    steps: [
+        { id: 'step1_draft', agent: 'OptimistAgent', action: 'generateDraft', ... },
+        // EXÉCUTION SÉQUENTIELLE POUR LA STABILITÉ
+        { id: 'step2_critique', agent: 'CriticAgent', action: 'critique', input: { source: 'step1_draft', ... } },
+        { id: 'step3_factcheck', agent: 'FactCheckerAgent', action: 'verify', input: { source: 'step1_draft', ... } },
+        { id: 'step4_synthesis', agent: 'SynthesizerAgent', action: 'synthesize', input: { 
+            draft: { source: 'step1_draft', ... },
+            critique: { source: 'step2_critique', ... },
+            verification: { source: 'step3_factcheck', ... } 
+        }}
+    ]
+};
+
+    Commentaire : Le FactCheckerAgent appelle maintenant findEvidence pour chaque claim. Le LLMPlanner génère un plan strictement séquentiel pour éviter la surcharge CPU, comme nous l'avions décidé. Le TaskExecutor n'a pas besoin de modification majeure car il est déjà conçu pour exécuter des plans séquentiels.
+
+Conclusion de la Tâche
+
+    Statut : ✅ Terminé.
+    Livrables :
+        Une méthode findEvidence V2 robuste qui effectue une vérification en 2 étapes.
+        Un FactCheckerAgent qui orchestre l'extraction et la vérification.
+        Un plan d'exécution mis à jour pour garantir la stabilité (séquentiel).
+
+Le cœur de la fonctionnalité de ce sprint est maintenant en place. Kensho peut non seulement extraire des affirmations, mais aussi les juger avec nuance.

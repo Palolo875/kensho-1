@@ -33,10 +33,9 @@
 - All debate flows validated
 - Streaming contract verified
 
-### Sprint 9: FactCheckerAgent with Hybrid Extraction (100% - Phase 1)
+### Sprint 9: FactCheckerAgent with Hybrid Extraction (100% - Phase 1 & 2 COMPLETE!)
 
-#### Phase 1: Robust Claim Extraction (100%)
-
+#### Phase 1: Robust Claim Extraction (100%) ✅
 **Architecture: Hybrid Method (LLM + Rules)**
 ```
 LLM Extraction → JSON/Markdown Parsing → Validation → Fallback Rules
@@ -61,10 +60,38 @@ LLM Extraction → JSON/Markdown Parsing → Validation → Fallback Rules
    - Text truncation to prevent timeouts
    - Robust error handling with detailed logging
 
-4. **FactCheckerAgent** (`src/agents/fact-checker/index.ts`)
-   - `verify(text)` - Extract claims (Phase 1), returns PENDING_VERIFICATION status
-   - `extractClaims(text)` - Extract only, for debugging
-   - Ready for Phase 2: verification against sources
+#### Phase 2: Semantic Verification + LLM Judge (100%) ✅
+**Architecture: 2-Step Verification**
+```
+Claim → EmbeddingAgent → GraphWorker.findEvidence (semantic search)
+              ↓
+      Top 3 Candidates → LLMAgent (judge verdict)
+              ↓
+      VerificationResult (VERIFIED/CONTRADICTED/AMBIGUOUS/UNKNOWN)
+```
+
+**New Components:**
+
+4. **VerificationResult Interface** (`src/types/verification.ts`)
+   - Rich data structure with claim, status, confidence score
+   - Evidence + contradictory evidence for nuance
+   - Supports multi-evidence scenarios
+
+5. **CLAIM_VERIFIER_PROMPT** (`src/agents/personas/claim-verifier-prompt.ts`)
+   - Minimalist LLM prompt for fast verdicts
+   - Forces one-word response (VERIFIED/CONTRADICTED/AMBIGUOUS/UNKNOWN)
+   - Low token cost, high reliability
+
+6. **GraphWorker.findEvidence()** (`src/agents/graph/index.ts`)
+   - Semantic search via HNSW embeddings
+   - Returns enriched results with node content
+   - Handles dimension validation
+   - Fallback-safe error handling
+
+7. **FactCheckerAgent.verify()** (UPDATED `src/agents/fact-checker/index.ts`)
+   - Phase 1: Extract claims (LLM + fallback rules)
+   - Phase 2: Embed + search + verify each claim
+   - Returns complete VerificationResult[] with nuanced status
 
 ---
 
@@ -116,7 +143,8 @@ src/
 | Debate Metrics | 8 | ✅ | MetaCritic accuracy tracking |
 | Feedback Learning | 8 | ✅ | Dynamic threshold tuning |
 | Fact Extraction (Hybrid) | 9 | ✅ | LLM + rule-based fallback |
-| Fact Verification | 9 | 🔜 | Phase 2: Against sources |
+| Fact Verification (2-Step) | 9 | ✅ | Semantic search + LLM judge |
+| Evidence Tracking | 9 | ✅ | Contradiction detection |
 
 ---
 
@@ -217,20 +245,21 @@ debateMetrics.recordUserFeedback(queryId, 5)
 
 ## 🚀 Roadmap
 
-### Sprint 9 Phase 2 (Next)
-- Implement claim verification against knowledge graph
-- Add confidence scoring (0-100)
-- Support for evidence citation
+### Sprint 10 (Next)
+- UI integration for verification results display
+- Fact-check widget in chat responses
+- Evidence visualization dashboard
 
-### Sprint 10 (Future)
-- Multi-turn fact checking
+### Sprint 11 (Future)
+- Multi-turn fact checking context
 - User interaction during verification
-- Claim contradiction detection
+- Claim evolution tracking
 
-### Sprint 11+ (Opportunities)
+### Sprint 12+ (Opportunities)
 - Specialized fact checkers (domain-specific)
 - Source ranking and credibility scoring
 - Real-time knowledge base updates
+- Fact-check API for external integrations
 
 ---
 
@@ -242,17 +271,22 @@ debateMetrics.recordUserFeedback(queryId, 5)
 - Feedback learning system ready
 - Graceful degradation tested
 
-✅ **Sprint 9 Phase 1: Complete**
-- Hybrid claim extraction deployed
-- LLM + rule-based fallback working
-- Multi-level parsing robust
-- Ready for production use
+✅ **Sprint 9 Phase 1 & 2: COMPLETE**
+- Hybrid claim extraction deployed ✅
+- LLM + rule-based fallback working ✅
+- Multi-level parsing robust ✅
+- Semantic search integration ✅
+- LLM judge verification ✅
+- Evidence tracking with contradictions ✅
 
-**Ready for:**
+**All Components Ready:**
 - ✅ Claim extraction on all responses
+- ✅ Semantic verification against knowledge graph
+- ✅ Multi-step verification pipeline
+- ✅ Nuanced status reporting (VERIFIED/CONTRADICTED/AMBIGUOUS/UNKNOWN)
+- ✅ Evidence chains for UI display
 - ✅ Integration with debate system
-- ✅ User feedback collection
-- 🔜 Claim verification implementation
+- ✅ User feedback collection ready
 
 ---
 

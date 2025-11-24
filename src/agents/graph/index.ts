@@ -8,6 +8,7 @@ import {
   ISearchResult,
   IGraphStats,
 } from './types';
+import type { VerificationResult } from '../../types/verification';
 
 /**
  * GraphWorker: Orchestrateur principal du système de Graphe de Connaissances.
@@ -526,6 +527,53 @@ export class GraphWorker {
     
     this.sqliteManager.markAsDirty();
     console.log(`[GraphWorker] 🗑️ Tâche supprimée: ${taskId}`);
+  }
+
+  /**
+   * Recherche des preuves pour un claim via recherche sémantique
+   * Étape 1: Recherche HNSW dans les embeddings
+   * Étape 2: Extraction de contenu des candidats
+   * Note: La vérification LLM sera effectuée dans FactCheckerAgent
+   */
+  public async findEvidence(claimEmbedding: number[], k: number = 3): Promise<ISearchResult[]> {
+    await this.ensureReady();
+    
+    if (!Array.isArray(claimEmbedding) || claimEmbedding.length !== 384) {
+      console.warn(`[GraphWorker] Invalid embedding dimension: ${claimEmbedding.length}`);
+      return [];
+    }
+
+    try {
+      // Recherche sémantique large pour trouver k candidats
+      const candidates = await this.hnswManager.search(claimEmbedding, k);
+      
+      // Enrichir les résultats avec le contenu complet du nœud
+      const enrichedResults: ISearchResult[] = [];
+      
+      for (const candidate of candidates) {
+        const node = await this.getNode(candidate.id);
+        if (node) {
+          enrichedResults.push({
+            id: candidate.id,
+            distance: candidate.distance,
+            node: {
+              ...node,
+              metadata: {
+                content: node.content,
+                type: node.type,
+                importance: node.importance,
+              },
+            } as any,
+          });
+        }
+      }
+
+      console.log(`[GraphWorker] Evidence search: ${enrichedResults.length} candidates found`);
+      return enrichedResults;
+    } catch (error) {
+      console.error('[GraphWorker] Error in findEvidence:', error);
+      return [];
+    }
   }
 }
 

@@ -101,6 +101,14 @@ runAgent({
             return await graphWorker.deleteTask(payload.taskId);
         });
 
+        // ========================================
+        // Sprint 9: Fact-Checking Evidence Search
+        // ========================================
+
+        runtime.registerMethod('findEvidence', async (payload: { embedding: number[] }) => {
+            return await graphWorker.findEvidence(payload.embedding, 3);
+        });
+
         runtime.log('info', '[GraphWorker] ✅ Toutes les méthodes enregistrées');
     }
 });
