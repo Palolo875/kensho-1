@@ -8,7 +8,7 @@ export interface AppConfig {
 }
 
 const MODE = (import.meta.env.VITE_MODE || 'full') as 'full' | 'lite';
-const LLM_AUTOLOAD = import.meta.env.VITE_LLM_AUTOLOAD !== 'false';
+const LLM_AUTOLOAD = import.meta.env.VITE_LLM_AUTOLOAD === 'true';
 
 export const appConfig: AppConfig = {
     llm: {
