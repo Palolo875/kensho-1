@@ -161,7 +161,7 @@ export class MessageBus {
 
             // Collecter métrique d'erreur
             if (this.metricsEnabled) {
-                this.metricsCollector.recordError(serializedError.code || 'UNKNOWN');
+                this.metricsCollector.incrementCounter('error', 1, { type: serializedError.code || 'UNKNOWN' });
             }
         }
     }
@@ -239,8 +239,8 @@ export class MessageBus {
             // Métrique: latence
             if (this.metricsEnabled) {
                 const latency = performance.now() - startTime;
-                this.metricsCollector.recordLatency(latency, { target, type: 'request' });
-                this.metricsCollector.recordMessage({ target, type: 'request', status: 'success' });
+                this.metricsCollector.recordTiming('request_latency', latency, { target, status: 'success' });
+                this.metricsCollector.incrementCounter('request_success', 1, { target });
             }
 
             return result;
@@ -248,9 +248,8 @@ export class MessageBus {
             // Métrique: erreur
             if (this.metricsEnabled) {
                 const latency = performance.now() - startTime;
-                this.metricsCollector.recordLatency(latency, { target, type: 'request', status: 'error' });
-                this.metricsCollector.recordError((error as any).code || 'UNKNOWN', { target });
-                this.metricsCollector.recordMessage({ target, type: 'request', status: 'error' });
+                this.metricsCollector.recordTiming('request_latency', latency, { target, status: 'error' });
+                this.metricsCollector.incrementCounter('request_error', 1, { target, code: (error as any).code || 'UNKNOWN' });
             }
             throw error;
         }
@@ -464,16 +463,9 @@ export class MessageBus {
 
         // Ajouter les métriques si activées
         if (this.metricsEnabled) {
-            const queueStats = this.offlineQueue.getStats();
-            const totalQueued = queueStats.reduce((sum, stat) => sum + stat.queueSize, 0);
-
             return {
                 ...baseStats,
-                metrics: this.metricsCollector.getSystemStats(
-                    this.requestManager.getPendingCount(),
-                    totalQueued,
-                    (this.transport as any).getStats?.()
-                )
+                metrics: this.metricsCollector.getAllMetrics()
             };
         }
 
@@ -487,15 +479,16 @@ export class MessageBus {
         if (!this.metricsEnabled) {
             return 'Metrics are disabled';
         }
-        return this.metricsCollector.generateReport();
+        const metrics = this.metricsCollector.getAllMetrics();
+        return JSON.stringify(metrics, null, 2);
     }
 
     /**
-     * Réinitialise la fenêtre de métriques
+     * Réinitialise les métriques
      */
     public resetMetricsWindow(): void {
         if (this.metricsEnabled) {
-            this.metricsCollector.resetWindow();
+            this.metricsCollector.reset();
         }
     }
 
