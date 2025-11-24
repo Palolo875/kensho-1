@@ -147,4 +147,45 @@ describe('CalculatorAgent - Enhanced Features', () => {
             expect(evaluateExpression('  2  +  3  ')).toBe(5);
         });
     });
+
+    describe('Pathological expressions (regression tests)', () => {
+        it('should reject recursive function definitions', () => {
+            expect(() => evaluateExpression('f(x) = f(x-1)')).toThrow();
+        });
+
+        it('should handle deeply nested expressions', () => {
+            const deepExpr = '((((((((((1 + 1)))))))))';
+            expect(evaluateExpression(deepExpr)).toBe(2);
+        });
+
+        it('should handle very long expression chains', () => {
+            let expr = '1';
+            for (let i = 0; i < 100; i++) {
+                expr += ' + 1';
+            }
+            expect(evaluateExpression(expr)).toBe(101);
+        });
+
+        it('should reject expressions trying to access globals', () => {
+            expect(() => evaluateExpression('this')).toThrow('Expression invalide');
+        });
+
+        it('should reject expressions with eval-like patterns', () => {
+            expect(() => evaluateExpression('eval("2+2")')).toThrow();
+        });
+
+        it('should handle very large numbers gracefully', () => {
+            const result = evaluateExpression('999999999999 * 999999999999');
+            expect(typeof result).toBe('number');
+            expect(isFinite(result)).toBe(true);
+        });
+
+        it('should reject expressions with variable assignments', () => {
+            expect(() => evaluateExpression('x = 5; x + 3')).toThrow();
+        });
+
+        it('should handle null/undefined operations', () => {
+            expect(() => evaluateExpression('null + 5')).toThrow('Expression invalide');
+        });
+    });
 });

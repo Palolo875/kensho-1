@@ -17,15 +17,20 @@ runAgent({
         const planner = new LLMPlanner(runtime);
         const graphWorker = new GraphWorker();
         let memoryRetriever: MemoryRetriever | null = null;
+        let isReady = false;
 
+        // Initialisation avec barrier pour éviter les race conditions
         graphWorker.ensureReady().then(() => {
           console.log('[OIEAgent] GraphWorker initialisé');
           const sqliteManager = graphWorker.getSQLiteManager();
           const hnswManager = graphWorker.getHNSWManager();
           memoryRetriever = new MemoryRetriever(runtime, sqliteManager, hnswManager);
           console.log('[OIEAgent] MemoryRetriever initialisé');
+          isReady = true; // Barrier: marquer prêt une fois les deux ressources initialisées
+          console.log('[OIEAgent] ✅ Système prêt à traiter les requêtes');
         }).catch(err => {
           console.error('[OIEAgent] Échec de l\'initialisation du GraphWorker:', err);
+          isReady = false;
         });
 
         // L'OIE expose une seule méthode de stream : 'executeQuery'
@@ -33,6 +38,22 @@ runAgent({
             'executeQuery',
             async (payload: any, stream: AgentStreamEmitter) => {
                 console.log('[OIEAgent] 📨 Requête reçue:', payload);
+                
+                // Barrier: Attendre que le système soit prêt avant de traiter
+                if (!isReady) {
+                    console.warn('[OIEAgent] ⏳ Système en cours d\'initialisation, requête mise en attente');
+                    let retries = 0;
+                    while (!isReady && retries < 100) {
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                        retries++;
+                    }
+                    if (!isReady) {
+                        const error = new Error('OIEAgent not ready after initialization timeout');
+                        console.error('[OIEAgent] ❌', error.message);
+                        stream.error(error);
+                        return;
+                    }
+                }
                 
                 // Validation du payload
                 if (!payload || typeof payload.query !== 'string') {

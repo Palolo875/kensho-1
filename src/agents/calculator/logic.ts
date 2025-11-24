@@ -89,6 +89,11 @@ const math = create({
  * @returns Le résultat du calcul (nombre)
  * @throws Error si l'expression est invalide ou produit un type non supporté
  */
+/**
+ * Évalue une expression mathématique de manière sécurisée (version synchrone).
+ * Cette fonction bloque le thread - utiliser evaluateExpressionWithWorker() pour
+ * les expressions potentiellement longues.
+ */
 export function evaluateExpression(expression: string): number {
     if (typeof expression !== 'string' || expression.trim() === '') {
         throw new Error('Expression invalide. Veuillez fournir une expression mathématique valide.');
@@ -135,4 +140,66 @@ export function evaluateExpression(expression: string): number {
         
         throw new Error('Expression invalide. Vérifiez la syntaxe de votre expression mathématique.');
     }
+}
+
+/**
+ * Évalue une expression avec timeout via Web Worker.
+ * Utiliser cette fonction pour les expressions potentiellement infinies ou très coûteuses.
+ * 
+ * @param expression - L'expression mathématique à évaluer
+ * @param timeoutMs - Timeout en millisecondes (défaut: 5000ms)
+ * @returns Promesse résolvant le résultat du calcul
+ * @throws Error si l'expression est invalide ou dépasse le timeout
+ */
+export async function evaluateExpressionWithWorker(expression: string, timeoutMs: number = 5000): Promise<number> {
+    // Vérifier que Web Workers sont disponibles
+    if (typeof Worker === 'undefined') {
+        console.warn('[CalculatorAgent] Web Workers non disponibles, utilisation version synchrone');
+        return evaluateExpression(expression);
+    }
+
+    return new Promise((resolve, reject) => {
+        // Créer un worker à la volée
+        const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+        const msgId = crypto.randomUUID();
+        let timedOut = false;
+
+        // Timeout global
+        const globalTimeout = setTimeout(() => {
+            timedOut = true;
+            worker.terminate();
+            reject(new Error(`Timeout: L'évaluation de "${expression}" a pris trop de temps (>${timeoutMs}ms)`));
+        }, timeoutMs);
+
+        // Répondre aux messages du worker
+        const messageHandler = (event: MessageEvent) => {
+            if (event.data.id !== msgId) return;
+
+            clearTimeout(globalTimeout);
+            worker.removeEventListener('message', messageHandler);
+            worker.terminate();
+
+            if (timedOut) return;
+
+            if (event.data.error) {
+                reject(new Error(event.data.error));
+            } else {
+                resolve(event.data.result);
+            }
+        };
+
+        worker.addEventListener('message', messageHandler);
+        worker.addEventListener('error', (error) => {
+            clearTimeout(globalTimeout);
+            worker.terminate();
+            reject(new Error(`Worker error: ${error.message}`));
+        });
+
+        // Envoyer la requête au worker
+        worker.postMessage({
+            id: msgId,
+            expression,
+            timeout: timeoutMs
+        });
+    });
 }
