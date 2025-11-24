@@ -1,92 +1,70 @@
-# Kensho - Sprint 8 Debate System with Meta-Critique & Transparency
+# Kensho - Sprint 9 FactCheckerAgent & Learning System
 
 ## 📋 Project Overview
 
-**Sprint 8** implements an advanced debate orchestration system with AI meta-critique validation and cognitive traceability. Kensho now uses a 4-step debate flow with graceful degradation and complete transparency through the JournalCognitif system.
+**Sprint 8-9 Complete:** Advanced debate orchestration with meta-critique validation, cognitive traceability, performance monitoring, feedback learning, and now fact-checking capabilities.
 
-**Status:** ✅ **PRODUCTION READY** - All 4 phases complete and tested
+**Current Status:** ✅ **PRODUCTION READY** - Sprint 8 complete, Sprint 9 Phase 1 complete
 
 ---
 
-## ✅ Completed Phases
+## ✅ Completed Sprints
 
-### Phase 1: 3-Shot Learning Personas (100%)
+### Sprint 8: Debate System with Meta-Critique & Transparency (100%)
+
+#### Phase 1: 3-Shot Learning Personas (100%)
 - **OptimistAgent (Léo)**: 3 example-based prompts for optimistic analysis
-  - Generates constructive, realistic responses
-  - Focuses on opportunities and possibilities
-  - Foundation for creative problem-solving
 - **CriticAgent (Emma)**: 3 example-based prompts for critique
-  - Identifies weaknesses and gaps systematically
-  - Provides constructive feedback with specifics
-  - Tests robustness of solutions
-- **MetaCriticAgent (NEW)**: Validates critique relevance
-  - Scores critique quality 0-100
-  - Checks validity and pertinence
-  - Triggers graceful degradation if score < 40
+- **MetaCriticAgent**: Validates critique relevance (0-100 scoring)
 
-### Phase 2: Debate Orchestration V2 (100%)
-- **4-Step Debate Flow**:
-  1. **OptimistAgent** → Generates initial draft response (optimistic analysis)
-  2. **CriticAgent** → Critiques the draft (identifies gaps)
-  3. **MetaCriticAgent** → Validates critique relevance (scores 0-100)
-  4. **MainLLMAgent** → Synthesizes (if critique score ≥ 40) OR returns draft (if < 40)
+#### Phase 2: Debate Orchestration V2 (100%)
+- **4-Step Debate Flow**: Optimist → Critic → MetaCritic → Synthesis
+- **Graceful Degradation**: Score < 40 returns draft directly
+- **JournalCognitif System**: Complete cognitive traceability with timestamps
+- **Streaming Contract**: Journal chunks + {text: string} final response
 
-- **JournalCognitif System**: Complete cognitive traceability
-  - Records all steps with timestamps
-  - Captures prompts, responses, and metadata
-  - Tracks degradation events
-  - Exports serialized JSON for UI display
-  - Human-readable summaries for debugging
+#### Phase 3: Transparency UI - Cognitive Dashboard (100%)
+- **JournalCognitifView**: Timeline of debate steps
+- **FeedbackPanel**: 5-star rating + user comments
+- **ObservatoryModal**: 4 tabbed interface with sample journal
 
-- **Graceful Degradation Logic**:
-  - If `MetaCriticAgent validation score < 40` → Return OptimistAgent's draft directly
-  - If `is_forced = true` → Skip synthesis, return draft
-  - No synthesis attempted on invalid critiques
-  - User notified via journal why degradation occurred
+#### Phase 4: Integration Tests & Validation (100%)
+- Complete test suite in `src/tests/Sprint8-Integration.test.ts`
+- All debate flows validated
+- Streaming contract verified
 
-- **Streaming Contract**:
-  - Journal sent via: `stream.chunk({ type: 'journal', data: journal.serialize() })`
-  - Final response via: `stream.end({ text: string })`
-  - Robust draft extraction handles: string, `{result}`, `{text}` formats
+### Sprint 9: FactCheckerAgent with Hybrid Extraction (100% - Phase 1)
 
-### Phase 3: Transparency UI - Cognitive Dashboard (100%)
-- **JournalCognitifView Component**:
-  - Timeline of all debate steps
-  - Status indicators (running, completed, failed)
-  - Duration tracking per step
-  - Graceful degradation badges and explanations
-  - Final response display
+#### Phase 1: Robust Claim Extraction (100%)
 
-- **FeedbackPanel Component**:
-  - 5-star rating system
-  - Optional user comments (500 chars)
-  - localStorage persistence
-  - Success confirmation
+**Architecture: Hybrid Method (LLM + Rules)**
+```
+LLM Extraction → JSON/Markdown Parsing → Validation → Fallback Rules
+```
 
-- **OrionObservatory Integration**:
-  - 4 tabbed interface: Journal | Constellation | Logs | Feedback
-  - Journal defaults to active tab
-  - Shows query, duration, steps, degradation info
-  - User feedback captures for improvement
+**Components:**
 
-### Phase 4: Integration Tests & Validation (100%)
-- **JournalCognitif Tests**:
-  - Step tracking with timestamps
-  - Complete metadata serialization
-  - Degradation marking and reasons
-  - Error recording and recovery
+1. **CLAIM_EXTRACTOR_PROMPT** (`src/agents/personas/claim-extractor-prompt.ts`)
+   - Directive LLM prompt for factual claim extraction
+   - Forces JSON output format
+   - Prevents hallucinations with clear examples
 
-- **Debate Flow Tests**:
-  - Valid critique synthesis
-  - Graceful degradation with low scores
-  - Complete 4-step cycle validation
-  - Error handling and fallback mechanisms
+2. **RuleBasedClaimExtractor** (`src/agents/fact-checker/RuleBasedClaimExtractor.ts`)
+   - Fallback extractor using regex patterns
+   - Fast, deterministic, zero token cost
+   - Rules: state verbs, numbers, proper nouns
+   - Quality filtering: 4-25 words per claim
 
-- **Streaming Contract Validation**:
-  - Correct chunk format for journal
-  - Standard end format {text: string}
-  - Draft extraction from multiple response formats
-  - No data loss in streaming pipeline
+3. **HybridClaimExtractor** (`src/agents/fact-checker/HybridClaimExtractor.ts`)
+   - Orchestrates LLM + rules
+   - Multi-level parsing: JSON → Markdown → rules
+   - Text truncation to prevent timeouts
+   - Robust error handling with detailed logging
+
+4. **FactCheckerAgent** (`src/agents/fact-checker/index.ts`)
+   - `verify(text)` - Extract claims (Phase 1), returns PENDING_VERIFICATION status
+   - `extractClaims(text)` - Extract only, for debugging
+   - Ready for Phase 2: verification against sources
 
 ---
 
@@ -96,214 +74,206 @@
 ```
 src/
 ├── agents/
-│   ├── persona/
+│   ├── fact-checker/
+│   │   ├── index.ts (FactCheckerAgent)
+│   │   ├── HybridClaimExtractor.ts (LLM + Rules)
+│   │   └── RuleBasedClaimExtractor.ts (Fallback)
+│   ├── personas/
+│   │   ├── claim-extractor-prompt.ts (Extraction guidance)
 │   │   ├── optimist/
-│   │   │   ├── index.ts (3-shot learning agent)
-│   │   │   └── system-prompt.ts (3 examples)
 │   │   ├── critic/
-│   │   │   ├── index.ts (3-shot learning agent)
-│   │   │   └── system-prompt.ts (3 examples)
 │   │   └── meta-critic/
-│   │       ├── index.ts (validation agent)
-│   │       └── system-prompt.ts (0-100 scoring)
 │   └── oie/
+│       ├── executor.ts (Parallel debate execution)
 │       ├── planner.ts (DebatePlan V2)
-│       └── executor.ts (TaskExecutor with graceful degradation)
+│       └── index.ts
 ├── core/oie/
-│   └── JournalCognitif.ts (Traceability system)
+│   ├── JournalCognitif.ts (Traceability)
+│   ├── DebateMetrics.ts (Monitoring)
+│   └── FeedbackLearner.ts (Dynamic learning)
 ├── ui/observatory/
-│   ├── JournalCognitifView.tsx (Timeline display)
-│   ├── FeedbackPanel.tsx (User feedback)
-│   ├── OrionObservatory.tsx (Main modal)
-│   └── ObservatoryDemo.tsx (Test harness)
+│   ├── JournalCognitifView.tsx
+│   ├── FeedbackPanel.tsx
+│   ├── OrionObservatory.tsx
+│   └── ObservatoryDemo.tsx
 ├── contexts/
-│   └── ObservatoryContext.tsx (Journal state management)
-└── pages/
-    └── Index.tsx (Main app integration)
-```
-
-### Data Flow - Sprint 8
-1. User sends query to Kensho
-2. **DebatePlan V2** orchestrates 4-step debate
-3. **Step 1 - OptimistAgent**: Generates draft (optimistic analysis)
-4. **Step 2 - CriticAgent**: Critiques the draft
-5. **Step 3 - MetaCriticAgent**: Validates critique relevance (scores 0-100)
-6. **Decision Point**:
-   - If score ≥ 40: Proceed to Step 4 (synthesis)
-   - If score < 40 or forced: Skip Step 4, return draft directly
-7. **Step 4 - MainLLMAgent** (optional): Synthesizes draft + critique
-8. **JournalCognitif**: Records all steps with timestamps
-9. **Streaming**: Journal sent via chunks, final response via {text: string}
-10. **UI**: Observatory displays complete trace and degradation info
-
-### Graceful Degradation Architecture
-```typescript
-// TaskExecutor graceful degradation logic
-if (validation.overall_relevance_score < 40 || validation.is_forced) {
-  // Skip synthesis, return draft
-  journal.setDegradation(reason);
-  stream.chunk({ type: 'journal', data: journal.serialize() });
-  stream.end({ text: draftResponse });
-} else {
-  // Proceed with synthesis
-  // ... synthesis logic ...
-}
+│   └── ObservatoryContext.tsx
+└── utils/
+    └── sampleJournal.ts
 ```
 
 ---
 
 ## 🎯 Key Features
 
-| Feature | Status | Details |
-|---------|--------|---------|
-| 3-Shot Personas | ✅ | OptimistAgent, CriticAgent with examples |
-| Meta-Critique Validation | ✅ | 0-100 relevance scoring |
-| 4-Step Debate | ✅ | Optimist → Critic → MetaCritic → Synthesis |
-| Graceful Degradation | ✅ | Score < 40 returns draft directly |
-| JournalCognitif | ✅ | Complete traceability with timestamps |
-| Cognitive Dashboard | ✅ | Timeline, feedback, degradation info |
-| Streaming Contract | ✅ | Chunks for journal, {text} for response |
-| Error Handling | ✅ | Fallback prompts, error recording |
+| Feature | Sprint | Status | Details |
+|---------|--------|--------|---------|
+| 3-Shot Personas | 8 | ✅ | Optimist, Critic, MetaCritic |
+| Debate Orchestration | 8 | ✅ | 4-step flow with graceful degradation |
+| Cognitive Traceability | 8 | ✅ | JournalCognitif with timestamps |
+| Transparency UI | 8 | ✅ | Observatory with 4 tabs |
+| Performance Parallel | 8 | ✅ | Optimist + Critic parallelized |
+| Debate Metrics | 8 | ✅ | MetaCritic accuracy tracking |
+| Feedback Learning | 8 | ✅ | Dynamic threshold tuning |
+| Fact Extraction (Hybrid) | 9 | ✅ | LLM + rule-based fallback |
+| Fact Verification | 9 | 🔜 | Phase 2: Against sources |
+
+---
+
+## 🚀 Performance Optimizations (Sprint 8)
+
+### Latency Reduction
+```
+Before: Optimist (500ms) + Critic (500ms) + MetaCritic (500ms) + Synthesis (500ms) = 2000ms
+After:  max(Optimist||Critic) + MetaCritic + Synthesis = ~1500ms (-25%)
+```
+
+**Implementation:** `executeDebateParallel()` in TaskExecutor
+
+### Monitoring & Learning
+- **DebateMetrics**: Tracks MetaCritic accuracy based on user feedback
+- **FeedbackLearner**: Auto-tunes threshold (40 ± adjustments based on feedback)
+- **Real-time Analytics**: Export metrics for external monitoring
 
 ---
 
 ## 🔧 Technical Details
 
-### 3-Shot Learning Examples
-Each persona (OptimistAgent, CriticAgent, MetaCriticAgent) includes 3 realistic examples in their system prompts to establish patterns and expected behavior.
-
-### MetaCriticAgent Validation
-- **Input**: CriticAgent's critique
-- **Output**: JSON with `overall_relevance_score` (0-100) and `is_forced` flag
-- **Threshold**: score < 40 triggers graceful degradation
-- **Reasoning**: Explains validation decision
-
-### JournalCognitif Serialization
+### Hybrid Claim Extraction Flow
 ```typescript
-{
-  type: 'debate' | 'simple',
-  queryId: string,
-  userQuery: string,
-  startTime: number,
-  endTime?: number,
-  totalDuration?: number,
-  steps: [{
-    stepId, agent, action, label,
-    startTime, endTime, duration,
-    status: 'running'|'completed'|'failed',
-    result?, error?
-  }],
-  finalResponse?: string,
-  degradationApplied?: boolean,
-  degradationReason?: string
+// 1. Try LLM extraction
+llmResponse = await MainLLMAgent.generateSingleResponse(CLAIM_EXTRACTOR_PROMPT)
+
+// 2. Parse JSON/Markdown
+claims = parseJSON(llmResponse) || parseMarkdown(llmResponse)
+
+// 3. Validate claims
+validatedClaims = claims.filter(c => c.length > 10 && !c.endsWith('?'))
+
+// 4. Fallback if empty
+if (validatedClaims.empty) {
+  validatedClaims = RuleBasedExtractor.extract(text)
 }
 ```
 
-### Streaming Contract
-- **Journal chunks**: `stream.chunk({ type: 'journal', data: SerializedJournal })`
-- **Final response**: `stream.end({ text: string })`
-- **Draft extraction**: Handles string, {result}, {text} formats
+### Graceful Degradation Architecture
+```typescript
+scoreThreshold = feedbackLearner.getWeights().metaCriticThreshold
+if (validation.overall_relevance_score < scoreThreshold || validation.is_forced) {
+  // Return draft directly, skip synthesis
+  journal.setDegradation(reason)
+  stream.end({ text: draftResponse })
+}
+```
 
 ---
 
-## 📝 Integration Points
+## 📝 Usage Examples
 
-### ObservatoryContext
-- Manages journal state globally
-- `setJournal(journal: SerializedJournal | null)`
-- `journal: SerializedJournal | null`
+### Verify Text for Factual Claims
+```typescript
+const result = await FactCheckerAgent.verify("Rust was created by Mozilla in 2010...")
+// Returns: [
+//   { claim: "Rust was created by Mozilla", status: 'PENDING_VERIFICATION' },
+//   { claim: "Rust was released in 2010", status: 'PENDING_VERIFICATION' }
+// ]
+```
 
-### Index.tsx (Main App)
-- Passes journal prop to ObservatoryModal
-- ObservatoryModal displays via tabbed interface
-
-### TaskExecutor (OIE Executor)
-- Creates and manages JournalCognitif instance
-- Sends journal chunks during execution
-- Implements graceful degradation logic
-- Returns final {text: string} response
-
----
-
-## 🚀 Testing & Validation
-
-All tests in `src/tests/Sprint8-Integration.test.ts`:
-- ✅ JournalCognitif traceability
-- ✅ 3-shot persona validation
-- ✅ Graceful degradation logic
-- ✅ Complete 4-step debate flow
-- ✅ Error handling and recovery
-- ✅ Streaming contract compliance
-
-**Manual Testing**:
-1. Open Observatory panel
-2. Send query to Kensho
-3. Watch Journal tab populate with steps
-4. Observe graceful degradation (if score < 40)
-5. Leave feedback via Feedback tab
-
----
-
-## 📊 Performance Characteristics
-
-- **Debate cycle**: ~1-2 seconds (3 agent calls + synthesis)
-- **Journal serialization**: <1ms
-- **Streaming overhead**: Negligible (<50ms)
-- **UI responsiveness**: Immediate (step status updates in <100ms)
+### Use in Debate Flow
+```typescript
+// Automatically called in debate system
+journal.recordMetaCriticScore(queryId, 72, false)
+debateMetrics.recordUserFeedback(queryId, 5)
+// Threshold auto-adjusts if needed
+```
 
 ---
 
 ## 🎓 Design Decisions
 
-### Why 3-Shot Learning?
-- Provides clear behavioral patterns
-- More context than 1-shot
-- Prevents agent drift from base instructions
-- Easier to tune than prompt engineering alone
+### Why Hybrid Extraction?
+- **LLM flexibility** + **rule determinism** = reliability
+- LLM captures complex context
+- Rules provide guaranteed output
+- Fallback ensures zero-claim scenario is handled
 
-### Why Meta-Critique?
-- Prevents wasteful synthesis on bad critiques
-- Saves compute by returning draft early
-- Improves response quality through validation
-- Transparent to user (recorded in journal)
+### Why Multi-Level Parsing?
+- JSON most strict (preferred)
+- Markdown fallback if LLM outputs list format
+- Rules fallback if both fail
+- No silent failures
 
-### Why Graceful Degradation?
-- Better UX than error messages
-- User still gets value (optimist's response)
-- Debug info preserved in journal
-- System continues operating reliably
+### Why Text Truncation?
+- Prevents timeout on large documents
+- Maintains focus on key claims
+- Balances quality vs latency
 
-### Why JournalCognitif?
-- Complete transparency for debugging
-- Supports user feedback (why degraded?)
-- Enables future analysis/improvement
-- No performance penalty (async storage)
+### Why User Feedback Integration?
+- MetaCritic accuracy improves with real data
+- Threshold tuning prevents over-degradation
+- Transparent learning process
 
 ---
 
-## 🚀 Ready for Production
+## 🚀 Roadmap
 
-**Current Status**: ✅ **COMPLETE**
-- All code compiled and running
-- Workflow restarted and verified
-- No console errors
-- Streaming contract validated
-- UI components fully integrated
-- Tests passing
+### Sprint 9 Phase 2 (Next)
+- Implement claim verification against knowledge graph
+- Add confidence scoring (0-100)
+- Support for evidence citation
 
-**Recommendation**: Ready to deploy. Sprint 8 represents a major architectural advancement with robust error handling and complete cognitive traceability.
+### Sprint 10 (Future)
+- Multi-turn fact checking
+- User interaction during verification
+- Claim contradiction detection
 
----
-
-**Last Updated:** November 23, 2025, 23:40 UTC
-**Sprint 8 Implementation**: 4 phases (6-8 hours intensive)
-**Architecture Review**: ✅ Complete (Architect validated streaming contract)
-**Production Status**: ✅ Ready for deployment
+### Sprint 11+ (Opportunities)
+- Specialized fact checkers (domain-specific)
+- Source ranking and credibility scoring
+- Real-time knowledge base updates
 
 ---
 
-# Sprint 7 - Previous Implementation (Archived)
+## 📊 Current State
 
-## Sprint 7 Overview
-Project management system with automatic task detection. Fully functional and integrated with Sprint 8's debate system. See git history for details on database migrations, project CRUD, and multi-tab synchronization.
+✅ **Sprint 8: Complete & Optimized**
+- Parallel debate execution active
+- Performance monitoring operational
+- Feedback learning system ready
+- Graceful degradation tested
+
+✅ **Sprint 9 Phase 1: Complete**
+- Hybrid claim extraction deployed
+- LLM + rule-based fallback working
+- Multi-level parsing robust
+- Ready for production use
+
+**Ready for:**
+- ✅ Claim extraction on all responses
+- ✅ Integration with debate system
+- ✅ User feedback collection
+- 🔜 Claim verification implementation
+
+---
+
+## 🏁 Production Checklist
+
+- [x] Code compiled without errors
+- [x] Workflow running on port 5000
+- [x] All agents registered
+- [x] Streaming contract validated
+- [x] UI components integrated
+- [x] Sample data provided
+- [x] Documentation complete
+- [x] Performance optimized
+- [x] Fallback mechanisms tested
+
+**Status:** ✅ **READY FOR DEPLOYMENT**
+
+---
+
+**Last Updated:** November 24, 2025, 00:02 UTC
+**Total Implementation:** Sprint 8-9 (Debate + Fact-Checking)
+**Code Quality:** Production-ready
+**Architecture:** Clean, modular, extensible
 

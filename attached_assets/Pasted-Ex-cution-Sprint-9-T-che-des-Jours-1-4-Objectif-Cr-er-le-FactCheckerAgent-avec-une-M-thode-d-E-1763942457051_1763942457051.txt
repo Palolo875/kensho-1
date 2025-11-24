@@ -1,0 +1,180 @@
+Exécution : Sprint 9 - Tâche des Jours 1-4
+Objectif : Créer le FactCheckerAgent avec une Méthode d'Extraction Hybride
+Philosophie : "Faire confiance au LLM, mais toujours vérifier avec des règles." Nous allons combiner la flexibilité du LLM avec la fiabilité du code déterministe pour obtenir le meilleur des deux mondes.
+Sous-Étape 1.1 : Le Prompt d'Extraction de Claims
+Nous avons besoin d'un prompt clair, qui guide le LLM pour produire un JSON propre, tout en étant conscient qu'il peut échouer.
+Fichier : src/agents/personas/claim-extractor-prompt.ts
+TypeScript
+
+export const CLAIM_EXTRACTOR_PROMPT = (text: string): string => `
+# RÔLE : Extracteur d'Affirmations Factuelles
+
+# MISSION :
+Tu dois lire le TEXTE ci-dessous et extraire toutes les affirmations factuelles qui peuvent être vérifiées. Une affirmation factuelle contient une information objective (un nom, un lieu, un chiffre, une date, un fait technique). Ignore les opinions, les questions, et les phrases subjectives.
+
+# FORMAT DE SORTIE OBLIGATOIRE :
+Réponds UNIQUEMENT avec un objet JSON contenant une clé "claims". La valeur doit être un tableau de chaînes de caractères. Chaque chaîne doit être une affirmation complète. Ne fournis AUCUN texte ou explication en dehors de l'objet JSON.
+
+# EXEMPLE :
+- TEXTE : "Je pense que Rust est un bon langage. Il a été créé par Mozilla en 2010 et sa version 1.0 est sortie en 2015."
+- SORTIE JSON :
+{
+  "claims": [
+    "Rust a été créé par Mozilla en 2010.",
+    "La version 1.0 de Rust est sortie en 2015."
+  ]
+}
+
+# TEXTE À ANALYSER :
+"""
+${text}
+"""
+
+# TA RÉPONSE JSON :
+`;
+
+    Commentaire : Le prompt est très directif. Il spécifie le rôle, la mission, et surtout le format de sortie avec un exemple clair. L'instruction "Réponds UNIQUEMENT avec un objet JSON" est cruciale pour minimiser les échecs de parsing.
+
+Sous-Étape 1.2 : L'Extracteur par Règles (Fallback)
+C'est notre filet de sécurité. Si le LLM échoue, cette classe nous donnera un résultat déterministe.
+Fichier : src/agents/fact-checker/RuleBasedClaimExtractor.ts
+TypeScript
+
+export class RuleBasedClaimExtractor {
+    public extract(text: string): string[] {
+        const claims = new Set<string>();
+
+        // Règle 1 : Phrases avec des verbes d'état ou des verbes factuels.
+        // Cible les phrases comme "X est Y", "X a été Z", "X contient W".
+        const stateVerbPattern = /([^.!?]+?\s+(est|était|sont|fût|a été|contient|mesure|pèse|date de)\s+[^.!?]+)/gi;
+        for (const match of text.matchAll(stateVerbPattern)) {
+            claims.add(this.cleanClaim(match[0]));
+        }
+
+        // Règle 2 : Phrases contenant des chiffres (années, pourcentages, quantités).
+        const numberPattern = /([^.!?]*\d+[^.!?]*)/gi;
+        for (const match of text.matchAll(numberPattern)) {
+            claims.add(this.cleanClaim(match[0]));
+        }
+
+        // Filtrage final pour la qualité
+        return Array.from(claims).filter(c => 
+            c.split(' ').length >= 4 && c.split(' ').length <= 25
+        );
+    }
+
+    private cleanClaim(claim: string): string {
+        return claim.trim().replace(/,$/, ''); // Nettoyer les virgules en fin de phrase
+    }
+}
+
+    Commentaire : Cette classe est simple, rapide et sans coût de tokens. Elle n'est pas parfaite, mais elle est bien meilleure que de n'avoir aucun résultat. Le filtrage final par longueur de mots élimine beaucoup de bruit.
+
+Sous-Étape 1.3 : L'Extracteur Hybride et le FactCheckerAgent
+C'est ici que la magie opère. Nous orchestrons les deux approches.
+Fichier : src/agents/fact-checker/HybridClaimExtractor.ts
+TypeScript
+
+import { MainLLMAgent } from '../MainLLMAgent';
+import { CLAIM_EXTRACTOR_PROMPT } from '../personas/claim-extractor-prompt';
+import { RuleBasedClaimExtractor } from './RuleBasedClaimExtractor';
+
+export class HybridClaimExtractor {
+    private ruleBasedExtractor = new RuleBasedClaimExtractor();
+
+    constructor(private llm: MainLLMAgent) {}
+
+    public async extract(text: string): Promise<string[]> {
+        // Étape 1 : Tentative d'extraction par LLM
+        const llmResponse = await this.llm.generate(CLAIM_EXTRACTOR_PROMPT(text), { maxTokens: 500 });
+
+        // Étape 2 : Parsing robuste
+        let claims: string[] = [];
+        try {
+            // Tentative 1 : Parser le JSON, même s'il est noyé dans du texte
+            const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (Array.isArray(parsed.claims)) {
+                    claims = parsed.claims;
+                }
+            } else {
+                throw new Error("No JSON object found");
+            }
+        } catch (e) {
+            // Tentative 2 : Parser comme une liste Markdown si le JSON échoue
+            claims = llmResponse
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.match(/^[-•*]\s/) || line.match(/^\d+\.\s/))
+                .map(line => line.replace(/^[-•*]\s|^\d+\.\s/, '').trim());
+        }
+
+        // Étape 3 : Validation et nettoyage des claims extraits
+        const validatedClaims = claims
+            .map(c => c.trim())
+            .filter(c => c.length > 10 && !c.endsWith('?'));
+
+        // Étape 4 : Fallback si le LLM a échoué
+        if (validatedClaims.length === 0) {
+            console.warn('[HybridClaimExtractor] LLM extraction failed or returned no claims. Falling back to rule-based extractor.');
+            return this.ruleBasedExtractor.extract(text);
+        }
+
+        return validatedClaims;
+    }
+}
+
+Fichier : src/agents/FactCheckerAgent/index.ts
+TypeScript
+
+import { defineAgent } from '../agent-definition';
+import { HybridClaimExtractor } from './HybridClaimExtractor';
+import { MainLLMAgent } from '../MainLLMAgent';
+// ... autres imports
+
+export default defineAgent({
+    name: 'FactCheckerAgent',
+    
+    // Le FactCheckerAgent a besoin du LLM (pour l'extracteur) et du GraphWorker (pour la vérification)
+    dependencies: ['MainLLMAgent', 'GraphWorker'],
+
+    init: (context) => {
+        const hybridExtractor = new HybridClaimExtractor(context.getAgent('MainLLMAgent'));
+
+        return {
+            public: {
+                async verify(text: string): Promise<any[]> { // Le type de retour sera VerificationResult[]
+                    console.log(`[FactCheckerAgent] Starting verification for text: "${text.substring(0, 50)}..."`);
+                    
+                    // 1. Extraire les claims de manière robuste
+                    const claims = await hybridExtractor.extract(text);
+                    console.log(`[FactCheckerAgent] Extracted ${claims.length} claims.`);
+
+                    if (claims.length === 0) {
+                        return []; // Aucune vérification à faire
+                    }
+
+                    // 2. Vérifier chaque claim (sera implémenté dans la prochaine tâche)
+                    // Pour l'instant, on retourne juste les claims extraits
+                    // const verificationResults = await Promise.all(
+                    //     claims.map(claim => context.getAgent('GraphWorker').findEvidence(claim))
+                    // );
+                    
+                    // return verificationResults;
+                    
+                    // Placeholder pour la fin de la tâche actuelle :
+                    return claims.map(claim => ({ claim, status: 'PENDING_VERIFICATION' }));
+                }
+            }
+        };
+    }
+});
+
+Conclusion de la Tâche
+
+    Statut : ✅ Terminé.
+    Livrables :
+        Un FactCheckerAgent fonctionnel.
+        Un HybridClaimExtractor qui combine intelligemment LLM et règles déterministes, avec un parsing robuste et un fallback.
+        Un RuleBasedClaimExtractor comme filet de sécurité.
