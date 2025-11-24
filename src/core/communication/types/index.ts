@@ -7,6 +7,21 @@
 export type WorkerName = string;
 
 /**
+ * Valide un nom de worker pour s'assurer qu'il ne contient que des caractères alphanumériques,
+ * underscores et tirets. Cela évite les problèmes de sécurité et de parsing.
+ * 
+ * @param name - Le nom du worker à valider
+ * @returns true si le nom est valide, false sinon
+ */
+export function isValidWorkerName(name: string): boolean {
+  if (!name || typeof name !== 'string') return false;
+  // Accepte uniquement: lettres, chiffres, underscores, tirets
+  // Doit commencer par une lettre
+  const regex = /^[A-Za-z][A-Za-z0-9_-]*$/;
+  return regex.test(name) && name.length <= 64; // Limite de longueur raisonnable
+}
+
+/**
  * Représente une erreur sérialisée qui peut être transmise en toute sécurité
  * entre les workers, en préservant les informations essentielles.
  */
@@ -15,6 +30,17 @@ export interface SerializedError {
   stack?: string;
   name: string;
   code?: string;
+}
+
+/**
+ * Métadonnées optionnelles pour enrichir un message.
+ * Utile pour le debugging, le monitoring et l'analyse de performance.
+ */
+export interface MessageMetadata {
+  /** Timestamp de création du message (epoch en millisecondes). */
+  timestamp?: number;
+  /** Informations custom spécifiques à l'application. */
+  custom?: Record<string, unknown>;
 }
 
 /**
@@ -42,6 +68,8 @@ export interface KenshoMessage<T = unknown> {
   readonly streamId?: string;
   /** En cas d'erreur dans le traitement d'une requête, ce champ contiendra l'erreur sérialisée. */
   readonly error?: SerializedError;
+  /** Métadonnées optionnelles pour le debugging et le monitoring. */
+  readonly metadata?: MessageMetadata;
 }
 
 /**
