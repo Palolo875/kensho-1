@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { ModelLoadingView } from '../ModelLoadingView';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 

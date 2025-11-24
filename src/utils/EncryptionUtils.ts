@@ -52,9 +52,10 @@ export class EncryptionUtils {
     );
 
     // Combiner IV + ciphertext
-    const result = new Uint8Array(iv.length + ciphertext.byteLength);
+    const ciphertextArray = new Uint8Array(ciphertext as ArrayBuffer);
+    const result = new Uint8Array(iv.length + ciphertextArray.byteLength);
     result.set(iv, 0);
-    result.set(new Uint8Array(ciphertext), iv.length);
+    result.set(ciphertextArray, iv.length);
 
     return result;
   }
@@ -111,7 +112,7 @@ export class EncryptionUtils {
    */
   static async exportEncryptedDatabase(dbData: Uint8Array, password: string): Promise<Blob> {
     const encrypted = await this.encryptData(dbData, password);
-    return new Blob([encrypted], { type: 'application/octet-stream' });
+    return new Blob([encrypted.buffer as BlobPart], { type: 'application/octet-stream' });
   }
 
   /**
