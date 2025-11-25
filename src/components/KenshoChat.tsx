@@ -1,7 +1,8 @@
 /**
  * src/components/KenshoChat.tsx
  * 
- * Composant de chat simple pour tester Kensho avec Gemma 3 270m
+ * Composant de chat simple pour tester Kensho avec Gemma 3 270M
+ * Utilise le modèle gemma-3-270m-it-MLC avec quantification int4 (q4f16_1)
  * 
  * Usage:
  * ```tsx
@@ -48,8 +49,8 @@ export function KenshoChat() {
   useEffect(() => {
     const init = async () => {
       try {
-        setDownloadProgress('🚀 Initialisation de Gemma 2 2B...');
-        const api = await initializeKensho('gemma-2-2b', (progress) => {
+        setDownloadProgress('🚀 Initialisation de Gemma 3 270M...');
+        const api = await initializeKensho('gemma-3-270m', (progress) => {
           if (progress.text) {
             setDownloadProgress(`⏳ ${progress.text}`);
           }
@@ -59,7 +60,7 @@ export function KenshoChat() {
         setMessages([{
           id: '0',
           role: 'system',
-          content: '✅ Gemma 2 2B is ready! Ultra-compact & high-performance model loaded. Ready to chat!'
+          content: '✅ Gemma 3 270M est prêt ! Modèle ultra-compact (270M paramètres) en int4 chargé. Prêt à discuter !'
         }]);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
