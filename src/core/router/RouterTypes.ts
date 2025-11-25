@@ -19,13 +19,27 @@ export interface Task {
   prompt?: string;
 }
 
+/**
+ * Type-safe error types (remplace any)
+ */
+export type SystemErrorType =
+  | { type: 'ModelNotFound'; modelKey: string; availableModels: string[] }
+  | { type: 'InsufficientMemory'; required: number; available: number }
+  | { type: 'TimeoutError'; duration: number; component: string }
+  | { type: 'ClassificationFailed'; reason: string; userInput: string }
+  | { type: 'NetworkError'; detail: string }
+  | { type: 'ParseError'; format: string; rawData: string }
+  | { type: 'UnknownError'; message: string };
+
 export interface TaskResult {
   agentName: string;
   modelKey: string;
   result?: string;
-  error?: any;
+  error?: SystemErrorType;
   status: 'success' | 'error' | 'timeout';
   duration?: number;
+  confidence?: number;
+  sources?: string[];
 }
 
 export interface StreamChunk {
@@ -33,6 +47,10 @@ export interface StreamChunk {
   content?: string;
   expertResults?: TaskResult[];
   status?: string;
+  metadata?: {
+    chunkIndex?: number;
+    totalChunks?: number;
+  };
 }
 
 export interface ExecutionPlan {
@@ -54,15 +72,33 @@ export interface CapacityMetrics {
 }
 
 export class ClassificationError extends Error {
-  constructor(message: string, public readonly rawResponse?: string) {
+  constructor(
+    message: string,
+    public readonly rawResponse?: string,
+    public readonly errorType: SystemErrorType = { type: 'ClassificationFailed', reason: message, userInput: '' }
+  ) {
     super(message);
     this.name = 'ClassificationError';
   }
 }
 
 export class RouterError extends Error {
-  constructor(message: string, public readonly reason: string) {
+  constructor(
+    message: string,
+    public readonly reason: string,
+    public readonly errorType: SystemErrorType = { type: 'UnknownError', message }
+  ) {
     super(message);
     this.name = 'RouterError';
+  }
+}
+
+export class SystemError extends Error {
+  constructor(
+    message: string,
+    public readonly errorType: SystemErrorType
+  ) {
+    super(message);
+    this.name = 'SystemError';
   }
 }

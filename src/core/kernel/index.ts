@@ -3,6 +3,7 @@ export { modelManager } from './ModelManager';
 export { resourceManager } from './ResourceManager';
 export { taskExecutor, TaskExecutor } from './TaskExecutor';
 export { fusioner } from './Fusioner';
+export { executionTraceContext, ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
 export type { ModelMeta } from './ModelCatalog';
 export type { 
@@ -12,3 +13,4 @@ export type {
   ResourceConstraints, 
   ModelLoadDecision 
 } from './KernelTypes';
+export type { ExecutionTrace, TraceEvent, TraceLevel } from './ExecutionTraceContext';

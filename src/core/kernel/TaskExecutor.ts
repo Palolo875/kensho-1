@@ -273,7 +273,10 @@ export class TaskExecutor {
       return {
         agentName: task.agentName,
         modelKey: task.modelKey,
-        error: errorMessage,
+        error: {
+          type: 'UnknownError' as const,
+          message: errorMessage
+        },
         status: timedOut ? 'timeout' : 'error',
         duration
       };
@@ -329,7 +332,10 @@ export class TaskExecutor {
       return {
         agentName: task.agentName,
         modelKey: task.modelKey,
-        error: errorMessage,
+        error: {
+          type: 'UnknownError' as const,
+          message: errorMessage
+        },
         status: timedOut ? 'timeout' : 'error',
         duration
       };
