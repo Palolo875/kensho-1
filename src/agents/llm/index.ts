@@ -5,7 +5,7 @@ import { ModelLoader } from '../../core/models/ModelLoader';
 import { DownloadManager } from '../../core/downloads/DownloadManager';
 import * as webllm from '@mlc-ai/web-llm';
 
-const MODEL_ID = 'Phi-3-mini-4k-instruct-q4f32_1-MLC'; // Upgrade Sprint 3 : Phi-3 pour une meilleure qualité
+const MODEL_ID = 'gemma-3-270m-it-MLC'; // Sprint 12: Gemma-3-270M (validé WebLLM/MLC)
 const DOWNLOAD_ID = 'llm-model';
 
 // Paramètres de génération par défaut
@@ -45,7 +45,7 @@ const modelLoader = new ModelLoader((progress) => {
     dm.updateProgress(DOWNLOAD_ID, {
         id: DOWNLOAD_ID,
         type: 'llm',
-        name: 'Modèle LLM (Phi-3)',
+        name: 'Modèle LLM (Gemma-3-270M)',
         status: progress.phase === 'ready' ? 'completed' : 'downloading' as any,
         progress: progress.progress,
     });
@@ -77,7 +77,7 @@ self.addEventListener('message', (event) => {
         // Démarrer le téléchargement à la demande de l'utilisateur
         if (!modelLoadingPromise) {
             console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle (sur demande):', MODEL_ID);
-            dm.register(DOWNLOAD_ID, 'llm', 'Modèle LLM (Phi-3)', (progress) => {
+            dm.register(DOWNLOAD_ID, 'llm', 'Modèle LLM (Gemma-3-270M)', (progress) => {
                 console.log(`[MainLLMAgent] 📥 ${progress.name}: ${Math.round(progress.progress * 100)}%`);
             });
             modelLoadingPromise = modelLoader.loadModel(MODEL_ID).then(() => {
