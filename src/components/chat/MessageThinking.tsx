@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Brain } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ThoughtStep } from '@/agents/oie/types';
@@ -15,68 +15,61 @@ export function MessageThinking({ thinking, thoughtProcess }: MessageThinkingPro
 
   if (!thinking) return null;
 
-  const statusIcons = {
-    pending: '⏳',
-    running: '⚙️',
-    completed: '✅',
-    failed: '❌',
-  };
-
   return (
-    <div className="mb-4 rounded-lg border border-purple-200/40 bg-gradient-to-r from-purple-50/40 to-pink-50/40 p-3 backdrop-blur-sm">
-      {/* Header avec bouton de collapse */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full justify-start text-left font-medium text-purple-700 hover:text-purple-900 p-0 mb-2"
-      >
-        <Brain className="h-4 w-4 mr-2 flex-shrink-0 animate-pulse" />
-        <span className="text-sm">Processus de réflexion</span>
-        {isExpanded ? (
-          <ChevronUp className="h-4 w-4 ml-auto flex-shrink-0" />
-        ) : (
-          <ChevronDown className="h-4 w-4 ml-auto flex-shrink-0" />
-        )}
-      </Button>
+    <div className="mb-3 group">
+      {/* Collapsed State - Subtle hint */}
+      {!isExpanded && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsExpanded(true)}
+          className="w-full justify-start text-left text-xs text-muted-foreground hover:text-foreground p-2 h-auto opacity-60 hover:opacity-100 transition-opacity"
+        >
+          <span className="italic font-light">💭 pensée interne...</span>
+        </Button>
+      )}
 
+      {/* Expanded State - Full thinking process */}
       {isExpanded && (
-        <>
-          {/* Étapes de pensée si disponibles */}
+        <div className="space-y-2 p-3 rounded-lg bg-muted/30 border border-border/40 backdrop-blur-sm">
+          {/* Header with collapse button */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Processus de réflexion</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsExpanded(false)}
+              className="h-6 w-6 p-0"
+            >
+              <ChevronUp className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </div>
+
+          {/* Thinking steps - minimalist display */}
           {thoughtProcess && thoughtProcess.length > 0 && (
-            <div className="mb-3 p-2 bg-white/30 rounded border border-purple-100/50">
-              <div className="space-y-1">
-                {thoughtProcess.map((step) => (
-                  <div
-                    key={step.id}
-                    className="flex items-start text-xs text-purple-700 gap-2"
-                  >
-                    <span className="flex-shrink-0 w-4">{statusIcons[step.status]}</span>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium">{step.label}</span>
-                      {step.result && (
-                        <p className="text-purple-600/70 text-xs truncate">
-                          {typeof step.result === 'string' ? step.result : '✓ Complété'}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {thoughtProcess.map((step, idx) => (
+                <div
+                  key={step.id}
+                  className="text-xs px-2 py-1 rounded bg-secondary/40 text-muted-foreground border border-border/30"
+                >
+                  {idx + 1}. {step.label}
+                </div>
+              ))}
             </div>
           )}
 
-          {/* Boutons Mode Résumé / Détaillé */}
-          <div className="mb-2 flex gap-1">
+          {/* Mode toggle - subtle */}
+          <div className="flex gap-1 mb-2">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowMode('summary')}
               className={cn(
-                'text-xs h-7 px-2',
+                'text-xs h-6 px-2 font-light',
                 showMode === 'summary'
-                  ? 'bg-purple-200/60 text-purple-900'
-                  : 'text-purple-700 hover:bg-purple-100/50'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/50'
               )}
             >
               Résumé
@@ -86,29 +79,25 @@ export function MessageThinking({ thinking, thoughtProcess }: MessageThinkingPro
               size="sm"
               onClick={() => setShowMode('detailed')}
               className={cn(
-                'text-xs h-7 px-2',
+                'text-xs h-6 px-2 font-light',
                 showMode === 'detailed'
-                  ? 'bg-purple-200/60 text-purple-900'
-                  : 'text-purple-700 hover:bg-purple-100/50'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/50'
               )}
             >
               Détaillé
             </Button>
           </div>
 
-          {/* Contenu de la pensée */}
-          <div className="text-sm text-purple-700 leading-relaxed font-light italic space-y-2 max-h-32 overflow-y-auto">
-            {showMode === 'summary' ? (
-              <p>
-                {thinking.length > 200
-                  ? thinking.substring(0, 180) + '...'
-                  : thinking}
-              </p>
-            ) : (
-              <p>{thinking}</p>
-            )}
+          {/* Thinking text - italic and subtle */}
+          <div className="text-xs text-thinking leading-relaxed font-light italic opacity-80">
+            {showMode === 'summary'
+              ? thinking.length > 180
+                ? thinking.substring(0, 180) + '…'
+                : thinking
+              : thinking}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

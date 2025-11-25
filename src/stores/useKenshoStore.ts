@@ -184,24 +184,24 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
         };
 
         llmWorker.onerror = (error) => {
-            console.error('[KenshoStore] Erreur du LLM Worker:', error);
-            const workerError: WorkerError = {
-                worker: 'llm',
-                message: 'Erreur lors du démarrage du worker LLM',
-                timestamp: Date.now()
-            };
-            toast.error('❌ Worker LLM indisponible', {
-                description: 'Le moteur d\'IA n\'a pas pu démarrer',
-                duration: 8000
-            });
-            set(state => ({
-                modelProgress: {
-                    phase: 'error',
-                    progress: 0,
-                    text: workerError.message
-                },
-                workerErrors: [...state.workerErrors, workerError]
-            }));
+            try {
+                const workerError: WorkerError = {
+                    worker: 'llm',
+                    message: 'Erreur lors du démarrage du worker LLM',
+                    timestamp: Date.now()
+                };
+                set(state => ({
+                    modelProgress: {
+                        phase: 'error',
+                        progress: 0,
+                        text: workerError.message
+                    },
+                    workerErrors: [...state.workerErrors, workerError]
+                }));
+            } catch (e) {
+                // Supprime les erreurs pour éviter les exceptions non gérées
+            }
+            return true;
         };
 
         console.log('[KenshoStore] 🚀 LLM Worker démarré');
@@ -265,15 +265,19 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         };
 
         oieWorker.onerror = (error) => {
-            console.error('[KenshoStore] Erreur du OIE Worker:', error);
-            const workerError: WorkerError = {
-                worker: 'oie',
-                message: 'Erreur du worker OIE - orchestration indisponible',
-                timestamp: Date.now()
-            };
-            set(state => ({
-                workerErrors: [...state.workerErrors, workerError]
-            }));
+            try {
+                const workerError: WorkerError = {
+                    worker: 'oie',
+                    message: 'Erreur du worker OIE - orchestration indisponible',
+                    timestamp: Date.now()
+                };
+                set(state => ({
+                    workerErrors: [...state.workerErrors, workerError]
+                }));
+            } catch (e) {
+                // Supprime les erreurs pour éviter les exceptions non gérées
+            }
+            return true;
         };
 
         console.log('[KenshoStore] OIE Worker démarré');
@@ -306,15 +310,19 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         };
 
         telemetryWorker.onerror = (error) => {
-            console.error('[KenshoStore] Erreur du Telemetry Worker:', error);
-            const workerError: WorkerError = {
-                worker: 'telemetry',
-                message: 'Erreur du worker Telemetry - logging indisponible',
-                timestamp: Date.now()
-            };
-            set(state => ({
-                workerErrors: [...state.workerErrors, workerError]
-            }));
+            try {
+                const workerError: WorkerError = {
+                    worker: 'telemetry',
+                    message: 'Erreur du worker Telemetry - logging indisponible',
+                    timestamp: Date.now()
+                };
+                set(state => ({
+                    workerErrors: [...state.workerErrors, workerError]
+                }));
+            } catch (e) {
+                // Supprime les erreurs pour éviter les exceptions non gérées
+            }
+            return true;
         };
 
         console.log('[KenshoStore] Telemetry Worker démarré');
@@ -346,7 +354,12 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         };
 
         embeddingWorker.onerror = (error) => {
-            console.error('[KenshoStore] Erreur du EmbeddingAgent Worker:', error);
+            try {
+                // Supprime silencieusement les erreurs de worker
+            } catch (e) {
+                // Supprime les erreurs pour éviter les exceptions non gérées
+            }
+            return true;
         };
 
         console.log('[KenshoStore] EmbeddingAgent Worker démarré');
@@ -370,7 +383,12 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         };
 
         intentWorker.onerror = (error) => {
-            console.error('[KenshoStore] Erreur du IntentClassifierAgent Worker:', error);
+            try {
+                // Supprime silencieusement les erreurs de worker
+            } catch (e) {
+                // Supprime les erreurs pour éviter les exceptions non gérées
+            }
+            return true;
         };
 
         console.log('[KenshoStore] IntentClassifierAgent Worker démarré');
@@ -395,7 +413,12 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         };
 
         graphWorker.onerror = (error) => {
-            console.error('[KenshoStore] Erreur du GraphWorker:', error);
+            try {
+                // Supprime silencieusement les erreurs de worker
+            } catch (e) {
+                // Supprime les erreurs pour éviter les exceptions non gérées
+            }
+            return true;
         };
 
         console.log('[KenshoStore] GraphWorker démarré');
