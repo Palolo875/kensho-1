@@ -121,6 +121,8 @@ const Index = () => {
                       statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
                       ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
                       thoughtProcess={msg.thoughtProcess}
+                      factCheckingClaims={msg.factCheckingClaims}
+                      semanticSearchResults={msg.semanticSearchResults}
                     />
                   </div>
                 )

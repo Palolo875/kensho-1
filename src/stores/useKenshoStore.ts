@@ -40,6 +40,8 @@ export interface Message {
     timestamp: number;
     plan?: any; // Plan généré par l'OIE pour affichage dans l'UI
     thoughtProcess?: ThoughtStep[]; // Étapes de pensée pour le débat interne (Sprint 6)
+    factCheckingClaims?: any[]; // Résultats de vérification (Priority 6)
+    semanticSearchResults?: any; // Résultats de recherche sémantique (Priority 6)
 }
 
 export interface WorkerError {
