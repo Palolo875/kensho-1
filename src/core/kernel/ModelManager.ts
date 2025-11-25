@@ -1,26 +1,30 @@
-import { MLCEngine, CreateMLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
-import { MODEL_CATALOG, ModelMeta } from "./ModelCatalog";
-import { memoryManager } from "./MemoryManager";
-import { sseStreamer } from "../streaming/SSEStreamer";
-import { WEBLLM_CONFIG } from "../../config/webllm.config";
+/**
+ * ModelManager v4.0 - Transformers.js + Qwen3-0.6B-ONNX
+ * 
+ * Utilise AutoTokenizer et AutoModelForCausalLM pour charger
+ * le modèle Qwen3-0.6B-ONNX depuis Hugging Face avec streaming.
+ */
 
-console.log("📦 Initialisation du ModelManager v3.1 (Memory-Aware + Streaming)...");
+import { AutoTokenizer, AutoModelForCausalLM, env } from '@xenova/transformers';
+import { sseStreamer } from '../streaming/SSEStreamer';
+
+// Configuration pour permettre le chargement depuis Hugging Face
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+
+console.log("🧠✨ Initialisation du ModelManager v4.0 (Transformers.js + Qwen3-0.6B-ONNX)...");
 
 export class ModelManager {
-  private engine: MLCEngine | null = null;
+  private tokenizer: any | null = null;
+  private model: any | null = null;
   private _ready!: Promise<void>;
   private _resolveReady!: () => void;
   private _rejectReady!: (error: any) => void;
-  private currentModelKey: string | null = null;
   private isInitialized = false;
   private isInitializing = false;
 
   constructor() {
     this.resetReadyPromise();
-  }
-
-  public get ready(): Promise<void> {
-    return this._ready;
   }
 
   private resetReadyPromise() {
@@ -30,10 +34,14 @@ export class ModelManager {
     });
   }
 
-  public async init(
-    defaultModelKey = "gemma-2-2b", 
-    progressCallback?: (report: InitProgressReport) => void
-  ) {
+  public get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  /**
+   * Initialise et précharge le modèle Qwen3 0.6B et son tokenizer
+   */
+  public async init(modelKey: string = "onnx-community/Qwen3-0.6B-ONNX") {
     if (this.isInitialized) {
       console.warn("[ModelManager] Init déjà appelé, ignoré.");
       return;
@@ -48,162 +56,108 @@ export class ModelManager {
     this.isInitializing = true;
 
     try {
-      console.log("[ModelManager] Initialisation du moteur WebLLM...");
+      console.log(`[ModelManager] Pré-chargement du tokenizer...`);
+      sseStreamer.streamInfo(`Chargement du tokenizer...`);
       
-      const modelMeta = MODEL_CATALOG[defaultModelKey];
-      if (!modelMeta) {
-        throw new Error(`Modèle inconnu dans le catalogue : ${defaultModelKey}`);
-      }
-
-      console.log(`[ModelManager] Pré-chargement du modèle par défaut : ${modelMeta.model_id}`);
+      // Charger le tokenizer
+      this.tokenizer = await AutoTokenizer.from_pretrained(modelKey);
       
-      const config: any = {
-        appConfig: WEBLLM_CONFIG
-      };
-      if (progressCallback) {
-        config.initProgressCallback = progressCallback;
-      }
+      console.log(`[ModelManager] ✅ Tokenizer chargé. Chargement du modèle...`);
+      sseStreamer.streamInfo(`Chargement du modèle ${modelKey}...`);
       
-      // Use custom WebLLM config with our model URLs
-      this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      // Charger le modèle avec callbacks de progression
+      this.model = await AutoModelForCausalLM.from_pretrained(modelKey, {
+        quantized: true,
+        progress_callback: (progress: any) => {
+          const percent = Math.round((progress.progress || 0) * 100);
+          console.log(`[ModelManager] Progression: ${progress.file} (${percent}%)`);
+          sseStreamer.streamInfo(`Téléchargement: ${percent}%`);
+        }
+      });
       
-      // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
-      // InitProgressReport.total n'est PAS la taille en bytes (juste un compteur de progression)
-      
-      this.currentModelKey = defaultModelKey;
       this.isInitialized = true;
       this.isInitializing = false;
       
-      // ✨ Enregistrer le modèle chargé dans MemoryManager
-      memoryManager.registerLoaded(defaultModelKey);
-      
-      // ✨ Notifier l'UI via SSE
-      sseStreamer.streamInfo(`Model ${defaultModelKey} initialized and ready.`);
-      
       this._resolveReady();
-      console.log("✅ [ModelManager] Prêt. Le noyau de dialogue est opérationnel.");
+      console.log(`✅ [ModelManager] ${modelKey} est prêt pour générer du texte.`);
+      sseStreamer.streamInfo(`Modèle prêt!`);
 
     } catch (error) {
-      console.error("[ModelManager] Échec critique de l'initialisation.", error);
+      console.error("[ModelManager] Erreur d'initialisation:", error);
       this.isInitializing = false;
       this._rejectReady(error);
       this.resetReadyPromise();
+      sseStreamer.streamError(error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
 
-  public async getEngine(): Promise<MLCEngine> {
+  /**
+   * Obtient le tokenizer et le modèle une fois prêts
+   */
+  public async getModelAndTokenizer(): Promise<{ model: any, tokenizer: any }> {
     await this.ready;
-    if (!this.engine) {
-      throw new Error("Le moteur n'a pas pu être initialisé.");
+    if (!this.model || !this.tokenizer) {
+      throw new Error("Le modèle ou le tokenizer ne sont pas initialisés.");
     }
-    return this.engine;
-  }
-
-  public async switchModel(modelKey: string, progressCallback?: (report: InitProgressReport) => void) {
-    await this.ready;
-    
-    if (this.currentModelKey === modelKey) {
-      console.log(`[ModelManager] Modèle ${modelKey} déjà chargé.`);
-      // ✨ Marquer comme récemment utilisé (LRU)
-      memoryManager.touch(modelKey);
-      return;
-    }
-
-    const modelMeta = MODEL_CATALOG[modelKey];
-    if (!modelMeta) {
-      throw new Error(`Modèle inconnu : ${modelKey}`);
-    }
-    
-    // ✨ Notifier l'UI du changement
-    sseStreamer.streamInfo(`Checking memory for ${modelKey}...`);
-    
-    // ✨ Vérifier si assez de VRAM pour charger le nouveau modèle
-    const canLoad = await memoryManager.canLoadModel(modelKey);
-    if (!canLoad.can) {
-      console.warn(`[ModelManager] ⚠️ ${canLoad.reason}`);
-      // ✨ Notifier l'UI de l'erreur
-      sseStreamer.streamError(new Error(`Cannot load ${modelKey}: ${canLoad.reason}`));
-      throw new Error(`Impossible de charger ${modelKey}: ${canLoad.reason}`);
-    }
-    
-    console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
-    sseStreamer.streamInfo(`Loading model ${modelKey}...`);
-    
-    const config: any = {
-      appConfig: WEBLLM_CONFIG
-    };
-    if (progressCallback) {
-      config.initProgressCallback = progressCallback;
-    }
-    
-    // ✨ Désenregistrer l'ancien modèle si présent
-    if (this.currentModelKey) {
-      memoryManager.registerUnloaded(this.currentModelKey);
-    }
-    
-    // Use custom WebLLM config with our model URLs
-    await this.engine!.reload(modelMeta.model_id, config);
-    
-    // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
-    // InitProgressReport.total n'est PAS la taille en bytes
-    
-    this.currentModelKey = modelKey;
-    
-    // ✨ Enregistrer le nouveau modèle chargé
-    memoryManager.registerLoaded(modelKey);
-    
-    // ✨ Notifier l'UI du succès
-    sseStreamer.streamInfo(`Model ${modelKey} loaded successfully.`);
-    console.log(`✅ [ModelManager] Modèle ${modelKey} chargé avec succès.`);
-  }
-
-  public async preloadModel(modelKey: string): Promise<void> {
-    await this.ready;
-    
-    const modelMeta = MODEL_CATALOG[modelKey];
-    if (!modelMeta) {
-      throw new Error(`Modèle inconnu : ${modelKey}`);
-    }
-    
-    console.log(`[ModelManager] Pré-chargement en arrière-plan : ${modelMeta.model_id}`);
-    await this.engine!.reload(modelMeta.model_id);
-  }
-
-  public getCurrentModel(): string | null {
-    return this.currentModelKey;
-  }
-
-  public isModelLoaded(modelKey: string): boolean {
-    return this.currentModelKey === modelKey;
-  }
-
-  public getAvailableModels(): Record<string, ModelMeta> {
-    return MODEL_CATALOG;
-  }
-
-  public async dispose() {
-    if (this.engine) {
-      console.log("[ModelManager] Libération des ressources...");
-      
-      // ✨ Désenregistrer le modèle actuel
-      if (this.currentModelKey) {
-        memoryManager.registerUnloaded(this.currentModelKey);
-      }
-      
-      await this.engine.unload();
-      this.engine = null;
-      this.currentModelKey = null;
-      this.isInitialized = false;
-    }
+    return { model: this.model, tokenizer: this.tokenizer };
   }
 
   /**
-   * ✨ Retourne les stats VRAM du MemoryManager
+   * Génère du texte avec streaming via callback
    */
-  public getVRAMStats() {
-    return memoryManager.getStats();
+  public async generateStreaming(
+    prompt: string,
+    onToken: (token: string) => void,
+    maxNewTokens: number = 256
+  ): Promise<string> {
+    const { model, tokenizer } = await this.getModelAndTokenizer();
+    
+    try {
+      console.log(`[ModelManager] Génération démarrée pour le prompt: "${prompt.substring(0, 50)}..."`);
+      
+      // Tokeniser le prompt
+      const inputs = tokenizer(prompt, { return_tensors: "pt" });
+      
+      let fullResponse = "";
+      const promptLength = prompt.length;
+      let lastDecodedLength = 0;
+      
+      // Générer avec callback
+      const outputs = await model.generate({
+        ...inputs,
+        max_new_tokens: maxNewTokens,
+        callback_function: (beams: any) => {
+          try {
+            // Décoder la séquence complète
+            const decoded = tokenizer.decode(beams[0].output_token_ids, { skip_special_tokens: true });
+            
+            // Extraire uniquement le nouveau token
+            if (decoded.length > lastDecodedLength) {
+              const newToken = decoded.substring(lastDecodedLength);
+              lastDecodedLength = decoded.length;
+              
+              // Envoyer le token à l'UI
+              onToken(newToken);
+              fullResponse += newToken;
+            }
+          } catch (e) {
+            console.error("[ModelManager] Erreur dans callback:", e);
+          }
+        }
+      });
+      
+      // Décodage final
+      const finalOutput = tokenizer.decode(outputs[0], { skip_special_tokens: true });
+      console.log(`[ModelManager] ✅ Génération terminée`);
+      
+      return finalOutput;
+    } catch (error) {
+      console.error("[ModelManager] Erreur de génération:", error);
+      throw error;
+    }
   }
 }
 
+// Instance singleton
 export const modelManager = new ModelManager();

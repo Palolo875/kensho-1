@@ -14,7 +14,6 @@
  */
 
 import PQueue from 'p-queue';
-import { MLCEngine } from '@mlc-ai/web-llm';
 import { modelManager } from './ModelManager';
 import { Router } from '../router/Router';
 import { 
@@ -227,25 +226,21 @@ export class TaskExecutor {
 
   /**
    * Exécute une tâche avec streaming EN ENTIER dans le job PQueue
-   * 
-   * CRITIQUE: Toute la génération (y compris streaming) se passe DANS cette fonction
-   * La queue ne libère le slot QUE quand la génération est complète
+   * Utilise Transformers.js pour générer du texte
    */
   private async executeStreamingTaskInQueue(
     task: Task,
     userPrompt: string,
     onChunk: (chunk: StreamChunk) => void
   ): Promise<TaskResult> {
-    const engine = await modelManager.getEngine();
     const startTime = performance.now();
     let timedOut = false;
     const timeoutMs = task.timeout;
 
-    // Setup timeout avec VRAIE interruption
-    const timeoutId = setTimeout(async () => {
+    // Setup timeout
+    const timeoutId = setTimeout(() => {
       timedOut = true;
-      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}, interruption...`);
-      await engine.interruptGenerate();
+      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}`);
     }, timeoutMs);
 
     try {
