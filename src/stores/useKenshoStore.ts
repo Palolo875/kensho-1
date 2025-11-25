@@ -225,7 +225,7 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
 
 /**
  * Démarre la constellation de workers (OIE, Telemetry)
- * Le LLM Worker est démarré séparément via startLLMWorker()
+ * Tous les workers sont optionnels - erreurs ignorées gracieusement
  */
 const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
     console.log(`[KenshoStore] Mode: ${appConfig.mode} | LLM enabled: ${appConfig.llm.enabled} | Autoload: ${appConfig.llm.autoload}`);
@@ -248,7 +248,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         });
     }
 
-    // Démarrer l'OIE Worker
+    // Démarrer l'OIE Worker - erreurs gracieuses
     try {
         const oieWorker = new Worker(
             new URL('../agents/oie/index.ts', import.meta.url),
@@ -264,7 +264,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             }
         };
 
-        oieWorker.onerror = (error) => {
+        oieWorker.onerror = () => {
             try {
                 const workerError: WorkerError = {
                     worker: 'oie',
@@ -274,8 +274,8 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
                 set(state => ({
                     workerErrors: [...state.workerErrors, workerError]
                 }));
-            } catch (e) {
-                // Supprime les erreurs pour éviter les exceptions non gérées
+            } catch (_) {
+                // Silence - erreur non critique
             }
             return true;
         };
@@ -309,7 +309,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             }
         };
 
-        telemetryWorker.onerror = (error) => {
+        telemetryWorker.onerror = () => {
             try {
                 const workerError: WorkerError = {
                     worker: 'telemetry',
@@ -319,8 +319,8 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
                 set(state => ({
                     workerErrors: [...state.workerErrors, workerError]
                 }));
-            } catch (e) {
-                // Supprime les erreurs pour éviter les exceptions non gérées
+            } catch (_) {
+                // Silence
             }
             return true;
         };
@@ -353,12 +353,8 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             }
         };
 
-        embeddingWorker.onerror = (error) => {
-            try {
-                // Supprime silencieusement les erreurs de worker
-            } catch (e) {
-                // Supprime les erreurs pour éviter les exceptions non gérées
-            }
+        embeddingWorker.onerror = () => {
+            // Erreur silencieuse - non critique
             return true;
         };
 
@@ -382,12 +378,8 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             }
         };
 
-        intentWorker.onerror = (error) => {
-            try {
-                // Supprime silencieusement les erreurs de worker
-            } catch (e) {
-                // Supprime les erreurs pour éviter les exceptions non gérées
-            }
+        intentWorker.onerror = () => {
+            // Erreur silencieuse - non critique
             return true;
         };
 
@@ -412,12 +404,8 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             }
         };
 
-        graphWorker.onerror = (error) => {
-            try {
-                // Supprime silencieusement les erreurs de worker
-            } catch (e) {
-                // Supprime les erreurs pour éviter les exceptions non gérées
-            }
+        graphWorker.onerror = () => {
+            // Erreur silencieuse - non critique
             return true;
         };
 
@@ -502,13 +490,13 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             }
         });
 
-        // Mode Simulation: passer directement à 'ready'
-        if (appConfig.mode === 'simulation') {
-            console.log('[KenshoStore] 🎭 Mode Simulation - Modèle prêt instantanément');
-            set({ modelProgress: { phase: 'ready', progress: 100, text: 'Prêt (Mode Simulation)' } });
-        } else {
-            // Démarrer la constellation de workers pour les autres modes
+        // Démarrer la constellation de workers - gérée avec isolation des erreurs
+        try {
             startConstellation(set);
+        } catch (err) {
+            console.error('[KenshoStore] Erreur constellation workers:', err);
+            // Continue malgré l'erreur - les workers sont optionnels
+            set({ modelProgress: { phase: 'ready', progress: 1, text: 'Mode Simulation (Fallback)' } });
         }
     },
 
