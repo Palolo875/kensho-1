@@ -1,7 +1,8 @@
 import { MLCEngine, CreateMLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
 import { MODEL_CATALOG, ModelMeta } from "./ModelCatalog";
+import { memoryManager } from "./MemoryManager";
 
-console.log("📦 Initialisation du ModelManager v2.0...");
+console.log("📦 Initialisation du ModelManager v3.0 Elite...");
 
 export class ModelManager {
   private engine: MLCEngine | null = null;
@@ -64,6 +65,10 @@ export class ModelManager {
       this.currentModelKey = defaultModelKey;
       this.isInitialized = true;
       this.isInitializing = false;
+      
+      // ✨ Enregistrer le modèle chargé dans MemoryManager
+      memoryManager.registerLoaded(defaultModelKey);
+      
       this._resolveReady();
       console.log("✅ [ModelManager] Prêt. Le noyau de dialogue est opérationnel.");
 
@@ -89,12 +94,21 @@ export class ModelManager {
     
     if (this.currentModelKey === modelKey) {
       console.log(`[ModelManager] Modèle ${modelKey} déjà chargé.`);
+      // ✨ Marquer comme récemment utilisé (LRU)
+      memoryManager.touch(modelKey);
       return;
     }
 
     const modelMeta = MODEL_CATALOG[modelKey];
     if (!modelMeta) {
       throw new Error(`Modèle inconnu : ${modelKey}`);
+    }
+    
+    // ✨ Vérifier si assez de VRAM pour charger le nouveau modèle
+    const canLoad = await memoryManager.canLoadModel(modelKey);
+    if (!canLoad.can) {
+      console.warn(`[ModelManager] ⚠️ ${canLoad.reason}`);
+      throw new Error(`Impossible de charger ${modelKey}: ${canLoad.reason}`);
     }
     
     console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
@@ -104,9 +118,18 @@ export class ModelManager {
       config.initProgressCallback = progressCallback;
     }
     
+    // ✨ Désenregistrer l'ancien modèle si présent
+    if (this.currentModelKey) {
+      memoryManager.registerUnloaded(this.currentModelKey);
+    }
+    
     await this.engine!.reload(modelMeta.model_id, config);
     
     this.currentModelKey = modelKey;
+    
+    // ✨ Enregistrer le nouveau modèle chargé
+    memoryManager.registerLoaded(modelKey);
+    
     console.log(`✅ [ModelManager] Modèle ${modelKey} chargé avec succès.`);
   }
 
@@ -137,11 +160,24 @@ export class ModelManager {
   public async dispose() {
     if (this.engine) {
       console.log("[ModelManager] Libération des ressources...");
+      
+      // ✨ Désenregistrer le modèle actuel
+      if (this.currentModelKey) {
+        memoryManager.registerUnloaded(this.currentModelKey);
+      }
+      
       await this.engine.unload();
       this.engine = null;
       this.currentModelKey = null;
       this.isInitialized = false;
     }
+  }
+
+  /**
+   * ✨ Retourne les stats VRAM du MemoryManager
+   */
+  public getVRAMStats() {
+    return memoryManager.getStats();
   }
 }
 

@@ -1,0 +1,115 @@
+Exécution : Sprint 14 "Le Premier Agent Élite" - Jour 7, Tâche 1Objectif : Implémenter le MemoryManager v1.0, le gardien de la VRAM.Philosophie : Nous codons exactement les spécifications "Elite". Ce composant doit être capable de calculer la VRAM requise pour un modèle, de vérifier la disponibilité, et de proposer une stratégie de déchargement intelligente (LRU).Étape 1 : Création de la nouvelle structure de fichiers "Elite"Je mets en place l'arborescence qui va accueillir nos nouveaux composants de production.# Création des répertoires pour les composants avancés
+mkdir -p src/core/cache
+mkdir -p src/core/streaming
+mkdir -p src/plugins/dialogue
+
+# Création du fichier pour notre nouveau gardien de la mémoire
+touch src/core/kernel/MemoryManager.ts
+Étape 2 : Codage du MemoryManager.ts v1.0J'implémente la version complète et robuste, en suivant scrupuleusement le blueprint 10/10.// src/core/kernel/MemoryManager.ts
+
+import { resourceManager } from './ResourceManager';
+import { MODEL_CATALOG } from './ModelCatalog';
+
+console.log("🧠✨ Initialisation du MemoryManager v1.0 (Elite)...");
+
+/**
+ * MemoryManager gère intelligemment la VRAM disponible,
+ * en s'inspirant des meilleures pratiques de gestion de mémoire (ex: vLLM).
+ */
+class MemoryManager {
+  private loadedModels: Map<string, { vramSizeGB: number; lastUsed: number }> = new Map();
+  private readonly VRAM_SAFETY_MARGIN = 0.15; // Garder 15% de VRAM libre par sécurité.
+
+  /**
+   * Calcule la VRAM requise (en Go) pour un modèle donné.
+   * Formule: (Paramètres_en_Milliards * Bits_de_Quantification / 8) * 1.2 (overhead pour le cache K/V).
+   */
+  private calculateVRAM_GB(modelKey: string): number {
+    const meta = MODEL_CATALOG[modelKey];
+    if (!meta) throw new Error(`Modèle inconnu dans le catalogue : ${modelKey}`);
+
+    const sizeStr = meta.size.toUpperCase();
+    const paramsInBillions = sizeStr.includes('B') 
+      ? parseFloat(sizeStr) 
+      : parseFloat(sizeStr) / 1000;
+
+    const bits = parseInt(meta.quantization.match(/q(\d+)/)?.[1] || '16');
+    
+    // Calcul en Go
+    const vramInGB = (paramsInBillions * bits / 8) * 1.2;
+    return vramInGB;
+  }
+
+  /**
+   * Vérifie s'il y a assez de VRAM pour charger un nouveau modèle.
+   */
+  public async canLoadModel(modelKey: string): Promise<{ can: boolean; reason?: string }> {
+    const requiredVRAM = this.calculateVRAM_GB(modelKey);
+    const status = await resourceManager.getStatus();
+
+    const usedVRAM = Array.from(this.loadedModels.values()).reduce((sum, m) => sum + m.vramSizeGB, 0);
+    
+    // Estimation de la VRAM totale disponible (difficile dans le navigateur, on se base sur la RAM JS)
+    // Note : Ceci est une heuristique. Une API `navigator.gpu.memory` serait idéale.
+    const totalJSRamGB = (status.memory.jsHeapUsed / 1024 / 1024 / 1024) / status.memory.usageRatio;
+    const availableVRAM = totalJSRamGB * (1 - this.VRAM_SAFETY_MARGIN) - usedVRAM;
+
+    if (requiredVRAM > availableVRAM) {
+      return {
+        can: false,
+        reason: `VRAM insuffisante : requiert ~${requiredVRAM.toFixed(2)}GB, disponible ~${availableVRAM.toFixed(2)}GB`
+      };
+    }
+    return { can: true };
+  }
+
+  /**
+   * Propose une liste de modèles à décharger pour libérer de la VRAM (stratégie LRU).
+   */
+  public getModelsToUnload(requiredVRAM: number): string[] {
+    const sortedByLru = Array.from(this.loadedModels.entries())
+      .sort(([, a], [, b]) => a.lastUsed - b.lastUsed); // Le plus ancien en premier
+
+    const toUnload: string[] = [];
+    let freedVRAM = 0;
+
+    for (const [key, meta] of sortedByLru) {
+      toUnload.push(key);
+      freedVRAM += meta.vramSizeGB;
+      if (freedVRAM >= requiredVRAM) break;
+    }
+    return toUnload;
+  }
+
+  /**
+   * Enregistre un modèle qui vient d'être chargé en mémoire.
+   */
+  public registerLoaded(modelKey: string): void {
+    const vram = this.calculateVRAM_GB(modelKey);
+    this.loadedModels.set(modelKey, { vramSizeGB: vram, lastUsed: Date.now() });
+    console.log(`[MemoryManager] ✅ ${modelKey} enregistré (${vram.toFixed(2)}GB VRAM).`);
+  }
+
+  /**
+   * Met à jour le timestamp d'un modèle pour indiquer qu'il a été récemment utilisé.
+   */
+  public touch(modelKey: string): void {
+    const model = this.loadedModels.get(modelKey);
+    if (model) model.lastUsed = Date.now();
+  }
+
+  /**
+   * Retire un modèle de la liste des modèles chargés.
+   */
+  public registerUnloaded(modelKey: string): void {
+    if (this.loadedModels.has(modelKey)) {
+      this.loadedModels.delete(modelKey);
+      console.log(`[MemoryManager] 卸 ${modelKey} déchargé.`);
+    }
+  }
+}
+
+export const memoryManager = new MemoryManager();
+Statut : Le gardien de la mémoire est en place.Ce MemoryManager est la première pierre de notre architecture "Elite". Il est proactif, intelligent et basé sur des calculs concrets. Il transformera notre ModelManager d'un simple chargeur en un gestionnaire de ressources conscient.Lorsque le ModelManager voudra charger un nouveau modèle, il devra d'abord demander la permission au MemoryManager :
+const check = await memoryManager.canLoadModel('qwen2.5-coder-1.5b');Si la réponse est non, il demandera une liste de modèles à décharger :
+const victims = memoryManager.getModelsToUnload(requiredVRAM);C'est cette interaction qui rendra notre système robuste et l'empêchera de s'auto-détruire.

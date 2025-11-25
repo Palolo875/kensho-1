@@ -231,10 +231,12 @@ export class TaskExecutor {
       const prompt = task.prompt || userPrompt;
 
       // Streaming de la génération (DANS le job PQueue)
+      // ✅ Paramètres WebLLM corrects: stream, temperature, max_tokens (PAS max_gen_len)
       const stream = await engine.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         stream: true,
-        temperature: task.temperature
+        temperature: task.temperature,
+        max_tokens: 2048 // ✅ Paramètre correct WebLLM
       });
 
       let accumulatedContent = '';
@@ -306,9 +308,11 @@ export class TaskExecutor {
 
       const prompt = task.prompt || userPrompt;
 
+      // ✅ Paramètres WebLLM corrects: temperature, max_tokens (PAS max_gen_len)
       const response = await engine.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
-        temperature: task.temperature
+        temperature: task.temperature,
+        max_tokens: 2048 // ✅ Paramètre correct WebLLM
       });
 
       clearTimeout(timeoutId);
