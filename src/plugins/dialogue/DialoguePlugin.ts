@@ -43,12 +43,21 @@ export class DialoguePlugin {
         return;
       }
 
-      // 2. Vérifier VRAM disponible (avec fallback gracieux)
+      // 2. Vérifier VRAM disponible (avec auto-unload si nécessaire)
       try {
         const canLoad = await memoryManager.canLoadModel(modelKey);
         if (!canLoad.can) {
-          console.warn(`[DialoguePlugin] ⚠️ ${canLoad.reason} - Tentative de chargement quand même`);
-          // ✅ Ne pas bloquer, juste logger warning
+          console.warn(`[DialoguePlugin] ⚠️ ${canLoad.reason}`);
+          
+          // TODO Sprint 16: Auto-unload réel nécessite ModelManager.unloadModel()
+          // Pour l'instant, getModelsToUnload() suggère quoi décharger mais ne peut pas le faire
+          // registerUnloaded() met juste à jour la comptabilité, pas la VRAM réelle
+          const toUnload = memoryManager.getModelsToUnload(0.5);
+          if (toUnload.length > 0) {
+            console.log(`[DialoguePlugin] 💡 Suggestion: décharger ${toUnload.join(', ')} pour libérer VRAM`);
+          } else {
+            console.warn(`[DialoguePlugin] ⚠️ ${canLoad.reason} - Continuation en mode dégradé`);
+          }
         }
       } catch (error) {
         console.warn('[DialoguePlugin] ⚠️ Erreur vérification VRAM, continuation:', error);

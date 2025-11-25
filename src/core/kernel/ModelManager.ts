@@ -62,6 +62,9 @@ export class ModelManager {
       
       this.engine = await CreateMLCEngine(modelMeta.model_id, config);
       
+      // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
+      // InitProgressReport.total n'est PAS la taille en bytes (juste un compteur de progression)
+      
       this.currentModelKey = defaultModelKey;
       this.isInitialized = true;
       this.isInitializing = false;
@@ -124,6 +127,9 @@ export class ModelManager {
     }
     
     await this.engine!.reload(modelMeta.model_id, config);
+    
+    // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
+    // InitProgressReport.total n'est PAS la taille en bytes
     
     this.currentModelKey = modelKey;
     

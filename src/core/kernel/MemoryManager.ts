@@ -13,9 +13,14 @@ class MemoryManager {
   private estimatedVRAM: number = 2; // ✅ Initialiser à 2GB par défaut immédiatement
   private readonly VRAM_SAFETY_MARGIN = 0.15; // Garder 15% de VRAM libre
   private gpuInitPromise: Promise<void> | null = null;
+  
+  // 🎯 Cache des tailles réelles téléchargées (persisté dans localStorage)
+  private realBundleSizes: Map<string, number> = new Map();
+  private readonly BUNDLE_CACHE_KEY = 'kensho_bundle_sizes_v1';
 
   constructor() {
     this.gpuInitPromise = this.initGPU();
+    this.loadBundleSizeCache();
   }
 
   /**
@@ -56,10 +61,54 @@ class MemoryManager {
   }
 
   /**
+   * Charge le cache des tailles réelles depuis localStorage
+   */
+  private loadBundleSizeCache(): void {
+    if (typeof localStorage === 'undefined') return;
+    
+    try {
+      const cached = localStorage.getItem(this.BUNDLE_CACHE_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        this.realBundleSizes = new Map(Object.entries(data));
+        console.log(`[MemoryManager] 📦 ${this.realBundleSizes.size} tailles de bundles chargées depuis cache`);
+      }
+    } catch (error) {
+      console.warn('[MemoryManager] Erreur chargement cache bundles:', error);
+    }
+  }
+
+  /**
+   * Enregistre une taille réelle de bundle (appelé après téléchargement)
+   */
+  public registerBundleSize(modelKey: string, sizeGB: number): void {
+    this.realBundleSizes.set(modelKey, sizeGB);
+    
+    // Persister dans localStorage
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const data = Object.fromEntries(this.realBundleSizes);
+        localStorage.setItem(this.BUNDLE_CACHE_KEY, JSON.stringify(data));
+        console.log(`[MemoryManager] 💾 Taille réelle enregistrée pour ${modelKey}: ${sizeGB.toFixed(3)}GB`);
+      } catch (error) {
+        console.warn('[MemoryManager] Erreur sauvegarde cache bundles:', error);
+      }
+    }
+  }
+
+  /**
    * Calcule la VRAM requise pour un modèle
-   * Formule: (params × bits/8) × 1.2 (overhead KV cache)
+   * 🎯 Utilise la taille réelle si disponible, sinon formule théorique
    */
   private calculateVRAM(modelKey: string): number {
+    // ✅ Priorité 1: Taille réelle si disponible
+    if (this.realBundleSizes.has(modelKey)) {
+      const realSize = this.realBundleSizes.get(modelKey)!;
+      console.log(`[MemoryManager] 🎯 Utilisation taille réelle pour ${modelKey}: ${realSize.toFixed(3)}GB`);
+      return realSize;
+    }
+
+    // ✅ Priorité 2: Calcul théorique (fallback)
     const meta = MODEL_CATALOG[modelKey];
     if (!meta) {
       throw new Error(`Modèle inconnu: ${modelKey}`);
@@ -76,7 +125,9 @@ class MemoryManager {
     const bits = quantMatch ? parseInt(quantMatch[1], 10) : 16;
 
     // Calcul VRAM: (params × bits/8) × 1.2 (overhead KV cache)
-    return (params * bits / 8) * 1.2;
+    const theoretical = (params * bits / 8) * 1.2;
+    console.log(`[MemoryManager] 📊 Calcul théorique pour ${modelKey}: ${theoretical.toFixed(3)}GB`);
+    return theoretical;
   }
 
   /**
