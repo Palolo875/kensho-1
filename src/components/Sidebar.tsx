@@ -1,4 +1,4 @@
-import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus, BarChart3, ChevronDown, Zap } from "lucide-react";
+import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus, BarChart3, ChevronDown, Zap, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -115,6 +115,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
           >
             <Search className="h-5 w-5" />
             {!isCollapsed && <span className="ml-3">Rechercher</span>}
+          </Button>
+
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/gemma')}
+            className={cn(
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
+            )}
+          >
+            <MessageSquare className="h-5 w-5" />
+            {!isCollapsed && <span className="ml-3">💬 Gemma Chat</span>}
           </Button>
 
           <Button
@@ -247,6 +259,20 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
 
         {/* Navigation Items */}
         <div className="flex flex-col gap-2 px-2">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              navigate('/gemma');
+              onToggle ? onToggle() : setInternalIsOpen(false);
+            }}
+            className={cn(
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light w-full justify-start"
+            )}
+          >
+            <MessageSquare className="h-5 w-5" />
+            <span className="ml-3">💬 Gemma Chat</span>
+          </Button>
+
           <Button
             variant="ghost"
             onClick={() => {

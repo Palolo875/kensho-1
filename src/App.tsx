@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ObservatoryProvider } from "@/contexts/ObservatoryContext";
 import Index from "./pages/Index";
 import Analytics from "./pages/Analytics";
+import GemmaChat from "./pages/GemmaChat";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/gemma" element={<GemmaChat />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
