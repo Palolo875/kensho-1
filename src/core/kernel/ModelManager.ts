@@ -57,14 +57,20 @@ export class ModelManager {
 
       console.log(`[ModelManager] Pré-chargement du modèle par défaut : ${modelMeta.model_id}`);
       
-      const config: any = {
-        appConfig: WEBLLM_CONFIG
-      };
+      const config: any = {};
       if (progressCallback) {
         config.initProgressCallback = progressCallback;
       }
       
-      this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      // Try with custom appConfig, fallback to default WebLLM models
+      try {
+        config.appConfig = WEBLLM_CONFIG;
+        this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      } catch (error) {
+        console.warn(`[ModelManager] ⚠️ Custom config failed, trying with default WebLLM models...`);
+        delete config.appConfig;
+        this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      }
       
       // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
       // InitProgressReport.total n'est PAS la taille en bytes (juste un compteur de progression)
@@ -129,9 +135,7 @@ export class ModelManager {
     console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
     sseStreamer.streamInfo(`Loading model ${modelKey}...`);
     
-    const config: any = {
-      appConfig: WEBLLM_CONFIG
-    };
+    const config: any = {};
     if (progressCallback) {
       config.initProgressCallback = progressCallback;
     }
@@ -141,7 +145,14 @@ export class ModelManager {
       memoryManager.registerUnloaded(this.currentModelKey);
     }
     
-    await this.engine!.reload(modelMeta.model_id, config);
+    try {
+      config.appConfig = WEBLLM_CONFIG;
+      await this.engine!.reload(modelMeta.model_id, config);
+    } catch (error) {
+      console.warn(`[ModelManager] ⚠️ Custom config reload failed, trying default...`);
+      delete config.appConfig;
+      await this.engine!.reload(modelMeta.model_id, config);
+    }
     
     // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
     // InitProgressReport.total n'est PAS la taille en bytes
