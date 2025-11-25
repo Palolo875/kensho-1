@@ -23,6 +23,10 @@ export class NoOpStorageAdapter implements StorageAdapter {
         return [];
     }
 
+    async getAll<T>(_store: string): Promise<T[]> {
+        return [];
+    }
+
     async clear(_store: string): Promise<void> {
         // No-op
     }
