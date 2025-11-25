@@ -57,12 +57,14 @@ export class ModelManager {
 
       console.log(`[ModelManager] Pré-chargement du modèle par défaut : ${modelMeta.model_id}`);
       
-      const config: any = {};
+      const config: any = {
+        appConfig: WEBLLM_CONFIG
+      };
       if (progressCallback) {
         config.initProgressCallback = progressCallback;
       }
       
-      // Use official WebLLM prebuilt models
+      // Use custom WebLLM config with our model URLs
       this.engine = await CreateMLCEngine(modelMeta.model_id, config);
       
       // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
@@ -128,7 +130,9 @@ export class ModelManager {
     console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
     sseStreamer.streamInfo(`Loading model ${modelKey}...`);
     
-    const config: any = {};
+    const config: any = {
+      appConfig: WEBLLM_CONFIG
+    };
     if (progressCallback) {
       config.initProgressCallback = progressCallback;
     }
@@ -138,7 +142,7 @@ export class ModelManager {
       memoryManager.registerUnloaded(this.currentModelKey);
     }
     
-    // Use official WebLLM prebuilt models
+    // Use custom WebLLM config with our model URLs
     await this.engine!.reload(modelMeta.model_id, config);
     
     // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks

@@ -6,6 +6,12 @@ export type ModelMeta = {
 };
 
 export const MODEL_CATALOG: Record<string, ModelMeta> = {
+  "gemma-3-270m": {
+    model_id: "gemma-3-270m-it-MLC",
+    size: "270M",
+    description: "Gemma 3 270M - Ultra-compact model with int4 quantization, perfect for edge devices",
+    quantization: "q4f16_1"
+  },
   "gemma-2-2b": {
     model_id: "Gemma-2-2b-it-q4f32_1-MLC",
     size: "2B",
