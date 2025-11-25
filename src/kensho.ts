@@ -44,7 +44,7 @@ export interface KenshoAPI {
  * ```
  */
 export async function initializeKensho(
-  defaultModelKey = 'phi-3-mini',
+  defaultModelKey = 'gemma-2-2b',
   onProgress?: (progress: InitProgressReport) => void
 ): Promise<KenshoAPI> {
   try {

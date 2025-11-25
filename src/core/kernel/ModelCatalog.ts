@@ -6,10 +6,10 @@ export type ModelMeta = {
 };
 
 export const MODEL_CATALOG: Record<string, ModelMeta> = {
-  "phi-3-mini": {
-    model_id: "Phi-3-mini-4k-instruct-q4f16_1-MLC",
-    size: "3.8B",
-    description: "Modèle ultra-léger et rapide pour le chat temps réel.",
+  "gemma-2-2b": {
+    model_id: "Gemma-2-2b-it-q4f16_1-MLC",
+    size: "2B",
+    description: "Modèle Gemma ultra-léger pour chat temps réel.",
     quantization: "q4f16_1"
   },
   "qwen2-e5-embed": {
