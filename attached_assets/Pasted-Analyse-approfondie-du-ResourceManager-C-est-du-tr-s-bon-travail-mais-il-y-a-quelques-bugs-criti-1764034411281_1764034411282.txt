@@ -1,0 +1,336 @@
+Analyse approfondie du ResourceManager 🔍
+C'est du très bon travail, mais il y a quelques bugs critiques et des opportunités d'amélioration importantes. Analysons :
+🐛 Bugs à corriger immédiatement
+1. Bug critique : hasMemoryAPI pointe vers la mauvaise API
+private hasMemoryAPI = 'deviceMemory' in navigator; // ❌ FAUX
+Problème : navigator.deviceMemory donne la RAM totale du device (ex: 8GB), pas l'usage actuel. Vous voulez performance.memory pour le heap JS.
+Correction :
+private hasMemoryAPI = 'memory' in performance && 
+                       typeof (performance as any).memory !== 'undefined';
+2. Bug de compatibilité : connection.effectiveType peut être undefined
+effectiveType: connection.effectiveType, // ❌ Peut crasher
+Correction :
+effectiveType: (connection.effectiveType || '4g') as DeviceStatus['network']['effectiveType'],
+downlink: connection.downlink || 10
+3. Memory leak potentiel : Listeners non nettoyés
+Vous ajoutez des event listeners mais ne les retirez jamais. Si le ResourceManager est recréé, vous accumulez des listeners.
+Solution :
+private listeners: Array<{ target: any; event: string; handler: Function }> = [];
+
+private addEventListener(target: any, event: string, handler: Function) {
+  target.addEventListener(event, handler);
+  this.listeners.push({ target, event, handler });
+}
+
+public destroy() {
+  this.listeners.forEach(({ target, event, handler }) => {
+    target.removeEventListener(event, handler as EventListener);
+  });
+  this.listeners = [];
+}
+🚀 Améliorations majeures recommandées
+4. Ajouter un système d'événements pour notifications réactives
+Actuellement, le Router doit poller getStatus(). C'est inefficace. Ajoutez un système d'événements :
+type ResourceEventType = 'memory-critical' | 'battery-low' | 'network-change' | 'cpu-throttle';
+type ResourceEventHandler = (status: DeviceStatus) => void;
+
+class ResourceManager {
+  private eventHandlers = new Map<ResourceEventType, Set<ResourceEventHandler>>();
+
+  public on(event: ResourceEventType, handler: ResourceEventHandler) {
+    if (!this.eventHandlers.has(event)) {
+      this.eventHandlers.set(event, new Set());
+    }
+    this.eventHandlers.get(event)!.add(handler);
+  }
+
+  private emit(event: ResourceEventType) {
+    const handlers = this.eventHandlers.get(event);
+    if (handlers) {
+      handlers.forEach(h => h(this.currentStatus));
+    }
+  }
+
+  private checkThresholds() {
+    if (this.currentStatus.memory.usageRatio > 0.85) {
+      this.emit('memory-critical');
+    }
+    if (this.currentStatus.battery?.level < 0.15 && !this.currentStatus.battery.isCharging) {
+      this.emit('battery-low');
+    }
+  }
+}
+Usage dans le Router :
+resourceManager.on('memory-critical', async (status) => {
+  console.warn('⚠️ Mémoire critique, déchargement des modèles non essentiels...');
+  await modelManager.unloadLeastUsedModels();
+});
+5. Ajouter des métriques de performance en temps réel
+Le CPU hardwareConcurrency est statique. Ajoutez une surveillance dynamique avec PerformanceObserver :
+private observeCPUPressure() {
+  if ('PerformanceObserver' in window) {
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.entryType === 'measure') {
+            // Analyser les temps d'exécution pour détecter du throttling
+            const duration = entry.duration;
+            if (duration > 1000) { // Plus d'1 seconde = CPU sous pression
+              this.emit('cpu-throttle');
+            }
+          }
+        }
+      });
+      observer.observe({ entryTypes: ['measure'] });
+    } catch (e) {
+      console.warn('[ResourceManager] PerformanceObserver non supporté');
+    }
+  }
+}
+6. Ajouter un cache temporel pour éviter les lectures excessives
+getStatus() sera appelé fréquemment. Ajoutez un cache :
+private lastStatusUpdate = 0;
+private statusCacheDuration = 500; // 500ms de cache
+
+public async getStatus(forceRefresh = false): Promise<DeviceStatus> {
+  const now = Date.now();
+  
+  if (!forceRefresh && (now - this.lastStatusUpdate) < this.statusCacheDuration) {
+    return this.currentStatus; // Retourner le cache
+  }
+
+  // Mise à jour de la mémoire...
+  if (this.hasMemoryAPI && 'memory' in performance) {
+    const memoryInfo = (performance as any).memory;
+    this.currentStatus.memory = {
+      usageRatio: memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize,
+      jsHeapUsed: memoryInfo.usedJSHeapSize / 1024 / 1024
+    };
+  }
+  
+  this.currentStatus.network.isOnline = navigator.onLine;
+  this.lastStatusUpdate = now;
+  this.checkThresholds(); // Vérifier les seuils critiques
+
+  return this.currentStatus;
+}
+7. Ajouter la détection de mode économie d'énergie
+Sur iOS/Android, le mode économie d'énergie impacte les performances. Détectez-le :
+private checkPowerSaveMode(): boolean {
+  // Sur iOS, la batterie se décharge plus lentement en mode économie
+  if (this.currentStatus.battery) {
+    const { level, isCharging } = this.currentStatus.battery;
+    // Heuristique simple : si batterie < 20% et pas en charge, probablement en mode éco
+    return level < 0.2 && !isCharging;
+  }
+  return false;
+}
+
+public async getStatus(): Promise<DeviceStatus> {
+  // ... code existant ...
+  
+  return {
+    ...this.currentStatus,
+    powerSaveMode: this.checkPowerSaveMode() // ✨ Nouveau champ
+  };
+}
+📊 Version améliorée complète
+// src/core/kernel/ResourceManager.ts
+
+export interface DeviceStatus {
+  memory: {
+    usageRatio: number;
+    jsHeapUsed: number;
+    trend?: 'stable' | 'rising' | 'falling'; // ✨ Tendance
+  };
+  battery: {
+    level: number;
+    isCharging: boolean;
+    timeToEmpty?: number; // ✨ Temps estimé avant décharge
+  } | null;
+  network: {
+    isOnline: boolean;
+    effectiveType: 'slow-2g' | '2g' | '3g' | '4g' | 'offline';
+    downlink: number;
+    rtt?: number; // ✨ Round-trip time
+  };
+  cpu: {
+    hardwareConcurrency: number;
+    isThrottling?: boolean; // ✨ Détection de throttling
+  };
+  powerSaveMode: boolean; // ✨ Mode économie d'énergie détecté
+}
+
+type ResourceEvent = 'memory-critical' | 'battery-low' | 'network-offline' | 'cpu-throttle';
+type EventHandler = (status: DeviceStatus) => void;
+
+class ResourceManager {
+  private currentStatus: DeviceStatus;
+  private lastStatusUpdate = 0;
+  private statusCacheDuration = 500;
+  private memoryHistory: number[] = []; // Pour détecter les tendances
+  
+  private hasBatteryAPI = 'getBattery' in navigator;
+  private hasMemoryAPI = 'memory' in performance;
+  private hasNetworkAPI = 'connection' in navigator;
+  
+  private eventHandlers = new Map<ResourceEvent, Set<EventHandler>>();
+  private listeners: Array<{ target: any; event: string; handler: any }> = [];
+
+  constructor() {
+    this.currentStatus = {
+      memory: { usageRatio: 0, jsHeapUsed: 0 },
+      battery: null,
+      network: { isOnline: navigator.onLine, effectiveType: '4g', downlink: 10 },
+      cpu: { hardwareConcurrency: navigator.hardwareConcurrency || 2 },
+      powerSaveMode: false
+    };
+
+    this.startMonitoring();
+    console.log("✅ [ResourceManager] Surveillance système active");
+  }
+
+  private addEventListener(target: any, event: string, handler: any) {
+    target.addEventListener(event, handler);
+    this.listeners.push({ target, event, handler });
+  }
+
+  private startMonitoring() {
+    // Réseau
+    if (this.hasNetworkAPI) {
+      const connection = (navigator as any).connection;
+      const updateNetwork = () => {
+        const wasOnline = this.currentStatus.network.isOnline;
+        this.currentStatus.network = {
+          isOnline: navigator.onLine,
+          effectiveType: (connection.effectiveType || '4g'),
+          downlink: connection.downlink || 10,
+          rtt: connection.rtt
+        };
+        
+        if (wasOnline && !navigator.onLine) {
+          this.emit('network-offline');
+        }
+      };
+      updateNetwork();
+      this.addEventListener(connection, 'change', updateNetwork);
+    }
+
+    // Batterie
+    if (this.hasBatteryAPI) {
+      (navigator as any).getBattery().then((battery: any) => {
+        const updateBattery = () => {
+          const level = battery.level;
+          this.currentStatus.battery = {
+            level,
+            isCharging: battery.charging,
+            timeToEmpty: battery.dischargingTime
+          };
+          
+          if (level < 0.15 && !battery.charging) {
+            this.emit('battery-low');
+          }
+        };
+        updateBattery();
+        this.addEventListener(battery, 'levelchange', updateBattery);
+        this.addEventListener(battery, 'chargingchange', updateBattery);
+      });
+    }
+  }
+
+  private updateMemoryTrend(current: number) {
+    this.memoryHistory.push(current);
+    if (this.memoryHistory.length > 10) this.memoryHistory.shift();
+    
+    if (this.memoryHistory.length < 3) return 'stable';
+    
+    const recent = this.memoryHistory.slice(-3);
+    const avg = recent.reduce((a, b) => a + b) / recent.length;
+    
+    if (current > avg * 1.1) return 'rising';
+    if (current < avg * 0.9) return 'falling';
+    return 'stable';
+  }
+
+  public async getStatus(forceRefresh = false): Promise<DeviceStatus> {
+    const now = Date.now();
+    
+    if (!forceRefresh && (now - this.lastStatusUpdate) < this.statusCacheDuration) {
+      return this.currentStatus;
+    }
+
+    // Mémoire
+    if (this.hasMemoryAPI && 'memory' in performance) {
+      const mem = (performance as any).memory;
+      const usageRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
+      const jsHeapUsed = mem.usedJSHeapSize / (1024 * 1024);
+      
+      this.currentStatus.memory = {
+        usageRatio,
+        jsHeapUsed,
+        trend: this.updateMemoryTrend(usageRatio)
+      };
+
+      if (usageRatio > 0.85) {
+        this.emit('memory-critical');
+      }
+    }
+
+    // Mode éco
+    this.currentStatus.powerSaveMode = this.detectPowerSaveMode();
+    this.currentStatus.network.isOnline = navigator.onLine;
+    this.lastStatusUpdate = now;
+
+    return this.currentStatus;
+  }
+
+  private detectPowerSaveMode(): boolean {
+    if (!this.currentStatus.battery) return false;
+    return this.currentStatus.battery.level < 0.2 && 
+           !this.currentStatus.battery.isCharging;
+  }
+
+  public on(event: ResourceEvent, handler: EventHandler) {
+    if (!this.eventHandlers.has(event)) {
+      this.eventHandlers.set(event, new Set());
+    }
+    this.eventHandlers.get(event)!.add(handler);
+  }
+
+  private emit(event: ResourceEvent) {
+    this.eventHandlers.get(event)?.forEach(h => h(this.currentStatus));
+  }
+
+  public destroy() {
+    this.listeners.forEach(({ target, event, handler }) => {
+      target.removeEventListener(event, handler);
+    });
+    this.listeners = [];
+    this.eventHandlers.clear();
+  }
+}
+
+export const resourceManager = new ResourceManager();
+✅ Résumé des améliorations
+Amélioration
+Impact
+Priorité
+Fix hasMemoryAPI
+🔴 Critique
+P0
+Gestion listeners
+🟡 Memory leak
+P0
+Système d'événements
+🟢 Architecture
+P1
+Cache temporel
+🟢 Performance
+P1
+Détection mode éco
+🟢 UX
+P2
+Tendances mémoire
+🟢 Prédictif
+P2
+Ce ResourceManager devient maintenant un vrai système nerveux capable de réagir proactivement aux changements d'environnement ! 🧠⚡

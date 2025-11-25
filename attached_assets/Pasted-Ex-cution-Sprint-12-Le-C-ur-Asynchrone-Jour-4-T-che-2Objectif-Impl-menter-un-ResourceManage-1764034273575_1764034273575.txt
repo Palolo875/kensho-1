@@ -1,0 +1,103 @@
+Exécution : Sprint 12 "Le Cœur Asynchrone" - Jour 4, Tâche 2Objectif : Implémenter un ResourceManager complet et optimal, capable de surveiller la mémoire, la batterie, le réseau, et même la charge du processeur.Philosophie : Le ResourceManager n'est pas un simple moniteur. C'est le système nerveux sensoriel de Kensho. Il fournit au Router et au TaskExecutor les informations critiques pour prendre des décisions éclairées : "Dois-je lancer un expert lourd ?", "Dois-je réduire la qualité ?", "Dois-je prévenir l'utilisateur que le réseau est lent ?".Étape 1 : Création du fichier ResourceManager.tsJe crée le fichier qui abritera ce composant essentiel.touch src/core/kernel/ResourceManager.tsÉtape 2 : Codage du ResourceManager.ts v1.0J'implémente la version complète, en utilisant toutes les API navigateur pertinentes pour obtenir une vision à 360° de l'état du système.// src/core/kernel/ResourceManager.ts
+
+console.log("📡 Initialisation du ResourceManager v1.0...");
+
+// Interface décrivant l'état complet du device à un instant T.
+export interface DeviceStatus {
+  memory: {
+    usageRatio: number; // Pourcentage de la RAM utilisée (0.0 à 1.0)
+    jsHeapUsed: number; // Mémoire utilisée par le JS (en MB)
+  };
+  battery: {
+    level: number;      // Niveau de batterie (0.0 à 1.0)
+    isCharging: boolean;
+  } | null; // La batterie n'est pas toujours disponible (ex: Desktop)
+  network: {
+    isOnline: boolean;
+    effectiveType: 'slow-2g' | '2g' | '3g' | '4g' | 'offline'; // Type de connexion
+    downlink: number;   // Bande passante estimée (en Mbps)
+  };
+  cpu: {
+    hardwareConcurrency: number; // Nombre de cœurs logiques
+  };
+}
+
+class ResourceManager {
+  private currentStatus: DeviceStatus;
+  private hasBatteryAPI = 'getBattery' in navigator;
+  private hasMemoryAPI = 'deviceMemory' in navigator;
+  private hasNetworkAPI = 'connection' in navigator;
+
+  constructor() {
+    // Initialisation avec des valeurs par défaut "sûres"
+    this.currentStatus = {
+      memory: { usageRatio: 0, jsHeapUsed: 0 },
+      battery: null,
+      network: { isOnline: navigator.onLine, effectiveType: '4g', downlink: 10 },
+      cpu: { hardwareConcurrency: navigator.hardwareConcurrency || 2 }
+    };
+
+    this.startMonitoring();
+    console.log("   ✅ [ResourceManager] Surveillance active de l'état du système.");
+  }
+
+  private startMonitoring() {
+    // Surveillance du réseau
+    if (this.hasNetworkAPI) {
+      const connection = (navigator as any).connection;
+      const updateNetworkStatus = () => {
+        this.currentStatus.network = {
+          isOnline: navigator.onLine,
+          effectiveType: connection.effectiveType,
+          downlink: connection.downlink
+        };
+      };
+      updateNetworkStatus();
+      connection.addEventListener('change', updateNetworkStatus);
+    }
+
+    // Surveillance de la batterie
+    if (this.hasBatteryAPI) {
+      (navigator as any).getBattery().then((battery: any) => {
+        const updateBatteryStatus = () => {
+          this.currentStatus.battery = {
+            level: battery.level,
+            isCharging: battery.charging
+          };
+        };
+        updateBatteryStatus();
+        battery.addEventListener('levelchange', updateBatteryStatus);
+        battery.addEventListener('chargingchange', updateBatteryStatus);
+      });
+    }
+    
+    // Surveillance de la mémoire (mise à jour à la demande car coûteux)
+    // Nous créons une méthode pour la rafraîchir avant une décision importante.
+  }
+
+  /**
+   * Rafraîchit et retourne l'état actuel complet du device.
+   * Doit être appelé par le Router avant de prendre une décision.
+   */
+  public async getStatus(): Promise<DeviceStatus> {
+    // Mise à jour de la mémoire juste avant de retourner le statut
+    if (this.hasMemoryAPI && 'memory' in performance) {
+        const memoryInfo = (performance as any).memory;
+        this.currentStatus.memory = {
+            usageRatio: memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize,
+            jsHeapUsed: memoryInfo.usedJSHeapSize / 1024 / 1024
+        };
+    }
+    
+    // On s'assure que le statut réseau est à jour
+    this.currentStatus.network.isOnline = navigator.onLine;
+
+    return this.currentStatus;
+  }
+}
+
+// On expose une instance unique (singleton) pour toute l'application.
+export const resourceManager = new ResourceManager();
+Statut : Le système nerveux de Kensho est en place.Ce ResourceManager est bien plus qu'un simple moniteur. Il est le conseiller de notre Router.•Avant de télécharger un modèle lourd, le Router demandera :const status = await resourceManager.getStatus();
+if (status.network.effectiveType === 'slow-2g') { /* Proposer de reporter le téléchargement */ }•Avant de lancer deux experts en parallèle, le Router demandera :const status = await resourceManager.getStatus();
+if (status.cpu.hardwareConcurrency < 4 || status.battery?.level < 0.2) { /* Forcer l'exécution en série */ }•Si la mémoire est presque pleine, le ResourceManager peut déclencher une action du ModelManager pour décharger les modèles les moins utilisés.Nous avons maintenant les moyens de créer une orchestration qui n'est pas seulement intelligente, mais aussi contextuellement consciente et respectueuse des ressources de l'utilisateur.

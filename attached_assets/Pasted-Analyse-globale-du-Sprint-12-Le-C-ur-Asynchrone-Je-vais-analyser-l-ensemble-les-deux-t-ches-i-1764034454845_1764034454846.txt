@@ -1,0 +1,214 @@
+Analyse globale du Sprint 12 "Le Cœur Asynchrone" 🎯
+Je vais analyser l'ensemble : les deux tâches individuellement ET leur cohérence architecturale.
+📊 Vue d'ensemble du Sprint
+Aspect
+Note
+Commentaire
+Vision architecturale
+9.5/10
+Excellente séparation des responsabilités
+Qualité du code
+8/10
+Solide, mais bugs mineurs à corriger
+Cohérence inter-composants
+9/10
+Les deux managers communiquent bien
+Prêt pour production
+7.5/10
+Nécessite tests + corrections bugs
+🎯 Tâche 1 : ModelManager v2.0
+✅ Ce qui est excellent
+1. Pattern d'initialisation asynchrone parfait
+public readonly ready: Promise<void>;
+C'est LA bonne façon de faire. Pas de race conditions, pas de polling. Le consommateur fait simplement :
+await modelManager.ready;
+// Maintenant je peux utiliser le moteur
+2. Séparation ModelCatalog
+Brillant pour la scalabilité. Ajouter un nouveau modèle = 1 entrée dans le catalogue, aucun changement dans le manager.
+3. Gestion d'erreurs robuste
+this._rejectReady(error); // ✅ La promesse ready est rejetée
+throw error;              // ✅ Et on propage l'erreur
+⚠️ Ce qui doit être amélioré
+1. Pas de gestion du re-loading
+public async switchModel(modelKey: string) {
+  await this.ready;
+  const modelMeta = MODEL_CATALOG[modelKey];
+  if (!modelMeta) throw new Error(`Modèle inconnu: ${modelKey}`);
+  
+  console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
+  await this.engine!.reload(modelMeta.model_id);
+}
+2. Pas de tracking de l'état actuel
+private currentModelKey: string | null = null;
+
+public getCurrentModel(): string | null {
+  return this.currentModelKey;
+}
+
+public isModelLoaded(modelKey: string): boolean {
+  return this.currentModelKey === modelKey;
+}
+3. Pas de gestion du cycle de vie
+public async dispose() {
+  if (this.engine) {
+    await this.engine.unload();
+    this.engine = null;
+  }
+}
+🎯 Tâche 2 : ResourceManager v1.0
+✅ Ce qui est excellent
+1. Vision "système nerveux"
+La philosophie est parfaite : ce n'est pas un simple moniteur, c'est un conseiller pour le Router.
+2. Interface DeviceStatus complète
+Toutes les dimensions critiques sont couvertes : mémoire, batterie, réseau, CPU.
+3. Surveillance événementielle
+L'approche avec event listeners pour les changements de batterie/réseau est optimale.
+⚠️ Ce qui doit être corrigé
+1. Bug critique : mauvaise API mémoire (déjà mentionné)
+// ❌ FAUX - donne la RAM totale, pas l'usage
+private hasMemoryAPI = 'deviceMemory' in navigator;
+
+// ✅ CORRECT
+private hasMemoryAPI = 'memory' in performance;
+2. Pas de cleanup des listeners (déjà mentionné)
+Risque de memory leak si le ResourceManager est recréé.
+3. Pas de système d'alerte proactive
+Le Router doit poller. Ajoutez des événements.
+🔗 Cohérence entre les deux composants
+✅ Points de synergie excellents
+1. Les deux exposent des singletons
+export const modelManager = new ModelManager();
+export const resourceManager = new ResourceManager();
+Cohérent et simple à utiliser.
+2. Les deux sont asynchrones
+Aucun blocage du thread principal. Parfait pour un système embarqué.
+3. Séparation des préoccupations claire
+ModelManager = "QUE charger"
+ResourceManager = "QUAND/COMMENT charger"
+⚠️ Manques de coordination
+1. Pas de communication directe
+Le ResourceManager devrait pouvoir demander au ModelManager de décharger des modèles :
+// Dans ResourceManager
+private async handleMemoryCritical() {
+  console.warn('⚠️ Mémoire critique détectée');
+  this.emit('memory-critical');
+  
+  // Communication avec ModelManager
+  const { modelManager } = await import('./ModelManager');
+  await modelManager.unloadLeastUsedModels();
+}
+2. Pas de feedback du ModelManager vers ResourceManager
+Quand un modèle se charge, le ResourceManager devrait être notifié pour mettre à jour ses métriques :
+// Dans ModelManager.init()
+await this.engine.reload(modelMeta.model_id);
+
+// ✨ Notifier le ResourceManager
+const { resourceManager } = await import('./ResourceManager');
+await resourceManager.onModelLoaded(modelMeta.size);
+3. Pas de "contract" partagé
+Créez un fichier KernelTypes.ts avec les types partagés :
+// src/core/kernel/KernelTypes.ts
+export type ResourceConstraints = {
+  maxMemoryMB: number;
+  minBatteryLevel: number;
+  minNetworkSpeed: 'slow-2g' | '2g' | '3g' | '4g';
+};
+
+export type ModelLoadDecision = {
+  canLoad: boolean;
+  reason?: string;
+  constraints: ResourceConstraints;
+};
+🏗️ Architecture manquante : Le coordinateur
+Il manque un 3ème composant pour orchestrer ces deux managers : le KernelCoordinator.
+// src/core/kernel/KernelCoordinator.ts
+
+import { modelManager } from './ModelManager';
+import { resourceManager } from './ResourceManager';
+
+class KernelCoordinator {
+  async init() {
+    // 1. Vérifier les ressources AVANT de charger le modèle
+    const status = await resourceManager.getStatus();
+    
+    if (status.memory.jsHeapUsed > 500) {
+      throw new Error('Mémoire insuffisante pour démarrer Kensho');
+    }
+
+    // 2. Écouter les alertes critiques
+    resourceManager.on('memory-critical', async () => {
+      console.warn('[Coordinator] Mémoire critique, déchargement...');
+      await modelManager.unloadUnusedModels();
+    });
+
+    // 3. Initialiser le ModelManager avec feedback
+    await modelManager.init('gemma-3-270m', (report) => {
+      console.log(`[Coordinator] Chargement: ${report.text}`);
+    });
+
+    console.log('✅ [Coordinator] Kensho kernel opérationnel');
+  }
+
+  async canLoadModel(modelKey: string): Promise<ModelLoadDecision> {
+    const status = await resourceManager.getStatus();
+    const modelMeta = MODEL_CATALOG[modelKey];
+
+    // Décision intelligente basée sur les ressources
+    if (status.memory.usageRatio > 0.8) {
+      return { canLoad: false, reason: 'Mémoire saturée' };
+    }
+
+    if (status.battery?.level < 0.15 && !status.battery.isCharging) {
+      return { canLoad: false, reason: 'Batterie critique' };
+    }
+
+    if (status.network.effectiveType === 'slow-2g') {
+      return { 
+        canLoad: false, 
+        reason: 'Réseau trop lent pour télécharger un modèle' 
+      };
+    }
+
+    return { canLoad: true };
+  }
+}
+
+export const kernelCoordinator = new KernelCoordinator();
+Usage dans l'app :
+// src/App.tsx
+import { kernelCoordinator } from './core/kernel/KernelCoordinator';
+
+useEffect(() => {
+  kernelCoordinator.init().catch(console.error);
+}, []);
+📈 Roadmap de complétion du Sprint
+Phase 1 : Corrections critiques (P0)
+[ ] Fixer hasMemoryAPI dans ResourceManager
+[ ] Ajouter cleanup des listeners
+[ ] Ajouter gestion d'erreurs sur connection.effectiveType
+Phase 2 : Fonctionnalités essentielles (P1)
+[ ] Ajouter système d'événements au ResourceManager
+[ ] Ajouter switchModel() au ModelManager
+[ ] Créer le KernelCoordinator
+Phase 3 : Robustesse (P2)
+[ ] Ajouter tests unitaires pour les deux managers
+[ ] Ajouter cache temporel au ResourceManager
+[ ] Ajouter détection mode économie d'énergie
+[ ] Ajouter métriques de tendance mémoire
+Phase 4 : Documentation (P3)
+[ ] Diagrammes de séquence pour les workflows
+[ ] Guide d'utilisation des APIs
+[ ] Documentation des seuils et heuristiques
+🎯 Verdict final
+Points forts du Sprint 🏆
+Architecture asynchrone solide - Pas de blocage, tout est non-bloquant
+Séparation des préoccupations exemplaire - Chaque manager a un rôle clair
+Extensibilité native - Facile d'ajouter des modèles ou de nouvelles métriques
+Vision produit claire - "Système nerveux sensoriel" est une excellente métaphore
+Points d'amélioration critiques 🔧
+Bugs de détection d'API - hasMemoryAPI est faux
+Memory leaks potentiels - Listeners non nettoyés
+Manque de coordination - Les managers ne communiquent pas
+Pas de tests - Aucun test unitaire ou d'intégration
+Note globale : 8.5/10 🌟
+C'est un excellent sprint avec une architecture pensée et robuste. Les bugs sont mineurs et facilement corrigeables. Avec les améliorations suggérées (notamment le KernelCoordinator), vous aurez un système de classe production.

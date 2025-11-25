@@ -1,0 +1,106 @@
+Exécution : Sprint 12 "Le Cœur Asynchrone" - Jour 4, Tâche 1Objectif : Implémenter le ModelManager v2.0. Il doit être asynchrone, robuste, et prêt à être géré par un Service Worker.Philosophie : Nous suivons à la lettre les spécifications "blindées" que nous avons définies. Pas de raccourcis. Pas de compromis. Le code doit être propre, sûr et non-bloquant.Étape 1 : Création de la structure de fichiersJe mets en place l'environnement pour nos nouveaux composants de base.# Création du répertoire pour les composants du "Noyau"
+mkdir -p src/core/kernel
+
+# Création des fichiers pour le gestionnaire de modèles et le catalogue
+touch src/core/kernel/ModelManager.ts
+touch src/core/kernel/ModelCatalog.ts
+Étape 2 : Codage du ModelCatalog.tsJe sépare le catalogue dans son propre fichier pour plus de clarté. Il contient les métadonnées précises de nos premiers modèles, en utilisant les bons identifiants techniques.// src/core/kernel/ModelCatalog.ts
+
+/**
+ * Métadonnées pour un modèle IA, incluant son ID technique pour WebLLM.
+ */
+export type ModelMeta = {
+  model_id: string; // L'ID exact attendu par WebLLM (ex: "gemma-2b-it-q4f32_1-MLC")
+  size: string;
+  description: string;
+  quantization: string;
+};
+
+/**
+ * Catalogue central des modèles connus par Kensho.
+ * C'est la "liste de courses" de notre système.
+ */
+export const MODEL_CATALOG: Record<string, ModelMeta> = {
+  "gemma-3-270m": {
+    model_id: "gemma-2b-it-q4f32_1-MLC", // NOTE : ID à confirmer, ceci est un placeholder. L'ID réel pour un 270M sera différent.
+    size: "270M",
+    description: "Noyau de dialogue rapide et efficace.",
+    quantization: "q4f32_1"
+  },
+  "qwen2-e5-embed": {
+    model_id: "Qwen2-E5-Embedding-Model-ID-MLC", // Placeholder
+    size: "150M",
+    description: "Expert en encodage sémantique pour le RAG.",
+    quantization: "f32"
+  }
+  // ... futurs modèles ici
+};
+Étape 3 : Codage du ModelManager.ts v2.0J'implémente la version robuste, en suivant scrupuleusement votre architecture corrigée : initialisation asynchrone explicite, gestion des erreurs, et callbacks de progression.// src/core/kernel/ModelManager.ts
+
+import { MLCEngine, CreateMLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
+import { MODEL_CATALOG, ModelMeta } from "./ModelCatalog";
+
+console.log("📦 Initialisation du ModelManager v2.0...");
+
+export class ModelManager {
+  private engine: MLCEngine | null = null;
+  public readonly ready: Promise<void>; // Une promesse publique pour que l'extérieur puisse attendre l'initialisation
+  private _resolveReady!: () => void;
+  private _rejectReady!: (error: any) => void;
+
+  constructor() {
+    this.ready = new Promise<void>((resolve, reject) => {
+      this._resolveReady = resolve;
+      this._rejectReady = reject;
+    });
+    // L'initialisation n'est PAS appelée ici. Elle est explicite.
+  }
+
+  /**
+   * Initialise le moteur WebLLM et précharge le modèle de dialogue par défaut.
+   * C'est la méthode de démarrage principale de Kensho.
+   * @param defaultModelKey La clé du modèle à charger au démarrage.
+   * @param progressCallback Une fonction optionnelle pour remonter la progression à l'UI.
+   */
+  public async init(defaultModelKey = "gemma-3-270m", progressCallback?: (report: InitProgressReport) => void) {
+    try {
+      console.log("[ModelManager] Initialisation du moteur WebLLM...");
+      this.engine = await CreateMLCEngine({
+        initProgressCallback: progressCallback
+      });
+      
+      const modelMeta = MODEL_CATALOG[defaultModelKey];
+      if (!modelMeta) {
+        throw new Error(`Modèle inconnu dans le catalogue : ${defaultModelKey}`);
+      }
+
+      console.log(`[ModelManager] Pré-chargement du modèle par défaut : ${modelMeta.model_id}`);
+      await this.engine.reload(modelMeta.model_id);
+      
+      this._resolveReady(); // La promesse "ready" est résolue. Le système est prêt.
+      console.log("   ✅ [ModelManager] Prêt. Le noyau de dialogue est opérationnel.");
+
+    } catch (error) {
+      console.error("[ModelManager] Échec critique de l'initialisation.", error);
+      this._rejectReady(error); // La promesse "ready" est rejetée.
+      throw error;
+    }
+  }
+
+  /**
+   * Retourne l'instance du moteur WebLLM, en s'assurant qu'il est prêt.
+   * @returns Une promesse qui résout avec l'instance du moteur.
+   */
+  public async getEngine(): Promise<MLCEngine> {
+    await this.ready; // Attend que la promesse d'initialisation soit résolue.
+    if (!this.engine) {
+      // Ce cas ne devrait jamais arriver si `ready` est résolue, mais c'est une sécurité.
+      throw new Error("Le moteur n'a pas pu être initialisé.");
+    }
+    return this.engine;
+  }
+}
+
+// On expose une instance unique (singleton) pour toute l'application.
+export const modelManager = new ModelManager();
+Statut : La première brique du Noyau est posée.Ce ModelManager est le cœur de notre système. Il est :•Asynchrone : Pas de blocage du thread principal.•Robuste : Il gère les erreurs d'initialisation et expose un état ready fiable.•Extensible : Le ModelCatalog nous permettra d'ajouter facilement tous nos futurs experts.•User-Friendly : Le progressCallback nous permettra d'afficher une belle barre de chargement à l'utilisateur.
