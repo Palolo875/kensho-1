@@ -7,10 +7,10 @@ export type ModelMeta = {
 
 export const MODEL_CATALOG: Record<string, ModelMeta> = {
   "gemma-2-2b": {
-    model_id: "Gemma-2-2b-it-q4f16_1-MLC",
+    model_id: "Gemma-2-2b-it-q4f32_1-MLC",
     size: "2B",
-    description: "Modèle Gemma 2 ultra-compact et haute-performance pour WebGPU (modèle officiel WebLLM stable).",
-    quantization: "q4f16_1"
+    description: "Gemma 2 2B - Official WebLLM model, ultra-compact and high-performance for browser inference",
+    quantization: "q4f32_1"
   },
   "qwen2-e5-embed": {
     model_id: "Qwen1.5-0.5B-Chat-q4f16_1-MLC",

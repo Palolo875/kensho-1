@@ -183,7 +183,7 @@ export function KenshoChat() {
     <div style={styles.container}>
       <div style={styles.header}>
         <h1>💬 Gemma 2 2B Chat</h1>
-        <p style={styles.modelInfo}>Model: Gemma 2 2B (Q4 WebGPU Optimized)</p>
+        <p style={styles.modelInfo}>Model: Gemma 2 2B (Q4 WebGPU Official)</p>
       </div>
 
       <div style={styles.messagesContainer}>

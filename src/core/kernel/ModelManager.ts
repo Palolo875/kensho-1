@@ -62,7 +62,7 @@ export class ModelManager {
         config.initProgressCallback = progressCallback;
       }
       
-      // Use default WebLLM models (custom appConfig not needed for official models)
+      // Use official WebLLM models (no custom appConfig needed)
       this.engine = await CreateMLCEngine(modelMeta.model_id, config);
       
       // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
@@ -138,7 +138,7 @@ export class ModelManager {
       memoryManager.registerUnloaded(this.currentModelKey);
     }
     
-    // Use default WebLLM models (custom appConfig not needed for official models)
+    // Use official WebLLM models (no custom appConfig needed)
     await this.engine!.reload(modelMeta.model_id, config);
     
     // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
