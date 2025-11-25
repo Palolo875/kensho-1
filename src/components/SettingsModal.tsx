@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import ThemeToggle from "./ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
+import { useNavigate } from "react-router-dom";
 
 interface SettingsModalProps {
   open: boolean;
@@ -20,6 +21,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal = ({ open, onOpenChange, onOpenObservatory }: SettingsModalProps) => {
+  const navigate = useNavigate();
   const { firstName, lastName, setFirstName, setLastName } = useUserPreferences();
   const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
   const setDebateModeEnabled = useKenshoStore(state => state.setDebateModeEnabled);
@@ -159,7 +161,7 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory }: SettingsModalP
               {/* Analytics */}
               <button
                 onClick={() => {
-                  window.location.hash = '#/analytics';
+                  navigate('/analytics');
                   onOpenChange(false);
                 }}
                 className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-sidebar-accent/60 transition-colors border border-border/30"
