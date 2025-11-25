@@ -1,16 +1,16 @@
 /**
  * TaskExecutor v3.0 - Chef de Chantier Intelligent
  * 
- * Architecture FINALE validée:
- * ✅ Queue globale avec TOUTE l'exécution dans le job (streaming inclus)
- * ✅ Streaming via callback pattern (onChunk) 
- * ✅ Vraie cancellation avec engine.interruptGenerate()
- * ✅ Concurrence strictement respectée (SERIAL/LIMITED/FULL)
+ * ARCHITECTURE MULTI-QUEUE (FINALE):
+ * ✅ Queue séparée par stratégie (respect strict de concurrence)
+ * ✅ Streaming entièrement dans le job PQueue
+ * ✅ Vraie cancellation via engine.interruptGenerate()
+ * ✅ Callback pattern pour envoyer les chunks en temps réel
  * 
- * BUGFIX Architectural:
- * - Le streaming loop s'exécute maintenant ENTIÈREMENT dans le job PQueue
- * - Les chunks sont envoyés via callbacks, pas via async generator externe
- * - La queue ne libère le slot QUE quand toute la génération est terminée
+ * Stratégies:
+ * - SERIAL: 1 tâche à la fois
+ * - PARALLEL_LIMITED: max 2 tâches simultanées  
+ * - PARALLEL_FULL: max 4 tâches simultanées
  */
 
 import PQueue from 'p-queue';
@@ -26,34 +26,60 @@ import {
 } from '../router/RouterTypes';
 import { fusioner } from './Fusioner';
 
-console.log("👷 TaskExecutor v3.0 - Chef de Chantier Intelligent initialisé");
+console.log("👷 TaskExecutor v3.0 - Chef de Chantier Intelligent (Multi-Queue)");
 
 export class TaskExecutor {
   private router: Router;
-  private globalQueue: PQueue;
+  private queueSerial: PQueue;
+  private queueParallelLimited: PQueue;
+  private queueParallelFull: PQueue;
   private activeRequests = 0;
 
   constructor() {
     this.router = new Router();
-    // Queue GLOBALE : limite totale de workers simultanés
-    this.globalQueue = new PQueue({ 
+    
+    // Queue pour SERIAL: 1 tâche à la fois
+    this.queueSerial = new PQueue({ 
+      concurrency: 1,
+      timeout: 120000
+    });
+    
+    // Queue pour PARALLEL_LIMITED: max 2 tâches
+    this.queueParallelLimited = new PQueue({ 
+      concurrency: 2,
+      timeout: 120000
+    });
+    
+    // Queue pour PARALLEL_FULL: max 4 tâches
+    this.queueParallelFull = new PQueue({ 
       concurrency: 4,
       timeout: 120000
     });
   }
 
   /**
+   * Obtient la queue appropriée selon la stratégie
+   */
+  private getQueue(strategy: ExecutionStrategy): PQueue {
+    switch (strategy) {
+      case 'SERIAL':
+        return this.queueSerial;
+      case 'PARALLEL_LIMITED':
+        return this.queueParallelLimited;
+      case 'PARALLEL_FULL':
+        return this.queueParallelFull;
+      default:
+        return this.queueSerial;
+    }
+  }
+
+  /**
    * Process avec streaming pour UX optimale
-   * 
-   * ARCHITECTURE CRITIQUE:
-   * - TOUT le travail (y compris streaming) se passe dans le job PQueue
-   * - On utilise des callbacks pour envoyer les chunks pendant que le job tourne
-   * - La queue ne libère le slot QUE quand la génération est complète
    */
   public async *processStream(userPrompt: string): AsyncGenerator<StreamChunk> {
     this.activeRequests++;
     const requestId = crypto.randomUUID().substring(0, 8);
-    console.log(`[TaskExecutor] 🚀 Requête #${requestId} (${this.activeRequests} active(s)): "${userPrompt.substring(0, 50)}..."`);
+    console.log(`[TaskExecutor] 🚀 Requête #${requestId} (${this.activeRequests} active(s))`);
 
     try {
       // 1. Obtenir le plan du Router
@@ -61,79 +87,73 @@ export class TaskExecutor {
       console.log(`[TaskExecutor #${requestId}] 📋 Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
       await this.router.validatePlan(plan);
 
-      // 2. Buffer pour collecter les chunks streamés DEPUIS le job PQueue
-      const chunks: StreamChunk[] = [];
-      let primaryResult: TaskResult | null = null;
+      // 2. Sélectionner la queue appropriée
+      const queue = this.getQueue(plan.strategy);
+      console.log(`[TaskExecutor #${requestId}] ⚙️  Stratégie: ${plan.strategy}`);
 
-      // 3. Callback qui sera appelé DEPUIS le job PQueue pour envoyer les chunks
+      // 3. Buffer pour les chunks streamés
+      const chunks: StreamChunk[] = [];
       const onChunk = (chunk: StreamChunk) => {
         chunks.push(chunk);
       };
 
-      // 4. Lancer la tâche primaire via la queue globale
-      //    TOUT le streaming se passe DANS ce job
-      const primaryPromise = this.globalQueue.add(async () => {
-        return await this.executeStreamingTaskInQueue(
-          plan.primaryTask,
-          userPrompt,
-          onChunk
-        );
-      }, { priority: 100 }); // Priorité max
+      // 4. Exécuter la tâche primaire via la queue (avec streaming)
+      const primaryPromise = queue.add(
+        () => this.executeStreamingTaskInQueue(plan.primaryTask, userPrompt, onChunk),
+        { priority: 100 }
+      );
 
-      // 5. Lancer les tâches fallback en parallèle
+      // 5. Exécuter les tâches fallback via la même queue
       const fallbackPromises = plan.fallbackTasks.map((task) =>
-        this.globalQueue.add(
+        queue.add(
           () => this.executeTaskWithTimeout(task, userPrompt),
           { priority: this.getPriorityValue(task.priority) }
         )
       );
 
-      // 6. Streamer les chunks au fur et à mesure qu'ils arrivent
-      //    On poll le buffer de chunks pendant que le job tourne
-      const pollInterval = 50; // ms
+      // 6. Polling: streamer les chunks pendant que les jobs tournent
+      let primaryResult: TaskResult | null = null;
       let lastIndex = 0;
+      const pollInterval = 50;
 
-      // Polling loop: envoyer les chunks pendant que le job tourne
       while (!primaryResult) {
         // Envoyer les nouveaux chunks
         for (let i = lastIndex; i < chunks.length; i++) {
           yield chunks[i];
           lastIndex = i + 1;
         }
-        
-        // Vérifier si le job est terminé
+
+        // Vérifier si le job primaire est terminé (avec timeout)
         try {
           primaryResult = await Promise.race([
             primaryPromise,
-            new Promise<null>(resolve => setTimeout(() => resolve(null), pollInterval))
+            new Promise<null>(resolve => 
+              setTimeout(() => resolve(null), pollInterval)
+            )
           ]);
         } catch (e) {
-          // Erreur dans le job, on sortira au prochain tour
+          // Le job a échoué, on le saura au prochain tour
         }
       }
 
-      // 7. Attendre et envoyer les chunks restants
-      if (!primaryResult) {
-        primaryResult = await primaryPromise;
-      }
-      
+      // 7. Envoyer les chunks restants
       for (let i = lastIndex; i < chunks.length; i++) {
         yield chunks[i];
       }
 
-      // 8. Attendre les résultats fallback
+      // 8. Attendre les tâches fallback
       let expertResults: TaskResult[] = [];
       if (fallbackPromises.length > 0) {
         console.log(`[TaskExecutor #${requestId}] ⏳ Attente de ${fallbackPromises.length} fallback(s)...`);
         expertResults = await Promise.all(fallbackPromises);
         
         const successCount = expertResults.filter(r => r.status === 'success').length;
-        console.log(`[TaskExecutor #${requestId}] 📊 Fallback: ${successCount}/${expertResults.length} réussis`);
+        console.log(`[TaskExecutor #${requestId}] 📊 Fallback: ${successCount}/${expertResults.length}`);
       }
 
       // 9. Fusionner et envoyer le résultat final
       const finalResponse = await fusioner.fuse({
-        primaryResult,
+        primaryResult: primaryResult!,
         expertResults
       });
 
@@ -145,7 +165,7 @@ export class TaskExecutor {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-      console.error(`[TaskExecutor #${requestId}] ❌ Erreur:`, error);
+      console.error(`[TaskExecutor] ❌ Erreur:`, error);
       
       yield {
         type: 'status',
@@ -176,11 +196,8 @@ export class TaskExecutor {
   /**
    * Exécute une tâche avec streaming EN ENTIER dans le job PQueue
    * 
-   * ARCHITECTURE CRITIQUE:
-   * - Toute la génération (y compris streaming) se passe DANS cette fonction
-   * - Les chunks sont envoyés via onChunk pendant que le job tourne
-   * - La fonction ne retourne QUE quand toute la génération est terminée
-   * - La queue garde le slot occupé pendant TOUTE la durée
+   * CRITIQUE: Toute la génération (y compris streaming) se passe DANS cette fonction
+   * La queue ne libère le slot QUE quand la génération est complète
    */
   private async executeStreamingTaskInQueue(
     task: Task,
@@ -196,13 +213,12 @@ export class TaskExecutor {
     const timeoutId = setTimeout(async () => {
       timedOut = true;
       console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}, interruption...`);
-      await engine.interruptGenerate(); // VRAIE cancellation
+      await engine.interruptGenerate();
     }, timeoutMs);
 
     try {
-      console.log(`   [Worker] ▶️  ${task.agentName} démarré (queue: ${this.globalQueue.pending}/${this.globalQueue.concurrency})`);
+      console.log(`   [Worker] ▶️  ${task.agentName} démarré`);
       
-      // Envoyer status
       onChunk({ type: 'status', status: `Exécution de ${task.agentName}...` });
 
       // Charger le modèle si nécessaire
@@ -214,7 +230,7 @@ export class TaskExecutor {
 
       const prompt = task.prompt || userPrompt;
 
-      // Streaming de la génération
+      // Streaming de la génération (DANS le job PQueue)
       const stream = await engine.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         stream: true,
@@ -223,17 +239,13 @@ export class TaskExecutor {
 
       let accumulatedContent = '';
 
-      // CRITIQUE: Cette boucle s'exécute DANS le job PQueue
-      // La queue ne libère le slot QUE quand cette boucle est terminée
+      // CRITIQUE: Cette boucle s'exécute ENTIÈREMENT dans le job
       for await (const chunk of stream) {
-        if (timedOut) {
-          break;
-        }
+        if (timedOut) break;
 
         const content = chunk.choices[0]?.delta?.content;
         if (content) {
           accumulatedContent += content;
-          // Envoyer le chunk via callback (pendant que le job tourne)
           onChunk({ type: 'primary', content });
         }
       }
@@ -243,10 +255,8 @@ export class TaskExecutor {
       const duration = performance.now() - startTime;
       const status = timedOut ? 'timeout' : 'success';
       
-      console.log(`   [Worker] ✅ ${task.agentName} ${status} (${duration.toFixed(0)}ms, ${accumulatedContent.length} chars)`);
+      console.log(`   [Worker] ✅ ${task.agentName} ${status} (${duration.toFixed(0)}ms)`);
       
-      onChunk({ type: 'status', status: `${task.agentName} terminé` });
-
       return {
         agentName: task.agentName,
         modelKey: task.modelKey,
@@ -259,8 +269,6 @@ export class TaskExecutor {
       clearTimeout(timeoutId);
       const duration = performance.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
-      
-      onChunk({ type: 'status', status: `Erreur: ${errorMessage}` });
       
       return {
         agentName: task.agentName,
@@ -283,7 +291,6 @@ export class TaskExecutor {
 
     const timeoutId = setTimeout(async () => {
       timedOut = true;
-      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}...`);
       await engine.interruptGenerate();
     }, timeoutMs);
 
@@ -305,8 +312,6 @@ export class TaskExecutor {
 
       const content = response.choices[0]?.message?.content || "";
       const duration = performance.now() - startTime;
-      
-      console.log(`   [Worker] ✅ ${task.agentName} terminé (${duration.toFixed(0)}ms)`);
       
       return {
         agentName: task.agentName,
@@ -347,9 +352,9 @@ export class TaskExecutor {
   public getQueueStats() {
     return {
       activeRequests: this.activeRequests,
-      pending: this.globalQueue.pending,
-      size: this.globalQueue.size,
-      concurrency: this.globalQueue.concurrency
+      serialQueue: { pending: this.queueSerial.pending, concurrency: this.queueSerial.concurrency },
+      parallelLimitedQueue: { pending: this.queueParallelLimited.pending, concurrency: this.queueParallelLimited.concurrency },
+      parallelFullQueue: { pending: this.queueParallelFull.pending, concurrency: this.queueParallelFull.concurrency }
     };
   }
 }
