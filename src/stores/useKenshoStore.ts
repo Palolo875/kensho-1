@@ -241,9 +241,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             modelProgress: { phase: 'ready', progress: 1, text: 'Mode Lite (sans IA)' }
         });
     } else {
-        console.log('[KenshoStore] ⏸️ LLM Worker en attente (lazy loading)');
+        console.log('[KenshoStore] 🎭 Mode Simulation activé - Utilise des mocks');
         set({
-            modelProgress: { phase: 'idle', progress: 0, text: 'Cliquez pour charger l\'IA' }
+            modelProgress: { phase: 'ready', progress: 1, text: 'Mode Simulation (mocks)' }
         });
     }
 
@@ -513,20 +513,14 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     },
 
     /**
-     * Envoie un message à Kensho
+     * Envoie un message à Kensho (MODE SIMULATION)
      * - Ajoute immédiatement le message utilisateur à l'UI
      * - Crée un placeholder pour la réponse de Kensho
-     * - Lance un stream vers l'OIE Agent
-     * - Met à jour le placeholder au fur et à mesure des chunks
+     * - Appelle le DialoguePluginMock pour générer une réponse simulée
+     * - Met à jour le placeholder au fur et à mesure du streaming
      */
-    sendMessage: (text) => {
-        const { mainBus, messages, modelProgress, workersReady, attachedFile } = get();
-
-        // Vérifications
-        if (!mainBus) {
-            console.error('[KenshoStore] ❌ MessageBus non initialisé');
-            return;
-        }
+    sendMessage: async (text) => {
+        const { messages, modelProgress } = get();
 
         if (text.trim() === '') {
             return;
@@ -534,17 +528,6 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
 
         if (modelProgress.phase !== 'ready') {
             console.warn('[KenshoStore] ⚠️ Le modèle n\'est pas encore prêt. Phase actuelle:', modelProgress.phase);
-            return;
-        }
-
-        // Vérifier que les workers sont prêts
-        if (!workersReady.oie) {
-            console.warn('[KenshoStore] ⚠️ OIE Worker n\'est pas encore prêt');
-            return;
-        }
-
-        if (!workersReady.llm) {
-            console.warn('[KenshoStore] ⚠️ LLM Worker n\'est pas encore prêt');
             return;
         }
 
@@ -571,175 +554,46 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         });
         saveMessagesToLocalStorage(newMessages);
 
-        console.log('[KenshoStore] 📤 Envoi du message vers OIEAgent:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
-        console.log('[KenshoStore] 🔍 Workers status:', workersReady);
+        console.log('[KenshoStore] 📤 Envoi du message (Mode Simulation):', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
 
-        // Préparer le payload pour l'OIE
-        const oiePayload: any = { 
-            query: text.trim(),
-            debateModeEnabled: get().isDebateModeEnabled // Sprint 6: Passer le mode débat
-        };
-        if (attachedFile) {
-            oiePayload.attachedFile = {
-                buffer: attachedFile.buffer,
-                type: attachedFile.file.type,
-                name: attachedFile.file.name,
-            };
-            console.log('[KenshoStore] 📎 Fichier attaché inclus:', attachedFile.file.name);
-        }
+        // Utiliser DialoguePluginMock pour générer la réponse
+        const { DialoguePluginMock } = await import('../plugins/dialogue/DialoguePluginMock');
+        const dialoguePlugin = new DialoguePluginMock();
 
-        // Réinitialiser les états après l'envoi
-        set({ attachedFile: null, uploadProgress: 0, ocrProgress: -1, statusMessage: null });
-
-        // Lancer le stream vers l'OIE Agent
-        // Le payload doit être au format { method, args } pour AgentRuntime
-        const streamId = mainBus.requestStream(
-            'OIEAgent',
-            { method: 'executeQuery', args: [oiePayload] },
-            {
-                onChunk: (chunk: any) => {
-                    // Gérer les différents types de chunks
-                    if (chunk.type === 'plan') {
-                        // C'est un chunk de plan, on le stocke dans le message
-                        console.log('[KenshoStore] 🧠 Plan reçu:', chunk.data.thought);
-                        set(state => {
-                            const updatedMessages = state.messages.map(msg =>
-                                msg.id === kenshoResponsePlaceholder.id
-                                    ? { ...msg, plan: chunk.data }
-                                    : msg
-                            );
-                            saveMessagesToLocalStorage(updatedMessages);
-                            return { messages: updatedMessages };
-                        });
-                    } else if (chunk.type === 'thought_process_start') {
-                        // Initialiser le processus de pensée (Sprint 6)
-                        console.log('[KenshoStore] 🧠 Processus de pensée démarré');
-                        set({ currentThoughtProcess: chunk.data.steps || [] });
-                    } else if (chunk.type === 'thought_step_update') {
-                        // Mettre à jour une étape de pensée (Sprint 6)
-                        console.log('[KenshoStore] 🔄 Mise à jour étape:', chunk.data.stepId, chunk.data.status);
-                        set(state => {
-                            if (!state.currentThoughtProcess) return state;
-                            return {
-                                currentThoughtProcess: state.currentThoughtProcess.map(step =>
-                                    step.id === chunk.data.stepId
-                                        ? { ...step, status: chunk.data.status, result: chunk.data.result, error: chunk.data.error }
-                                        : step
-                                )
-                            };
-                        });
-                    } else if (chunk.type === 'status') {
-                        // Message de statut (ex: "Analyse OCR...")
-                        console.log('[KenshoStore] 📊 Statut:', chunk.message);
-                        set({ statusMessage: chunk.message });
-                    } else if (chunk.type === 'ocr_progress') {
-                        // Progression de l'OCR (0-1)
-                        console.log('[KenshoStore] 📈 Progression OCR:', chunk.progress);
-                        set({ ocrProgress: chunk.progress });
-                    } else if (chunk.text) {
-                        // C'est un chunk de texte, on l'ajoute
-                        console.log('[KenshoStore] 📥 Chunk texte reçu:', chunk.text.substring(0, 30) + (chunk.text.length > 30 ? '...' : ''));
-                        set(state => {
-                            const updatedMessages = state.messages.map(msg =>
-                                msg.id === kenshoResponsePlaceholder.id
-                                    ? { ...msg, text: msg.text + chunk.text }
-                                    : msg
-                            );
-                            saveMessagesToLocalStorage(updatedMessages);
-                            return { messages: updatedMessages };
-                        });
-                    }
-                },
-                onEnd: (finalPayload) => {
-                    console.log('[KenshoStore] ✅ Stream terminé:', finalPayload);
+        try {
+            for await (const event of dialoguePlugin.startConversation(text.trim())) {
+                if (event.type === 'token') {
+                    // Ajouter le token au message
                     set(state => {
-                        // Sauvegarder le processus de pensée dans le message final
-                        const updatedMessages = state.currentThoughtProcess
-                            ? state.messages.map(msg =>
-                                msg.id === kenshoResponsePlaceholder.id
-                                    ? { ...msg, thoughtProcess: state.currentThoughtProcess }
-                                    : msg
-                              )
-                            : state.messages;
-                        
-                        saveMessagesToLocalStorage(updatedMessages);
-                        return { 
-                            messages: updatedMessages,
-                            isKenshoWriting: false, 
-                            statusMessage: null, 
-                            ocrProgress: -1,
-                            currentThoughtProcess: null
-                        };
-                    });
-
-                    // Sprint 7 Phase 3: Détection automatique des tâches complétées (UI-side approach)
-                    (async () => {
-                        const state = get();
-                        if (!state.activeProjectId || state.projects.length === 0) {
-                            return; // Pas de projet actif, pas de détection
-                        }
-
-                        const activeProject = state.projects.find(p => p.id === state.activeProjectId);
-                        if (!activeProject) return;
-
-                        const projectTasks = state.projectTasks.get(state.activeProjectId) || [];
-                        if (projectTasks.length === 0) {
-                            return; // Pas de tâches à vérifier
-                        }
-
-                        // Obtenir la réponse complète du dernier message
-                        const lastMessage = state.messages[state.messages.length - 1];
-                        if (!lastMessage || lastMessage.author !== 'kensho') {
-                            return;
-                        }
-
-                        const aiResponse = lastMessage.text;
-                        console.log('[KenshoStore] 🔍 Analyse de la réponse pour détection de tâches...');
-
-                        // Détecter les tâches complétées
-                        const completedTasks = TaskCompletionDetector.detectCompletedTasks(aiResponse, projectTasks);
-
-                        if (completedTasks.length > 0) {
-                            console.log(`[KenshoStore] ✨ ${completedTasks.length} tâche(s) détectée(s) comme complétée(s)`);
-                            
-                            // Marquer chaque tâche comme complétée
-                            for (const task of completedTasks) {
-                                await get().toggleTask(task.id);
-                            }
-
-                            // Notification à l'utilisateur
-                            toast.success(`${completedTasks.length} tâche(s) complétée(s)`, {
-                                description: completedTasks.map(t => `• ${t.text}`).join('\n'),
-                                duration: 5000
-                            });
-                        }
-                    })();
-                },
-                onError: (error) => {
-                    console.error('[KenshoStore] ❌ Erreur de stream:', error);
-
-                    // Afficher un toast d'erreur
-                    toast.error('Erreur de communication', {
-                        description: error.message || 'Impossible de contacter l\'agent',
-                        duration: 6000
-                    });
-
-                    set(state => {
-                        // Supprimer le placeholder de réponse
-                        const updatedMessages = state.messages.filter(msg =>
-                            msg.id !== kenshoResponsePlaceholder.id
+                        const updatedMessages = state.messages.map(msg =>
+                            msg.id === kenshoResponsePlaceholder.id
+                                ? { ...msg, text: msg.text + event.data }
+                                : msg
                         );
                         saveMessagesToLocalStorage(updatedMessages);
-                        return {
-                            messages: updatedMessages,
-                            isKenshoWriting: false
-                        };
+                        return { messages: updatedMessages };
+                    });
+                } else if (event.type === 'complete') {
+                    // Stream terminé
+                    console.log('[KenshoStore] ✅ Stream terminé (mode simulation)');
+                    set({
+                        isKenshoWriting: false
                     });
                 }
             }
-        );
-
-        console.log('[KenshoStore] 🆔 Stream créé avec ID:', streamId);
+        } catch (error) {
+            console.error('[KenshoStore] ❌ Erreur de stream:', error);
+            set(state => {
+                const updatedMessages = state.messages.filter(msg =>
+                    msg.id !== kenshoResponsePlaceholder.id
+                );
+                saveMessagesToLocalStorage(updatedMessages);
+                return {
+                    messages: updatedMessages,
+                    isKenshoWriting: false
+                };
+            });
+        }
     },
 
     /**
