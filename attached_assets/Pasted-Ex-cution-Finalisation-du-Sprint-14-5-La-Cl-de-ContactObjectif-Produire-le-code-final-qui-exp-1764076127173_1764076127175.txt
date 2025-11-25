@@ -1,0 +1,135 @@
+Exécution : Finalisation du Sprint 14.5 - La Clé de ContactObjectif : Produire le code final qui expose une méthode simple (startConversation) pour que votre interface puisse interagir avec l'ensemble de notre moteur "Elite".Étape 1 : Finalisation du DialoguePlugin.tsCe fichier contient la classe qui sert de façade. C'est le seul objet avec lequel l'UI aura besoin de communiquer pour une conversation.// src/plugins/dialogue/DialoguePlugin.ts
+
+import { taskExecutor } from '../../core/kernel/TaskExecutor';
+import { responseCache } from '../../core/cache/ResponseCache';
+import { sseStreamer, StreamEvent } from '../../core/streaming/SSEStreamer';
+
+console.log("🔌✨ Finalisation du DialoguePlugin v1.0 (Elite)...");
+
+export class DialoguePlugin {
+
+  /**
+   * Point d'entrée UNIQUE pour l'interface.
+   * Lance une conversation et retourne un générateur asynchrone
+   * que l'UI peut consommer pour le streaming.
+   * @param userPrompt Le message de l'utilisateur.
+   * @param modelKey Le modèle à utiliser (par défaut 'gemma-3-270m').
+   */
+  public async *startConversation(userPrompt: string, modelKey = 'gemma-3-270m'): AsyncGenerator<StreamEvent> {
+    try {
+      // 1. Vérifier le cache en premier
+      const cached = responseCache.get(userPrompt, modelKey);
+      if (cached) {
+        console.log("[Plugin] Réponse servie depuis le cache.");
+        yield { type: 'complete', data: { response: cached.response, fromCache: true }, timestamp: Date.now() };
+        return;
+      }
+
+      // 2. Préparer l'écoute des événements en temps réel
+      const streamController = new AbortController();
+      const eventStream = this.listenToStream(streamController.signal);
+
+      // 3. Lancer le traitement complet en arrière-plan.
+      // Le TaskExecutor gère tout : routage, exécution, streaming vers le bus...
+      taskExecutor.process(userPrompt).catch(err => {
+        sseStreamer.streamError(err);
+        streamController.abort(); // Arrêter l'écoute en cas d'erreur fatale
+      });
+
+      // 4. Relayer les événements à l'UI au fur et à mesure qu'ils arrivent
+      for await (const event of eventStream) {
+        yield event; // On retourne l'événement à l'UI
+        // Si le stream est terminé (ou en erreur), on arrête d'écouter.
+        if (event.type === 'complete' || event.type === 'error') {
+          streamController.abort();
+          break;
+        }
+      }
+    } catch (error) {
+      console.error("[Plugin] Erreur dans startConversation:", error);
+      yield { type: 'error', data: { message: (error as Error).message }, timestamp: Date.now() };
+    }
+  }
+
+  /**
+   * Méthode privée pour écouter le bus d'événements central et le transformer en générateur.
+   */
+  private async *listenToStream(signal: AbortSignal): AsyncGenerator<StreamEvent> {
+    let listener: (event: StreamEvent) => void;
+    const queue: StreamEvent[] = [];
+    let deferred: { resolve: () => void } | null = null;
+
+    listener = (event) => {
+      queue.push(event);
+      if (deferred) {
+        deferred.resolve();
+        deferred = null;
+      }
+    };
+    sseStreamer.on('stream-event', listener);
+
+    // Nettoyage automatique si le signal est avorté
+    signal.addEventListener('abort', () => {
+      sseStreamer.off('stream-event', listener);
+    });
+
+    try {
+      while (!signal.aborted) {
+        if (queue.length > 0) {
+          yield queue.shift()!;
+        } else {
+          // Attendre le prochain événement
+          await new Promise<void>(resolve => {
+            deferred = { resolve };
+          });
+        }
+      }
+    } finally {
+      // S'assurer que l'écouteur est bien retiré à la fin
+      sseStreamer.off('stream-event', listener);
+    }
+  }
+}
+Étape 2 : Création du point d'entrée kensho.tsCe fichier est le "main" de notre bibliothèque. C'est ce que votre interface importera. Il expose la fonction d'initialisation et l'instance du plugin.// src/kensho.ts
+
+import { modelManager } from './core/kernel/ModelManager';
+import { DialoguePlugin } from './plugins/dialogue/DialoguePlugin';
+
+/**
+ * L'API publique de Kensho.
+ */
+export interface KenshoAPI {
+  dialogue: DialoguePlugin;
+  // ... futurs plugins comme 'code', 'vision', etc.
+}
+
+/**
+ * Initialise le moteur Kensho et retourne l'API publique.
+ * C'est la seule fonction que l'UI a besoin d'appeler au démarrage.
+ * @returns Une promesse qui résout avec l'API Kensho.
+ */
+export async function initializeKensho(): Promise<KenshoAPI> {
+  console.log("🚀 Initialisation de Kensho OS...");
+  
+  // Précharge le modèle de dialogue par défaut et attend que le moteur soit prêt.
+  await modelManager.init('gemma-3-270m', (progress) => {
+    // Ce callback peut être utilisé pour mettre à jour une barre de chargement dans l'UI
+    console.log(`[Init] ${progress.text}`);
+  });
+
+  console.log("✅ Kensho est prêt.");
+
+  // Retourne l'API publique avec les plugins initialisés
+  return {
+    dialogue: new DialoguePlugin()
+  };
+}
+Statut : Le moteur est branché. La clé est sur le contact.C'est terminé.Vous pouvez maintenant, depuis votre interface, faire ceci :1.Importer la fonction d'initialisation :
+import { initializeKensho } from './kensho';2.Appeler l'initialisation au chargement de votre page :
+const kensho = await initializeKensho();
+Le système va automatiquement télécharger Gemma (en version INT4 si c'est ce qui est spécifié dans le ModelCatalog) et préparer tous les composants.3.Lancer une conversation depuis un événement de votre UI :const prompt = "Bonjour Kensho, es-tu là ?";
+for await (const event of kensho.dialogue.startConversation(prompt)) {
+    if (event.type === 'token') {
+        // Affichez le token dans votre chat
+    }
+}

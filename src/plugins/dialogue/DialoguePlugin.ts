@@ -11,12 +11,45 @@ import type { StreamEvent } from '../../core/streaming/SSEStreamer';
  * - Streaming SSE
  * - Gestion VRAM
  * - Métriques performance
+ * 
+ * USAGE PRINCIPAL: startConversation()
+ * C'est la méthode à utiliser depuis l'UI pour discuter avec Kensho.
  */
 export class DialoguePlugin {
   private startTime: number = 0;
   private firstTokenTime: number | null = null;
   private tokenCount: number = 0;
   private defaultModelKey: string = 'gemma-3-270m'; // ✅ Configurable au lieu de hardcodé
+
+  /**
+   * 🎯 POINT D'ENTRÉE PRINCIPAL POUR L'UI
+   * 
+   * Lance une conversation et retourne un générateur asynchrone
+   * que l'UI peut consommer pour le streaming.
+   * 
+   * @param userPrompt - Le message de l'utilisateur
+   * @param modelKey - Le modèle à utiliser (par défaut 'gemma-3-270m')
+   * @returns Un générateur d'événements de streaming
+   * 
+   * @example
+   * ```typescript
+   * for await (const event of dialogue.startConversation("Hello!")) {
+   *   if (event.type === 'token') {
+   *     console.log(event.data); // Afficher le token
+   *   }
+   *   if (event.type === 'complete') {
+   *     console.log("Réponse complète:", event.data.response);
+   *   }
+   * }
+   * ```
+   */
+  public async *startConversation(
+    userPrompt: string,
+    modelKey = this.defaultModelKey
+  ): AsyncGenerator<StreamEvent> {
+    // Simplement appeler processStream qui gère tout
+    yield* this.processStream(userPrompt, modelKey);
+  }
 
   /**
    * Traite une requête utilisateur avec streaming
