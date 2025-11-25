@@ -1,0 +1,61 @@
+{
+  "name": "@kensho/multi-agent-orchestration",
+  "version": "0.1.0",
+  "description": "Distributed multi-agent orchestration framework for browser-based AI systems",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./kernel": {
+      "import": "./dist/kernel/index.mjs",
+      "require": "./dist/kernel/index.js",
+      "types": "./dist/kernel/index.d.ts"
+    },
+    "./agents": {
+      "import": "./dist/agents/index.mjs",
+      "require": "./dist/agents/index.js",
+      "types": "./dist/agents/index.d.ts"
+    },
+    "./communication": {
+      "import": "./dist/communication/index.mjs",
+      "require": "./dist/communication/index.js",
+      "types": "./dist/communication/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "multi-agent",
+    "orchestration",
+    "AI",
+    "browser",
+    "webgpu",
+    "web-workers"
+  ],
+  "author": "Kensho Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kensho-ai/kensho.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kensho-ai/kensho/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0"
+  }
+}
