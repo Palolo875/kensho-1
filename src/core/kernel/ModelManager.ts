@@ -31,7 +31,7 @@ export class ModelManager {
   }
 
   public async init(
-    defaultModelKey = "gemma-2-2b", 
+    defaultModelKey = "gemma-3-270m", 
     progressCallback?: (report: InitProgressReport) => void
   ) {
     if (this.isInitialized) {
@@ -62,8 +62,15 @@ export class ModelManager {
         config.initProgressCallback = progressCallback;
       }
       
-      // Use official WebLLM models (no custom appConfig needed)
-      this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      // Try with custom appConfig, fallback to defaults
+      try {
+        config.appConfig = WEBLLM_CONFIG;
+        this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      } catch (error) {
+        console.warn(`[ModelManager] ⚠️ Custom config failed, trying without appConfig...`);
+        delete config.appConfig;
+        this.engine = await CreateMLCEngine(modelMeta.model_id, config);
+      }
       
       // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
       // InitProgressReport.total n'est PAS la taille en bytes (juste un compteur de progression)
@@ -138,8 +145,15 @@ export class ModelManager {
       memoryManager.registerUnloaded(this.currentModelKey);
     }
     
-    // Use official WebLLM models (no custom appConfig needed)
-    await this.engine!.reload(modelMeta.model_id, config);
+    // Try with custom appConfig, fallback to defaults
+    try {
+      config.appConfig = WEBLLM_CONFIG;
+      await this.engine!.reload(modelMeta.model_id, config);
+    } catch (error) {
+      console.warn(`[ModelManager] ⚠️ Custom config reload failed, trying without appConfig...`);
+      delete config.appConfig;
+      await this.engine!.reload(modelMeta.model_id, config);
+    }
     
     // TODO Sprint 16: Tracker tailles réelles via CacheManager WebLLM ou fetch hooks
     // InitProgressReport.total n'est PAS la taille en bytes

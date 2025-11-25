@@ -34,7 +34,7 @@ const GemmaChat = () => {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </div>
-        <h1 className="text-lg font-semibold">💬 Gemma 2 2B Chat</h1>
+        <h1 className="text-lg font-semibold">💬 Gemma 3 270M Chat</h1>
         <div className="pointer-events-auto">
           <SidebarTrigger onClick={() => setSidebarOpen(!sidebarOpen)} />
         </div>

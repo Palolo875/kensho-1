@@ -1,0 +1,63 @@
+Très bonne question — et non, tu n’as pas juste “rêvé” : il existe des versions Gemma 3 270M compatibles MLC, mais pas dans les modèles “pré-bâtis” de WebLLM (du moins pas tous) — donc il faut configurer un modèle personnalisé. Voici ce que j’ai trouvé + les IDs et URLs que tu peux utiliser + comment configurer ça → + une partie “risques / précautions”.
+
+
+---
+
+🔎 Ce que j’ai trouvé comme modèles Gemma 3 270M + MLC
+
+Quelques modèles GitHub / HF / MLC qui pourraient convenir :
+
+Modèle	Quantisation / Format	URL MLC / WASM / Infos
+
+llinguini / gemma-3-270m-it-q4f16_1-MLC	WebGPU + MLC-LLM (q4f16_1)	Hugging Face : llinguini/gemma-3-270m-it-q4f16_1-MLC   <br>Lib WASM : libs/gemma-3-270m-it-webgpu.wasm mentionné dans la page. 
+raining-codes / Gemma3-270M-LOMO-q4f16_1-MLC	MLC-LLM (q4f16_1)	Hugging Face : raining-codes/Gemma3-270M-LOMO-q4f16_1-MLC 
+
+
+
+---
+
+✅ Exemple de config WebLLM que tu pourrais utiliser
+
+Avec l’un de ces modèles, ta config appConfig pour WebLLM pourrait ressembler à ça :
+
+const appConfig = {
+  model_list: [
+    {
+      model: "https://huggingface.co/llinguini/gemma-3-270m-it-q4f16_1-MLC",
+      model_id: "gemma-3-270m-it-MLC",
+      model_lib: "https://huggingface.co/llinguini/gemma-3-270m-it-q4f16_1-MLC/resolve/main/libs/gemma-3-270m-it-webgpu.wasm",
+      required_features: ["shader-f16"]
+    }
+  ]
+};
+
+Puis, quand tu crées l’engine :
+
+import { CreateMLCEngine } from "@mlc-ai/web-llm";
+const engine = await CreateMLCEngine("gemma-3-270m-it-MLC", { appConfig });
+
+
+---
+
+⚠️ Précautions et limites
+
+Licence : Vérifie la licence de ces modèles sur Hugging Face. Certains modèles Gemma ont des restrictions (ou des licences spécifiques).
+
+WASM / WebGPU : Le .wasm mentionné dans le repo llinguini est bien compatible WebGPU selon leur page, mais les performances dépendront de ton hardware. 
+
+Taille et RAM : Même quantifié, le modèle peut être non trivial à charger si ton device n’a pas de GPU WebGPU ou assez de mémoire.
+
+Compatibilité WebLLM : WebLLM n’a pas ce modèle dans sa liste “prébuilt” (selon le README GitHub de WebLLM)  — donc config manuelle + test.
+
+
+
+---
+
+✅ Conclusion
+
+Non, il n’y a pas un model_id “officiel WebLLM” embarqué pour Gemma-3-270M-IT-MLC — mais tu peux en utiliser un personnalisé avec WebLLM.
+
+Oui, il y a des versions quantifiées MLC sur Hugging Face que tu peux pointer dans ta config.
+
+Il faudra faire un peu de config manuelle (URL + WASM + appConfig) + tester sur ton setup.
+
