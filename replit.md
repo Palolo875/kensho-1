@@ -144,6 +144,70 @@ const degradedPlan = await router.createPlan("Calcule la dérivée de x²");
 - `Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC` - Expert code (1.5B, q4f16_1)
 - `Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC` - Expert mathématiques (1.5B, q4f16_1)
 
+### Sprint 14: TaskExecutor v3.0 - Chef de Chantier Multi-Queue
+**Date:** Novembre 2025  
+**Statut:** ✅ Implémenté et Production-Ready
+
+Le Sprint 14 introduit le TaskExecutor v3.0 qui orchestre l'exécution des tâches multi-agents avec gestion fine de la concurrence, des priorités, des timeouts et du streaming.
+
+**Architecture Multi-Queue (Finale):**
+- **Queue SERIAL** (`concurrency: 1`) : Une seule tâche à la fois
+- **Queue PARALLEL_LIMITED** (`concurrency: 2`) : Jusqu'à 2 tâches simultanées
+- **Queue PARALLEL_FULL** (`concurrency: 4`) : Jusqu'à 4 tâches simultanées
+
+Chaque stratégie d'exécution obtient sa propre queue pour **respecter strictement les limites de concurrence** définies par le plan du Router.
+
+**Composants principaux:**
+- **TaskExecutor** (`src/core/kernel/TaskExecutor.ts`): Orchestre l'exécution des tâches avec:
+  - Streaming complètement dans le job PQueue (occupation du slot pendant toute la génération)
+  - Vraie cancellation via `engine.interruptGenerate()` sur timeout
+  - Callback pattern pour envoi des chunks en temps réel
+  - Polling-based streaming pour UX optimale
+  - Gestion des priorités (HIGH=10, MEDIUM=5, LOW=1)
+  
+- **Fusioner** (`src/core/kernel/Fusioner.ts`): Fusionneur intelligent des résultats multi-agents
+
+**Flux de Traitement:**
+```
+Requête Utilisateur
+    ↓
+Router.createPlan (intention + capacité → stratégie)
+    ↓
+TaskExecutor.processStream (sélection queue → exécution)
+    ├─ PQueue sélectionnée (SERIAL|LIMITED|FULL)
+    ├─ Job primaire avec streaming
+    ├─ Jobs fallback en parallèle
+    └─ Polling des chunks → Envoi en temps réel
+    ↓
+Fusioner.fuse (résultats primaire + fallback → réponse finale)
+    ↓
+Réponse Fusionnée + Métadonnées
+```
+
+**Usage:**
+```typescript
+import { taskExecutor } from '@/core/kernel';
+
+// Streaming (pour chat UX)
+for await (const chunk of taskExecutor.processStream(userPrompt)) {
+  if (chunk.type === 'primary') {
+    console.log("Chunk reçu:", chunk.content);
+  } else if (chunk.type === 'fusion') {
+    console.log("Réponse finale:", chunk.content);
+  }
+}
+
+// Non-streaming (pour batch)
+const response = await taskExecutor.process(userPrompt);
+```
+
+**Améliorations Clés:**
+- ✅ Multi-queue stricte → Pas de dépassement de concurrence même avec tâches entrelacées
+- ✅ Streaming entièrement dans job → Queue ne libère le slot que quand génération finie
+- ✅ Vraie interruption → Cancellation réelle du moteur, pas juste une promesse rompue
+- ✅ Priorités respectées → Tasks high-priority exécutées en priorité
+- ✅ Fallback parallèle → Experts backup exécutés en parallèle si primaire échoue
+
 The FactCheckerAgent employs a hybrid approach for claim extraction (LLM + Rule-Based fallback) and a 2-step verification process (semantic search via HNSW embeddings + LLM Judge). Verification results include status (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN), confidence scores, and evidence tracking.
 
 **UI/UX Decisions:**
