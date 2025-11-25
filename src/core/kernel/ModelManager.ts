@@ -1,8 +1,9 @@
 import { MLCEngine, CreateMLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
 import { MODEL_CATALOG, ModelMeta } from "./ModelCatalog";
 import { memoryManager } from "./MemoryManager";
+import { sseStreamer } from "../streaming/SSEStreamer";
 
-console.log("📦 Initialisation du ModelManager v3.0 Elite...");
+console.log("📦 Initialisation du ModelManager v3.1 (Memory-Aware + Streaming)...");
 
 export class ModelManager {
   private engine: MLCEngine | null = null;
@@ -72,6 +73,9 @@ export class ModelManager {
       // ✨ Enregistrer le modèle chargé dans MemoryManager
       memoryManager.registerLoaded(defaultModelKey);
       
+      // ✨ Notifier l'UI via SSE
+      sseStreamer.streamInfo(`Model ${defaultModelKey} initialized and ready.`);
+      
       this._resolveReady();
       console.log("✅ [ModelManager] Prêt. Le noyau de dialogue est opérationnel.");
 
@@ -107,14 +111,20 @@ export class ModelManager {
       throw new Error(`Modèle inconnu : ${modelKey}`);
     }
     
+    // ✨ Notifier l'UI du changement
+    sseStreamer.streamInfo(`Checking memory for ${modelKey}...`);
+    
     // ✨ Vérifier si assez de VRAM pour charger le nouveau modèle
     const canLoad = await memoryManager.canLoadModel(modelKey);
     if (!canLoad.can) {
       console.warn(`[ModelManager] ⚠️ ${canLoad.reason}`);
+      // ✨ Notifier l'UI de l'erreur
+      sseStreamer.streamError(new Error(`Cannot load ${modelKey}: ${canLoad.reason}`));
       throw new Error(`Impossible de charger ${modelKey}: ${canLoad.reason}`);
     }
     
     console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
+    sseStreamer.streamInfo(`Loading model ${modelKey}...`);
     
     const config: any = {};
     if (progressCallback) {
@@ -136,6 +146,8 @@ export class ModelManager {
     // ✨ Enregistrer le nouveau modèle chargé
     memoryManager.registerLoaded(modelKey);
     
+    // ✨ Notifier l'UI du succès
+    sseStreamer.streamInfo(`Model ${modelKey} loaded successfully.`);
     console.log(`✅ [ModelManager] Modèle ${modelKey} chargé avec succès.`);
   }
 

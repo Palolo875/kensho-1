@@ -25,8 +25,10 @@ import {
   ExecutionStrategy
 } from '../router/RouterTypes';
 import { fusioner } from './Fusioner';
+import { responseCache } from '../cache/ResponseCache';
+import { sseStreamer } from '../streaming/SSEStreamer';
 
-console.log("👷 TaskExecutor v3.0 - Chef de Chantier Intelligent (Multi-Queue)");
+console.log("👷 TaskExecutor v3.1 - Chef de Chantier Intelligent (Cache-Aware + Streaming)");
 
 export class TaskExecutor {
   private router: Router;
@@ -82,14 +84,35 @@ export class TaskExecutor {
     console.log(`[TaskExecutor] 🚀 Requête #${requestId} (${this.activeRequests} active(s))`);
 
     try {
-      // 1. Obtenir le plan du Router
+      // ✨ 0. Obtenir le plan du Router AVANT de vérifier le cache
       const plan = await this.router.createPlan(userPrompt);
       console.log(`[TaskExecutor #${requestId}] 📋 Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
       await this.router.validatePlan(plan);
 
+      // ✨ 0.5 Vérifier le cache AVANT d'exécuter
+      const primaryModelKey = plan.primaryTask.modelKey;
+      const cached = responseCache.get(userPrompt, primaryModelKey);
+      if (cached) {
+        console.log(`[TaskExecutor #${requestId}] ⚡ Cache HIT - Réponse trouvée.`);
+        sseStreamer.streamInfo(`Response found in cache.`);
+        // Streamer la réponse cachée comme si elle venait juste de la GPU
+        for (const char of cached.response) {
+          yield { type: 'primary', content: char };
+        }
+        yield {
+          type: 'fusion',
+          content: cached.response,
+          expertResults: [{ agentName: 'cache', modelKey: primaryModelKey, result: cached.response, status: 'success' }]
+        };
+        return;
+      }
+
+      sseStreamer.streamInfo(`Processing request...`);
+
       // 2. Sélectionner la queue appropriée
       const queue = this.getQueue(plan.strategy);
       console.log(`[TaskExecutor #${requestId}] ⚙️  Stratégie: ${plan.strategy}`);
+      sseStreamer.streamInfo(`Using strategy: ${plan.strategy}`);
 
       // 3. Buffer pour les chunks streamés
       const chunks: StreamChunk[] = [];
@@ -157,6 +180,12 @@ export class TaskExecutor {
         expertResults
       });
 
+      // ✨ Mettre en cache le résultat AVANT de l'envoyer
+      if (primaryResult) {
+        responseCache.set(userPrompt, primaryModelKey, finalResponse, chunks.length);
+        console.log(`[TaskExecutor #${requestId}] 💾 Résultat mis en cache.`);
+      }
+
       yield { 
         type: 'fusion', 
         content: finalResponse,
@@ -166,6 +195,9 @@ export class TaskExecutor {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       console.error(`[TaskExecutor] ❌ Erreur:`, error);
+      
+      // ✨ Notifier l'UI de l'erreur via SSE
+      sseStreamer.streamError(error instanceof Error ? error : new Error(errorMessage));
       
       yield {
         type: 'status',
@@ -219,6 +251,8 @@ export class TaskExecutor {
     try {
       console.log(`   [Worker] ▶️  ${task.agentName} démarré`);
       
+      // ✨ Notifier l'UI via SSE
+      sseStreamer.streamInfo(`Executing ${task.agentName}...`);
       onChunk({ type: 'status', status: `Exécution de ${task.agentName}...` });
 
       // Charger le modèle si nécessaire
