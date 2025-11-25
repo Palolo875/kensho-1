@@ -48,8 +48,8 @@ export function KenshoChat() {
   useEffect(() => {
     const init = async () => {
       try {
-        setDownloadProgress('🚀 Initialisation de Gemma 3 270M...');
-        const api = await initializeKensho('gemma-3-270m', (progress) => {
+        setDownloadProgress('🚀 Initialisation de Gemma 2 2B...');
+        const api = await initializeKensho('gemma-2-2b', (progress) => {
           if (progress.text) {
             setDownloadProgress(`⏳ ${progress.text}`);
           }
@@ -59,7 +59,7 @@ export function KenshoChat() {
         setMessages([{
           id: '0',
           role: 'system',
-          content: '✅ Gemma 3 270M is ready! Ultra-compact & high-performance model loaded. Ready to chat!'
+          content: '✅ Gemma 2 2B is ready! Ultra-compact & high-performance model loaded. Ready to chat!'
         }]);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -182,8 +182,8 @@ export function KenshoChat() {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1>💬 Gemma 3 270M Chat</h1>
-        <p style={styles.modelInfo}>Model: Gemma 3 270M (Q4 WebGPU)</p>
+        <h1>💬 Gemma 2 2B Chat</h1>
+        <p style={styles.modelInfo}>Model: Gemma 2 2B (Q4 Official)</p>
       </div>
 
       <div style={styles.messagesContainer}>
