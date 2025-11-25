@@ -1,0 +1,59 @@
+Exécution : Sprint 14 "La Façade et le Premier Contact" - Jour 7, Tâche 1Objectif : Implémenter le DialoguePlugin v1.0 (en mode simulation), qui servira de point d'entrée unique et simple pour l'interface utilisateur.Philosophie : Ce plugin est une "façade". Il masque toute la complexité de l'orchestration (Router, TaskExecutor, etc.) derrière une seule méthode simple : startConversation(). L'UI n'a pas besoin de savoir comment l'usine fonctionne, elle a juste besoin de savoir sur quel bouton appuyer.Étape 1 : Création de la structure de fichiersJe mets en place le répertoire pour nos plugins et le point d'entrée principal de notre "bibliothèque" Kensho.# Création du répertoire pour les plugins
+mkdir -p src/plugins/dialogue
+
+# Création du point d'entrée de l'API Kensho
+touch src/kensho.ts
+Étape 2 : Codage du DialoguePlugin.ts (version "Mock")J'implémente le plugin. Il appellera le TaskExecutor (qui lui-même utilise des mocks) et retournera une réponse. Pour l'instant, sans le streaming complexe, pour se concentrer sur le flux de données.// src/plugins/dialogue/DialoguePlugin.ts
+
+import { taskExecutor } from '../../core/kernel/TaskExecutor';
+
+console.log("🔌 Initialisation du DialoguePlugin v1.0 (Mode Simulation)...");
+
+export class DialoguePlugin {
+
+  /**
+   * Point d'entrée pour une conversation simple.
+   * Appelle le TaskExecutor et retourne la réponse finale.
+   * @param userPrompt Le message de l'utilisateur.
+   * @returns Une promesse qui résout avec la réponse finale de l'IA.
+   */
+  public async startConversation(userPrompt: string): Promise<string> {
+    console.log(`[Plugin] Conversation démarrée avec le prompt : "${userPrompt}"`);
+    
+    // Toute la complexité est cachée derrière cet appel unique.
+    const finalResponse = await taskExecutor.process(userPrompt);
+    
+    console.log("[Plugin] Réponse finale reçue du TaskExecutor.");
+    return finalResponse;
+  }
+}
+Étape 3 : Codage du point d'entrée kensho.tsCe fichier est crucial. Il initialise le système et expose l'API publique que l'interface utilisateur consommera.// src/kensho.ts
+
+import { DialoguePlugin } from './plugins/dialogue/DialoguePlugin';
+
+/**
+ * L'API publique de Kensho.
+ * C'est l'unique point de contact pour l'UI.
+ */
+export interface KenshoAPI {
+  dialogue: DialoguePlugin;
+}
+
+/**
+ * Initialise le système Kensho (en mode simulation).
+ * Dans le futur, cette fonction appellera modelManager.init().
+ * @returns L'API Kensho prête à l'emploi.
+ */
+export function initializeKensho(): KenshoAPI {
+  console.log("🚀 Initialisation de Kensho OS (Mode Simulation)...");
+
+  // En mode "Usine Vide", l'initialisation est instantanée.
+  // Pas de téléchargement de modèle.
+
+  console.log("✅ Kensho est prêt (en mode simulation).");
+
+  return {
+    dialogue: new DialoguePlugin()
+  };
+}
+Statut : La façade est construite.Nous avons maintenant une API propre et simple. L'interface utilisateur n'a plus qu'à faire :1.import { initializeKensho } from './kensho';2.const kensho = initializeKensho();3.const response = await kensho.dialogue.startConversation("Bonjour !");

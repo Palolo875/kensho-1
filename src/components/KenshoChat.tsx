@@ -49,18 +49,14 @@ export function KenshoChat() {
   useEffect(() => {
     const init = async () => {
       try {
-        setDownloadProgress('🚀 Initialisation de Gemma 3 270M...');
-        const api = await initializeKensho('gemma-3-270m', (progress) => {
-          if (progress.text) {
-            setDownloadProgress(`⏳ ${progress.text}`);
-          }
-        });
+        setDownloadProgress('🚀 Initialisation de Kensho (Mode Simulation)...');
+        const api = await initializeKensho();
         setKensho(api);
         setInitializing(false);
         setMessages([{
           id: '0',
           role: 'system',
-          content: '✅ Gemma 3 270M est prêt ! Modèle ultra-compact (270M paramètres) en int4 chargé. Prêt à discuter !'
+          content: '✅ Kensho est prêt en mode simulation ! Utilise des modèles simulés (mocks) pour tester l\'orchestration. Prêt à discuter !'
         }]);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);

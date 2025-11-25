@@ -1,8 +1,8 @@
 /**
  * src/pages/GemmaChat.tsx
  * 
- * Page dédiée pour le chat Gemma 3 270m
- * Affiche KenshoChat en fullscreen
+ * Page dédiée pour le chat Kensho en mode simulation
+ * Affiche KenshoChat en fullscreen (sans téléchargement de modèles)
  */
 
 import Sidebar, { SidebarTrigger } from "@/components/Sidebar";
@@ -34,7 +34,7 @@ const GemmaChat = () => {
             <ArrowLeft className="h-6 w-6" />
           </Button>
         </div>
-        <h1 className="text-lg font-semibold">💬 Gemma 3 270M Chat</h1>
+        <h1 className="text-lg font-semibold">💬 Kensho Chat (Mode Simulation)</h1>
         <div className="pointer-events-auto">
           <SidebarTrigger onClick={() => setSidebarOpen(!sidebarOpen)} />
         </div>

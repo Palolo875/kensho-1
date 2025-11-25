@@ -3,13 +3,13 @@
  * 
  * API publique principale de Kensho.
  * C'est le seul point d'entrée que l'interface utilisateur devrait importer.
+ * 
+ * MODE SIMULATION: Version "Usine Vide" - Pas de téléchargement de modèles
  */
 
-import { modelManager } from './core/kernel/ModelManager';
-import { DialoguePlugin } from './plugins/dialogue/DialoguePlugin';
-import type { InitProgressReport } from '@mlc-ai/web-llm';
+import { DialoguePluginMock } from './plugins/dialogue/DialoguePluginMock';
 
-console.log("🚀 Initialisation de Kensho OS...");
+console.log("🚀 Initialisation de Kensho OS (Mode Simulation)...");
 
 /**
  * L'interface publique de Kensho.
@@ -17,7 +17,7 @@ console.log("🚀 Initialisation de Kensho OS...");
  */
 export interface KenshoAPI {
   /** Plugin de dialogue - point d'entrée principal */
-  dialogue: DialoguePlugin;
+  dialogue: DialoguePluginMock;
   
   // Futurs plugins
   // code?: CodePlugin;
@@ -27,10 +27,8 @@ export interface KenshoAPI {
 /**
  * Initialise le moteur Kensho et retourne l'API publique.
  * 
- * C'est la SEULE fonction que l'UI doit appeler au démarrage.
+ * MODE SIMULATION: Pas de téléchargement de modèles, utilise des mocks.
  * 
- * @param defaultModelKey - Modèle à pré-charger (défaut: 'gemma-3-270m')
- * @param onProgress - Callback optionnel pour voir la progression du téléchargement
  * @returns Une promesse qui résout avec l'API Kensho
  * 
  * @example
@@ -43,34 +41,14 @@ export interface KenshoAPI {
  * }
  * ```
  */
-export async function initializeKensho(
-  defaultModelKey = 'gemma-2-2b',
-  onProgress?: (progress: InitProgressReport) => void
-): Promise<KenshoAPI> {
+export async function initializeKensho(): Promise<KenshoAPI> {
   try {
-    console.log(`🔧 [Kensho] Initialisation avec modèle: ${defaultModelKey}`);
+    console.log(`🔧 [Kensho] Initialisation en mode simulation (pas de téléchargement)`);
     
-    // Initialiser le ModelManager
-    // Cela va:
-    // 1. Télécharger le modèle (peut prendre du temps)
-    // 2. Initialiser le moteur WebLLM
-    // 3. Charger le modèle en VRAM
-    // 4. Préparer tous les composants (Cache, MemoryManager, etc.)
-    await modelManager.init(defaultModelKey, (progress) => {
-      if (onProgress) {
-        onProgress(progress);
-      }
-      // Afficher la progression en console aussi
-      if (progress.text) {
-        console.log(`⏳ [Download] ${progress.text}`);
-      }
-    });
+    console.log("✅ [Kensho] Système prêt (mode simulation). Vous pouvez maintenant discuter!");
 
-    console.log("✅ [Kensho] Système prêt. Vous pouvez maintenant discuter!");
-
-    // Retourner l'API publique
     const api: KenshoAPI = {
-      dialogue: new DialoguePlugin()
+      dialogue: new DialoguePluginMock()
     };
 
     return api;
