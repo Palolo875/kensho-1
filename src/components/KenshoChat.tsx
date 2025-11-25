@@ -48,8 +48,8 @@ export function KenshoChat() {
   useEffect(() => {
     const init = async () => {
       try {
-        setDownloadProgress('🚀 Initialisation de Kensho...');
-        const api = await initializeKensho('gemma-3-270m', (progress) => {
+        setDownloadProgress('🚀 Initialisation du Chat AI...');
+        const api = await initializeKensho('phi-3-mini', (progress) => {
           if (progress.text) {
             setDownloadProgress(`⏳ ${progress.text}`);
           }
@@ -59,7 +59,7 @@ export function KenshoChat() {
         setMessages([{
           id: '0',
           role: 'system',
-          content: '✅ Kensho is ready! You can now chat with Gemma 3 270m.'
+          content: '✅ Chat AI is ready! You can now chat with Phi-3-mini.'
         }]);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -182,8 +182,8 @@ export function KenshoChat() {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1>💬 Kensho Chat</h1>
-        <p style={styles.modelInfo}>Model: Gemma 3 270m (INT4)</p>
+        <h1>💬 Chat AI</h1>
+        <p style={styles.modelInfo}>Model: Phi-3-mini (Q4 Quantized)</p>
       </div>
 
       <div style={styles.messagesContainer}>

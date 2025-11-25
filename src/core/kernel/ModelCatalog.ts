@@ -6,16 +6,16 @@ export type ModelMeta = {
 };
 
 export const MODEL_CATALOG: Record<string, ModelMeta> = {
-  "gemma-3-270m": {
-    model_id: "gemma-3-270m-it-MLC",
-    size: "270M",
-    description: "Noyau de dialogue ultra-compact et efficace.",
+  "phi-3-mini": {
+    model_id: "Phi-3-mini-4k-instruct-q4f16_1-MLC",
+    size: "3.8B",
+    description: "Modèle ultra-léger et rapide pour le chat temps réel.",
     quantization: "q4f16_1"
   },
   "qwen2-e5-embed": {
-    model_id: "Qwen2-E5-Embedding-Model-ID-MLC",
-    size: "150M",
-    description: "Expert en encodage sémantique pour le RAG.",
-    quantization: "f32"
+    model_id: "Qwen1.5-0.5B-Chat-q4f16_1-MLC",
+    size: "500M",
+    description: "Modèle compact pour le chat.",
+    quantization: "q4f16_1"
   }
 };

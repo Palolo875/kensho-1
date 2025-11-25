@@ -19,7 +19,7 @@ export class DialoguePlugin {
   private startTime: number = 0;
   private firstTokenTime: number | null = null;
   private tokenCount: number = 0;
-  private defaultModelKey: string = 'gemma-3-270m'; // ✅ Configurable au lieu de hardcodé
+  private defaultModelKey: string = 'phi-3-mini'; // ✅ Configurable au lieu de hardcodé
 
   /**
    * 🎯 POINT D'ENTRÉE PRINCIPAL POUR L'UI
