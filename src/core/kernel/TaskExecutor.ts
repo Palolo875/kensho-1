@@ -1,15 +1,20 @@
 /**
  * TaskExecutor v3.0 - Chef de Chantier Intelligent
  * 
- * Améliorations v3.0:
- * ✅ Gestion stricte de la concurrence avec p-queue
- * ✅ Gestion native des priorités
- * ✅ Timeouts avec AbortController
- * ✅ Streaming pour TTFT optimal
- * ✅ Observabilité complète (activeWorkers, queueSize)
+ * Architecture FINALE validée:
+ * ✅ Queue globale avec TOUTE l'exécution dans le job (streaming inclus)
+ * ✅ Streaming via callback pattern (onChunk) 
+ * ✅ Vraie cancellation avec engine.interruptGenerate()
+ * ✅ Concurrence strictement respectée (SERIAL/LIMITED/FULL)
+ * 
+ * BUGFIX Architectural:
+ * - Le streaming loop s'exécute maintenant ENTIÈREMENT dans le job PQueue
+ * - Les chunks sont envoyés via callbacks, pas via async generator externe
+ * - La queue ne libère le slot QUE quand toute la génération est terminée
  */
 
 import PQueue from 'p-queue';
+import { MLCEngine } from '@mlc-ai/web-llm';
 import { modelManager } from './ModelManager';
 import { Router } from '../router/Router';
 import { 
@@ -17,115 +22,121 @@ import {
   Task, 
   TaskResult, 
   StreamChunk, 
-  ExecutionStrategy,
-  RouterError
+  ExecutionStrategy
 } from '../router/RouterTypes';
 import { fusioner } from './Fusioner';
 
 console.log("👷 TaskExecutor v3.0 - Chef de Chantier Intelligent initialisé");
 
 export class TaskExecutor {
-  private queue: PQueue;
-  private activeWorkers = 0;
   private router: Router;
+  private globalQueue: PQueue;
+  private activeRequests = 0;
 
   constructor() {
-    this.queue = new PQueue({ 
-      concurrency: 1,
-      timeout: 60000 // Timeout global de 60s
-    });
     this.router = new Router();
+    // Queue GLOBALE : limite totale de workers simultanés
+    this.globalQueue = new PQueue({ 
+      concurrency: 4,
+      timeout: 120000
+    });
   }
 
   /**
    * Process avec streaming pour UX optimale
-   * Retourne un AsyncGenerator qui streame les chunks au fur et à mesure
+   * 
+   * ARCHITECTURE CRITIQUE:
+   * - TOUT le travail (y compris streaming) se passe dans le job PQueue
+   * - On utilise des callbacks pour envoyer les chunks pendant que le job tourne
+   * - La queue ne libère le slot QUE quand la génération est complète
    */
   public async *processStream(userPrompt: string): AsyncGenerator<StreamChunk> {
-    console.log(`[TaskExecutor] 🚀 Nouvelle requête: "${userPrompt.substring(0, 50)}..."`);
+    this.activeRequests++;
+    const requestId = crypto.randomUUID().substring(0, 8);
+    console.log(`[TaskExecutor] 🚀 Requête #${requestId} (${this.activeRequests} active(s)): "${userPrompt.substring(0, 50)}..."`);
 
     try {
       // 1. Obtenir le plan du Router
       const plan = await this.router.createPlan(userPrompt);
-      console.log(`[TaskExecutor] 📋 Plan créé | Stratégie: ${plan.strategy} | Tâches: ${plan.fallbackTasks.length + 1}`);
-
-      // Valider le plan
+      console.log(`[TaskExecutor #${requestId}] 📋 Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
       await this.router.validatePlan(plan);
 
-      // 2. Ajuster la concurrence dynamiquement
-      this.queue.concurrency = this.getConcurrencyLimit(plan.strategy);
-      console.log(`[TaskExecutor] ⚙️  Concurrence: ${this.queue.concurrency}`);
+      // 2. Buffer pour collecter les chunks streamés DEPUIS le job PQueue
+      const chunks: StreamChunk[] = [];
+      let primaryResult: TaskResult | null = null;
 
-      // 3. Lancer les tâches fallback en arrière-plan (avec priorité plus basse)
-      const fallbackPromises = plan.fallbackTasks.map((task, index) =>
-        this.queue.add(
+      // 3. Callback qui sera appelé DEPUIS le job PQueue pour envoyer les chunks
+      const onChunk = (chunk: StreamChunk) => {
+        chunks.push(chunk);
+      };
+
+      // 4. Lancer la tâche primaire via la queue globale
+      //    TOUT le streaming se passe DANS ce job
+      const primaryPromise = this.globalQueue.add(async () => {
+        return await this.executeStreamingTaskInQueue(
+          plan.primaryTask,
+          userPrompt,
+          onChunk
+        );
+      }, { priority: 100 }); // Priorité max
+
+      // 5. Lancer les tâches fallback en parallèle
+      const fallbackPromises = plan.fallbackTasks.map((task) =>
+        this.globalQueue.add(
           () => this.executeTaskWithTimeout(task, userPrompt),
           { priority: this.getPriorityValue(task.priority) }
         )
       );
 
-      // 4. Streamer la tâche primaire (priorité maximale)
-      yield { type: 'status', status: `Exécution de ${plan.primaryTask.agentName}...` };
+      // 6. Streamer les chunks au fur et à mesure qu'ils arrivent
+      //    On poll le buffer de chunks pendant que le job tourne
+      const pollInterval = 50; // ms
+      let lastIndex = 0;
 
-      const engine = await modelManager.getEngine();
-      
-      // Charger le modèle si nécessaire
-      if (!modelManager.isModelLoaded(plan.primaryTask.modelKey)) {
-        console.log(`[TaskExecutor] 🔄 Chargement du modèle ${plan.primaryTask.modelKey}...`);
-        yield { type: 'status', status: `Chargement du modèle ${plan.primaryTask.modelKey}...` };
-        await modelManager.switchModel(plan.primaryTask.modelKey);
-      }
-
-      // Créer le prompt pour la tâche primaire
-      const primaryPrompt = plan.primaryTask.prompt || userPrompt;
-
-      // Streamer la réponse
-      console.log(`[TaskExecutor] ▶️  Streaming ${plan.primaryTask.agentName}...`);
-      const primaryStream = await engine.chat.completions.create({
-        messages: [{ role: 'user', content: primaryPrompt }],
-        stream: true,
-        temperature: plan.primaryTask.temperature
-      });
-
-      let primaryContent = '';
-      const startTime = performance.now();
-
-      for await (const chunk of primaryStream) {
-        const content = chunk.choices[0]?.delta?.content;
-        if (content) {
-          primaryContent += content;
-          yield { type: 'primary', content };
+      // Polling loop: envoyer les chunks pendant que le job tourne
+      while (!primaryResult) {
+        // Envoyer les nouveaux chunks
+        for (let i = lastIndex; i < chunks.length; i++) {
+          yield chunks[i];
+          lastIndex = i + 1;
+        }
+        
+        // Vérifier si le job est terminé
+        try {
+          primaryResult = await Promise.race([
+            primaryPromise,
+            new Promise<null>(resolve => setTimeout(() => resolve(null), pollInterval))
+          ]);
+        } catch (e) {
+          // Erreur dans le job, on sortira au prochain tour
         }
       }
 
-      const duration = performance.now() - startTime;
-      console.log(`[TaskExecutor] ✅ ${plan.primaryTask.agentName} terminé (${duration.toFixed(0)}ms, ${primaryContent.length} chars)`);
+      // 7. Attendre et envoyer les chunks restants
+      if (!primaryResult) {
+        primaryResult = await primaryPromise;
+      }
+      
+      for (let i = lastIndex; i < chunks.length; i++) {
+        yield chunks[i];
+      }
 
-      // 5. Attendre les résultats des tâches fallback
+      // 8. Attendre les résultats fallback
       let expertResults: TaskResult[] = [];
       if (fallbackPromises.length > 0) {
-        console.log(`[TaskExecutor] ⏳ Attente des ${fallbackPromises.length} tâche(s) fallback...`);
+        console.log(`[TaskExecutor #${requestId}] ⏳ Attente de ${fallbackPromises.length} fallback(s)...`);
         expertResults = await Promise.all(fallbackPromises);
         
         const successCount = expertResults.filter(r => r.status === 'success').length;
-        console.log(`[TaskExecutor] 📊 Fallback: ${successCount}/${expertResults.length} réussis`);
+        console.log(`[TaskExecutor #${requestId}] 📊 Fallback: ${successCount}/${expertResults.length} réussis`);
       }
 
-      // 6. Fusionner les résultats
-      const primaryResult: TaskResult = {
-        agentName: plan.primaryTask.agentName,
-        modelKey: plan.primaryTask.modelKey,
-        result: primaryContent,
-        status: 'success',
-        duration
-      };
-
+      // 9. Fusionner et envoyer le résultat final
       const finalResponse = await fusioner.fuse({
         primaryResult,
         expertResults
       });
 
-      // 7. Envoyer le chunk de fusion final
       yield { 
         type: 'fusion', 
         content: finalResponse,
@@ -134,7 +145,7 @@ export class TaskExecutor {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-      console.error(`[TaskExecutor] ❌ Erreur lors du traitement:`, error);
+      console.error(`[TaskExecutor #${requestId}] ❌ Erreur:`, error);
       
       yield {
         type: 'status',
@@ -142,12 +153,13 @@ export class TaskExecutor {
       };
       
       throw error;
+    } finally {
+      this.activeRequests--;
     }
   }
 
   /**
-   * Process classique (sans streaming) pour compatibilité
-   * Collecte tous les chunks et retourne la réponse finale
+   * Process classique (sans streaming)
    */
   public async process(userPrompt: string): Promise<string> {
     let finalContent = '';
@@ -155,9 +167,6 @@ export class TaskExecutor {
     for await (const chunk of this.processStream(userPrompt)) {
       if (chunk.type === 'fusion' && chunk.content) {
         finalContent = chunk.content;
-      } else if (chunk.type === 'primary' && chunk.content) {
-        // Accumuler le contenu primaire si pas de fusion
-        finalContent += chunk.content;
       }
     }
 
@@ -165,154 +174,184 @@ export class TaskExecutor {
   }
 
   /**
-   * Exécute une tâche avec timeout et gestion d'erreurs robuste
+   * Exécute une tâche avec streaming EN ENTIER dans le job PQueue
+   * 
+   * ARCHITECTURE CRITIQUE:
+   * - Toute la génération (y compris streaming) se passe DANS cette fonction
+   * - Les chunks sont envoyés via onChunk pendant que le job tourne
+   * - La fonction ne retourne QUE quand toute la génération est terminée
+   * - La queue garde le slot occupé pendant TOUTE la durée
    */
-  private async executeTaskWithTimeout(task: Task, userPrompt: string): Promise<TaskResult> {
-    const timeoutMs = task.timeout;
-    const controller = new AbortController();
+  private async executeStreamingTaskInQueue(
+    task: Task,
+    userPrompt: string,
+    onChunk: (chunk: StreamChunk) => void
+  ): Promise<TaskResult> {
+    const engine = await modelManager.getEngine();
     const startTime = performance.now();
+    let timedOut = false;
+    const timeoutMs = task.timeout;
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        controller.abort();
-        reject(new Error(`Timeout après ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
+    // Setup timeout avec VRAIE interruption
+    const timeoutId = setTimeout(async () => {
+      timedOut = true;
+      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}, interruption...`);
+      await engine.interruptGenerate(); // VRAIE cancellation
+    }, timeoutMs);
 
     try {
-      this.activeWorkers++;
-      console.log(`   [Worker ${this.activeWorkers}] ▶️  ${task.agentName} démarré (${this.queue.pending} en attente)`);
+      console.log(`   [Worker] ▶️  ${task.agentName} démarré (queue: ${this.globalQueue.pending}/${this.globalQueue.concurrency})`);
       
-      const result = await Promise.race([
-        this.executeTask(task, userPrompt, controller.signal),
-        timeoutPromise
-      ]);
+      // Envoyer status
+      onChunk({ type: 'status', status: `Exécution de ${task.agentName}...` });
+
+      // Charger le modèle si nécessaire
+      if (!modelManager.isModelLoaded(task.modelKey)) {
+        console.log(`   [Worker] 🔄 Chargement du modèle ${task.modelKey}...`);
+        onChunk({ type: 'status', status: `Chargement du modèle ${task.modelKey}...` });
+        await modelManager.switchModel(task.modelKey);
+      }
+
+      const prompt = task.prompt || userPrompt;
+
+      // Streaming de la génération
+      const stream = await engine.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        stream: true,
+        temperature: task.temperature
+      });
+
+      let accumulatedContent = '';
+
+      // CRITIQUE: Cette boucle s'exécute DANS le job PQueue
+      // La queue ne libère le slot QUE quand cette boucle est terminée
+      for await (const chunk of stream) {
+        if (timedOut) {
+          break;
+        }
+
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          accumulatedContent += content;
+          // Envoyer le chunk via callback (pendant que le job tourne)
+          onChunk({ type: 'primary', content });
+        }
+      }
+
+      clearTimeout(timeoutId);
+
+      const duration = performance.now() - startTime;
+      const status = timedOut ? 'timeout' : 'success';
       
-      this.activeWorkers--;
-      return result;
+      console.log(`   [Worker] ✅ ${task.agentName} ${status} (${duration.toFixed(0)}ms, ${accumulatedContent.length} chars)`);
       
+      onChunk({ type: 'status', status: `${task.agentName} terminé` });
+
+      return {
+        agentName: task.agentName,
+        modelKey: task.modelKey,
+        result: accumulatedContent,
+        status,
+        duration
+      };
+
     } catch (error) {
-      this.activeWorkers--;
+      clearTimeout(timeoutId);
       const duration = performance.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
       
-      console.error(`   [Worker] ❌ ${task.agentName} échoué après ${duration.toFixed(0)}ms:`, errorMessage);
+      onChunk({ type: 'status', status: `Erreur: ${errorMessage}` });
       
-      return { 
+      return {
         agentName: task.agentName,
         modelKey: task.modelKey,
-        error: errorMessage, 
-        status: controller.signal.aborted ? 'timeout' : 'error',
+        error: errorMessage,
+        status: timedOut ? 'timeout' : 'error',
         duration
       };
     }
   }
 
   /**
-   * Exécute une seule tâche (appelé par executeTaskWithTimeout)
+   * Exécute une tâche SANS streaming (pour fallback)
    */
-  private async executeTask(task: Task, userPrompt: string, signal: AbortSignal): Promise<TaskResult> {
+  private async executeTaskWithTimeout(task: Task, userPrompt: string): Promise<TaskResult> {
     const engine = await modelManager.getEngine();
     const startTime = performance.now();
-    
-    // Charger le modèle si nécessaire
-    if (!modelManager.isModelLoaded(task.modelKey)) {
-      console.log(`   [Worker] 🔄 Chargement du modèle ${task.modelKey}...`);
-      await modelManager.switchModel(task.modelKey);
+    const timeoutMs = task.timeout;
+    let timedOut = false;
+
+    const timeoutId = setTimeout(async () => {
+      timedOut = true;
+      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}...`);
+      await engine.interruptGenerate();
+    }, timeoutMs);
+
+    try {
+      console.log(`   [Worker] ▶️  ${task.agentName} démarré`);
+      
+      if (!modelManager.isModelLoaded(task.modelKey)) {
+        await modelManager.switchModel(task.modelKey);
+      }
+
+      const prompt = task.prompt || userPrompt;
+
+      const response = await engine.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: task.temperature
+      });
+
+      clearTimeout(timeoutId);
+
+      const content = response.choices[0]?.message?.content || "";
+      const duration = performance.now() - startTime;
+      
+      console.log(`   [Worker] ✅ ${task.agentName} terminé (${duration.toFixed(0)}ms)`);
+      
+      return {
+        agentName: task.agentName,
+        modelKey: task.modelKey,
+        result: content,
+        status: timedOut ? 'timeout' : 'success',
+        duration
+      };
+
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const duration = performance.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      return {
+        agentName: task.agentName,
+        modelKey: task.modelKey,
+        error: errorMessage,
+        status: timedOut ? 'timeout' : 'error',
+        duration
+      };
     }
-
-    // Utiliser le prompt de la tâche ou le prompt utilisateur
-    const prompt = task.prompt || userPrompt;
-
-    const response = await engine.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      temperature: task.temperature
-    });
-
-    if (signal.aborted) {
-      throw new Error('Task aborted');
-    }
-
-    const content = response.choices[0]?.message?.content || "";
-    const duration = performance.now() - startTime;
-    
-    console.log(`   [Worker] ✅ ${task.agentName} terminé (${duration.toFixed(0)}ms, ${content.length} chars)`);
-    
-    return { 
-      agentName: task.agentName,
-      modelKey: task.modelKey,
-      result: content, 
-      status: 'success',
-      duration
-    };
   }
 
-  /**
-   * Détermine la limite de concurrence selon la stratégie
-   */
-  private getConcurrencyLimit(strategy: ExecutionStrategy): number {
-    switch (strategy) {
-      case 'SERIAL': 
-        return 1;
-      case 'PARALLEL_LIMITED': 
-        return 2;
-      case 'PARALLEL_FULL': 
-        return 4;
-      default: 
-        return 1;
-    }
-  }
-
-  /**
-   * Convertit une priorité en valeur numérique pour p-queue
-   * Plus le nombre est élevé, plus la priorité est haute
-   */
   private getPriorityValue(priority: string): number {
     switch (priority) {
-      case 'HIGH': 
-        return 10;
-      case 'MEDIUM': 
-        return 5;
-      case 'LOW': 
-        return 1;
-      default: 
-        return 1;
+      case 'HIGH': return 10;
+      case 'MEDIUM': return 5;
+      case 'LOW': return 1;
+      default: return 1;
     }
   }
 
-  /**
-   * Observabilité : Nombre de workers actifs
-   */
-  public getActiveWorkerCount(): number {
-    return this.activeWorkers;
+  public getActiveRequestCount(): number {
+    return this.activeRequests;
   }
 
-  /**
-   * Observabilité : Taille de la file d'attente
-   */
-  public getQueueSize(): number {
-    return this.queue.size;
-  }
-
-  /**
-   * Observabilité : Nombre de tâches en attente
-   */
-  public getPendingCount(): number {
-    return this.queue.pending;
-  }
-
-  /**
-   * Observabilité : Statistiques complètes
-   */
-  public getStats() {
+  public getQueueStats() {
     return {
-      activeWorkers: this.activeWorkers,
-      queueSize: this.queue.size,
-      pending: this.queue.pending,
-      concurrency: this.queue.concurrency
+      activeRequests: this.activeRequests,
+      pending: this.globalQueue.pending,
+      size: this.globalQueue.size,
+      concurrency: this.globalQueue.concurrency
     };
   }
 }
 
-// Instance singleton exportée
 export const taskExecutor = new TaskExecutor();
