@@ -1,4 +1,4 @@
-import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus } from "lucide-react";
+import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useProjects } from "@/hooks/useProjects";
 import { CreateProjectDialog } from "./CreateProjectDialog";
+import { useNavigate } from "react-router-dom";
 
 interface SidebarProps {
   onOpenSettings: () => void;
@@ -18,6 +19,7 @@ interface SidebarProps {
 
 const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConversation, isOpen: externalIsOpen, onToggle }: SidebarProps) => {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [projectSearchTerm, setProjectSearchTerm] = useState('');
@@ -125,6 +127,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
           >
             <Activity className="h-5 w-5" />
             {!isCollapsed && <span className="ml-3">Observatory</span>}
+          </Button>
+
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/analytics')}
+            className={cn(
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
+            )}
+          >
+            <BarChart3 className="h-5 w-5" />
+            {!isCollapsed && <span className="ml-3">Analytics</span>}
           </Button>
         </div>
 
