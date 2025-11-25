@@ -209,6 +209,25 @@ export interface Message {
 5. AIResponse affiche FactCheckingResults **directement dans le chat**
 6. Utilisateur explore les preuves et sources sans quitter la conversation
 
+**Intégration Complète dans l'Interface Principale:**
+
+**Sidebar (Desktop & Mobile) - Nouvelle Section ⚡:**
+- ✅ Section "Fact-Checking" collapsible
+- ✅ 4 exemples rapides pré-configurés:
+  - "Paris est la capitale de la France"
+  - "La Terre est plate"
+  - "L'eau bout à 100°C"
+  - "La gravité attire les objets"
+- ✅ Un clic lance la vérification avec `Vérifie: [exemple]`
+- ✅ Fonctionne sur desktop (expand/collapse avec chevron)
+- ✅ Fonctionne sur mobile (ferme sidebar après sélection)
+- ✅ Chevron animé pour indiquer l'état collapsed/expanded
+
+**Pages Consolidées:**
+- ✅ Page principale `/` - Chat intégré + Priority 6 résultats inline
+- ✅ Page `/analytics` - Dashboard métriques
+- ✅ ❌ Supprimé: Page fork `/fact-checking` (migration complète)
+
 ## Next Steps (Priority 7+)
 
 1. **Priority 7: Advanced Monitoring**

@@ -1,10 +1,11 @@
-import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus, BarChart3 } from "lucide-react";
+import { Menu, MessageSquarePlus, Clock, Search, Settings, User, ChevronLeft, ChevronRight, X, Activity, FolderOpen, Plus, BarChart3, ChevronDown, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useProjects } from "@/hooks/useProjects";
+import { useKenshoStore } from "@/stores/useKenshoStore";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { useNavigate } from "react-router-dom";
 
@@ -20,11 +21,21 @@ interface SidebarProps {
 const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConversation, isOpen: externalIsOpen, onToggle }: SidebarProps) => {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const sendMessage = useKenshoStore(state => state.sendMessage);
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [projectSearchTerm, setProjectSearchTerm] = useState('');
   const [showCreateProject, setShowCreateProject] = useState(false);
+  const [factCheckingExpanded, setFactCheckingExpanded] = useState(false);
   const { projects, activeProjectId, setActiveProjectId } = useProjects();
+
+  // Fact-checking examples
+  const factCheckingExamples = [
+    'Paris est la capitale de la France',
+    'La Terre est plate',
+    'L\'eau bout à 100°C',
+    'La gravité attire les objets',
+  ];
 
   const filteredProjects = projects.filter(p => 
     p.name.toLowerCase().includes(projectSearchTerm.toLowerCase())
@@ -141,6 +152,46 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
             {!isCollapsed && <span className="ml-3">Analytics</span>}
           </Button>
         </div>
+
+        {/* Priority 6: Fact-Checking Section */}
+        {!isCollapsed && (
+          <div className="px-2 my-4">
+            <Button
+              variant="ghost"
+              onClick={() => setFactCheckingExpanded(!factCheckingExpanded)}
+              className="w-full justify-between h-10 hover:bg-sidebar-accent/60 font-semibold text-sm"
+            >
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                <span>Fact-Checking</span>
+              </div>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform",
+                  factCheckingExpanded && "rotate-180"
+                )}
+              />
+            </Button>
+
+            {factCheckingExpanded && (
+              <div className="mt-2 space-y-2 ml-2 border-l border-sidebar-border/50 pl-2">
+                <p className="text-xs text-muted-foreground font-semibold">Exemples rapides:</p>
+                {factCheckingExamples.map((example, idx) => (
+                  <Button
+                    key={idx}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => sendMessage(`Vérifie: ${example}`)}
+                    className="w-full justify-start text-xs h-8 hover:bg-primary/10"
+                  >
+                    <Zap className="h-3 w-3 mr-1 flex-shrink-0" />
+                    <span className="truncate text-left">{example}</span>
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sprint 7: Projects Section */}
         {!isCollapsed && (
@@ -303,6 +354,56 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
             <Activity className="h-5 w-5" />
             <span className="ml-3">Observatory</span>
           </Button>
+
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/analytics')}
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
+          >
+            <BarChart3 className="h-5 w-5" />
+            <span className="ml-3">Analytics</span>
+          </Button>
+        </div>
+
+        {/* Priority 6: Fact-Checking Section for Mobile */}
+        <div className="px-2 my-4">
+          <Button
+            variant="ghost"
+            onClick={() => setFactCheckingExpanded(!factCheckingExpanded)}
+            className="w-full justify-between h-10 hover:bg-sidebar-accent/60 font-semibold text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              <span>Fact-Checking</span>
+            </div>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                factCheckingExpanded && "rotate-180"
+              )}
+            />
+          </Button>
+
+          {factCheckingExpanded && (
+            <div className="mt-2 space-y-2 ml-2 border-l border-sidebar-border/50 pl-2">
+              <p className="text-xs text-muted-foreground font-semibold">Exemples rapides:</p>
+              {factCheckingExamples.map((example, idx) => (
+                <Button
+                  key={idx}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    sendMessage(`Vérifie: ${example}`);
+                    onToggle ? onToggle() : setInternalIsOpen(false);
+                  }}
+                  className="w-full justify-start text-xs h-8 hover:bg-primary/10"
+                >
+                  <Zap className="h-3 w-3 mr-1 flex-shrink-0" />
+                  <span className="truncate text-left">{example}</span>
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex-1" />
