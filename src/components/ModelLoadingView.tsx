@@ -242,7 +242,8 @@ export function ModelLoadingView() {
     };
 
     // Ne rien afficher si pas en cours de chargement
-    if (!modelProgress.phase) {
+    // Masquer aussi si la phase est 'idle', 'ready' ou 'error' sans action active
+    if (!modelProgress.phase || modelProgress.phase === 'idle' || modelProgress.phase === 'ready') {
         return null;
     }
 
