@@ -66,7 +66,11 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
   };
 
   if (showDownloadPanel) {
-    return <ModelDownloadPanel onComplete={handleDownloadComplete} onCancel={handleDownloadCancel} />;
+    return (
+      <div className="fixed inset-0 z-50">
+        <ModelDownloadPanel onComplete={handleDownloadComplete} onCancel={handleDownloadCancel} />
+      </div>
+    );
   }
 
   if (!showModal) return null;

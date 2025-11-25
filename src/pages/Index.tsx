@@ -138,8 +138,6 @@ const Index = () => {
 
       <ChatInput showSuggestions={messages.length === 0} />
 
-      {/* Indicateur de statut des workers (en développement) */}
-      {import.meta.env.DEV && <WorkerStatusIndicator />}
 
       <SettingsModal 
         open={showSettings} 

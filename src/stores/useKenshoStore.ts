@@ -159,48 +159,36 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
         (window as any).__kensho_workers['MainLLMAgent'] = llmWorker;
 
         llmWorker.onmessage = (e) => {
-            if (e.data.type === 'READY') {
-                console.log('[KenshoStore] ✅ LLM Worker prêt');
-                set(state => ({
-                    workersReady: { ...state.workersReady, llm: true }
-                }));
-            } else if (e.data.type === 'MODEL_PROGRESS') {
-                console.log('[KenshoStore] Progression du modèle:', e.data.payload);
-                set({ modelProgress: e.data.payload });
-            } else if (e.data.type === 'MODEL_ERROR') {
-                console.error('[KenshoStore] Erreur de chargement du modèle:', e.data.payload);
-                toast.error('Erreur de chargement du modèle', {
-                    description: e.data.payload.message,
-                    duration: 8000
-                });
-                set({
-                    modelProgress: {
-                        phase: 'error',
-                        progress: 0,
-                        text: `Erreur: ${e.data.payload.message}`
-                    }
-                });
+            try {
+                if (!e?.data) return;
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ LLM Worker prêt');
+                    set(state => ({
+                        workersReady: { ...state.workersReady, llm: true }
+                    }));
+                } else if (e.data.type === 'MODEL_PROGRESS') {
+                    console.log('[KenshoStore] Progression du modèle:', e.data.payload);
+                    set({ modelProgress: e.data.payload });
+                } else if (e.data.type === 'MODEL_ERROR') {
+                    console.error('[KenshoStore] Erreur de chargement du modèle:', e.data.payload);
+                    toast.error('Erreur de chargement du modèle', {
+                        description: e.data.payload.message,
+                        duration: 8000
+                    });
+                    set({
+                        modelProgress: {
+                            phase: 'error',
+                            progress: 0,
+                            text: `Erreur: ${e.data.payload.message}`
+                        }
+                    });
+                }
+            } catch (_) {
+                // Silence
             }
         };
 
-        llmWorker.onerror = (error) => {
-            try {
-                const workerError: WorkerError = {
-                    worker: 'llm',
-                    message: 'Erreur lors du démarrage du worker LLM',
-                    timestamp: Date.now()
-                };
-                set(state => ({
-                    modelProgress: {
-                        phase: 'error',
-                        progress: 0,
-                        text: workerError.message
-                    },
-                    workerErrors: [...state.workerErrors, workerError]
-                }));
-            } catch (e) {
-                // Supprime les erreurs pour éviter les exceptions non gérées
-            }
+        llmWorker.onerror = () => {
             return true;
         };
 

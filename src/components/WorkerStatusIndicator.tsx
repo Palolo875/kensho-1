@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
@@ -7,6 +8,7 @@ import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
  * Affiche l'état de connexion de chaque worker
  */
 export function WorkerStatusIndicator() {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const { workersReady, modelProgress, workerErrors } = useKenshoStore();
   
   const getStatusIcon = (ready: boolean, loading: boolean = false) => {
@@ -23,9 +25,32 @@ export function WorkerStatusIndicator() {
   const isModelReady = modelProgress.phase === 'ready';
   const hasError = modelProgress.phase === 'error' || workerErrors.length > 0;
   
+  if (isCollapsed) {
+    return (
+      <button
+        onClick={() => setIsCollapsed(false)}
+        className="fixed bottom-4 right-4 z-40 w-8 h-8 bg-background/95 backdrop-blur border rounded-full shadow-lg flex items-center justify-center hover:bg-background/100 transition-all"
+        title="État du système"
+      >
+        <Badge variant="secondary" className="gap-1 text-xs">
+          {workerErrors.length > 0 ? '⚠️' : '✓'}
+        </Badge>
+      </button>
+    );
+  }
+  
   return (
-    <div className="fixed bottom-4 left-4 z-50 bg-background/95 backdrop-blur border rounded-lg p-3 shadow-lg text-xs space-y-2">
-      <div className="font-semibold text-foreground mb-1">État du système</div>
+    <div className="fixed bottom-4 right-4 z-40 bg-background/95 backdrop-blur border rounded-lg p-3 shadow-lg text-xs space-y-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-semibold text-foreground">État du système</span>
+        <button
+          onClick={() => setIsCollapsed(true)}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          title="Réduire"
+        >
+          ✕
+        </button>
+      </div>
       
       <div className="flex items-center gap-2">
         <Badge variant={getStatusVariant(workersReady.llm, isModelLoading)} className="gap-1">
