@@ -438,7 +438,8 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     /**
      * Initialise le système Kensho
      * - Crée le MessageBus pour le thread principal
-     * - Démarre les workers (LLM et OIE)
+     * - Démarre les workers (LLM et OIE) 
+     * - En Mode Simulation: passe directement à 'ready' sans workers
      * - Écoute les messages de progression du modèle
      */
     init: () => {
@@ -477,8 +478,14 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             }
         });
 
-        // Démarrer la constellation de workers
-        startConstellation(set);
+        // Mode Simulation: passer directement à 'ready'
+        if (appConfig.mode === 'simulation') {
+            console.log('[KenshoStore] 🎭 Mode Simulation - Modèle prêt instantanément');
+            set({ modelProgress: { phase: 'ready', progress: 100, text: 'Prêt (Mode Simulation)' } });
+        } else {
+            // Démarrer la constellation de workers pour les autres modes
+            startConstellation(set);
+        }
     },
 
     /**
