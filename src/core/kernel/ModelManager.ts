@@ -3,6 +3,7 @@
  * 
  * Utilise AutoTokenizer et AutoModelForCausalLM pour charger
  * le modèle Qwen3-0.6B-ONNX depuis Hugging Face avec streaming.
+ * Téléchargement optionnel - demande à l'utilisateur la permission.
  */
 
 import { AutoTokenizer, AutoModelForCausalLM, env } from '@xenova/transformers';
@@ -14,6 +15,17 @@ env.allowRemoteModels = true;
 
 console.log("🧠✨ Initialisation du ModelManager v4.0 (Transformers.js + Qwen3-0.6B-ONNX)...");
 
+export type ModelType = 'qwen3-0.6b' | 'mock';
+
+export interface ModelInfo {
+  id: ModelType;
+  name: string;
+  huggingFaceId: string;
+  size: string;
+  description: string;
+  isDownloaded: boolean;
+}
+
 export class ModelManager {
   private tokenizer: any | null = null;
   private model: any | null = null;
@@ -22,6 +34,8 @@ export class ModelManager {
   private _rejectReady!: (error: any) => void;
   private isInitialized = false;
   private isInitializing = false;
+  private currentModelKey: ModelType = 'mock';
+  private downloadedModels: Set<ModelType> = new Set();
 
   constructor() {
     this.resetReadyPromise();
@@ -39,33 +53,76 @@ export class ModelManager {
   }
 
   /**
-   * Initialise et précharge le modèle Qwen3 0.6B et son tokenizer
+   * Retourne la liste des modèles disponibles
    */
-  public async init(modelKey: string = "onnx-community/Qwen3-0.6B-ONNX") {
-    if (this.isInitialized) {
-      console.warn("[ModelManager] Init déjà appelé, ignoré.");
+  public getAvailableModels(): ModelInfo[] {
+    return [
+      {
+        id: 'qwen3-0.6b',
+        name: 'Qwen3 0.6B ONNX',
+        huggingFaceId: 'onnx-community/Qwen3-0.6B-ONNX',
+        size: '~400MB',
+        description: 'Modèle très léger et rapide',
+        isDownloaded: this.downloadedModels.has('qwen3-0.6b')
+      },
+      {
+        id: 'mock',
+        name: 'Mode Simulation',
+        huggingFaceId: 'mock',
+        size: 'Aucun',
+        description: 'Réponses simulées (pas de IA)',
+        isDownloaded: true
+      }
+    ];
+  }
+
+  /**
+   * Retourne le modèle actuellement actif
+   */
+  public getCurrentModel(): ModelType {
+    return this.currentModelKey;
+  }
+
+  /**
+   * Initialise avec le mode simulation (pas de téléchargement)
+   */
+  public async initMockMode() {
+    this.currentModelKey = 'mock';
+    this.downloadedModels.add('mock');
+    this.isInitialized = true;
+    this.isInitializing = false;
+    this._resolveReady();
+    console.log("✅ [ModelManager] Mode Simulation activé");
+  }
+
+  /**
+   * Télécharge et initialise le modèle Qwen3 0.6B
+   * À appeler UNIQUEMENT si l'utilisateur le demande
+   */
+  public async downloadAndInitQwen3() {
+    if (this.downloadedModels.has('qwen3-0.6b')) {
+      console.log("[ModelManager] Qwen3 déjà téléchargé");
       return;
     }
 
-    if (this.isInitializing) {
-      console.warn("[ModelManager] Init en cours, attente...");
+    if (this.isInitializing && this.currentModelKey === 'qwen3-0.6b') {
+      console.warn("[ModelManager] Qwen3 en cours de téléchargement, attente...");
       await this.ready;
       return;
     }
 
     this.isInitializing = true;
+    const modelKey = "onnx-community/Qwen3-0.6B-ONNX";
 
     try {
       console.log(`[ModelManager] Pré-chargement du tokenizer...`);
       sseStreamer.streamInfo(`Chargement du tokenizer...`);
       
-      // Charger le tokenizer
       this.tokenizer = await AutoTokenizer.from_pretrained(modelKey);
       
       console.log(`[ModelManager] ✅ Tokenizer chargé. Chargement du modèle...`);
       sseStreamer.streamInfo(`Chargement du modèle ${modelKey}...`);
       
-      // Charger le modèle avec callbacks de progression
       this.model = await AutoModelForCausalLM.from_pretrained(modelKey, {
         quantized: true,
         progress_callback: (progress: any) => {
@@ -75,11 +132,13 @@ export class ModelManager {
         }
       });
       
+      this.currentModelKey = 'qwen3-0.6b';
+      this.downloadedModels.add('qwen3-0.6b');
       this.isInitialized = true;
       this.isInitializing = false;
       
       this._resolveReady();
-      console.log(`✅ [ModelManager] ${modelKey} est prêt pour générer du texte.`);
+      console.log(`✅ [ModelManager] Qwen3-0.6B prêt pour générer du texte.`);
       sseStreamer.streamInfo(`Modèle prêt!`);
 
     } catch (error) {
@@ -93,10 +152,37 @@ export class ModelManager {
   }
 
   /**
+   * Change le modèle actif
+   */
+  public async switchToModel(modelKey: ModelType): Promise<void> {
+    if (modelKey === 'mock') {
+      this.currentModelKey = 'mock';
+      console.log("[ModelManager] Switched to mock mode");
+      return;
+    }
+
+    if (modelKey === 'qwen3-0.6b') {
+      if (!this.downloadedModels.has('qwen3-0.6b')) {
+        throw new Error("Qwen3-0.6B n'a pas été téléchargé. Appelez downloadAndInitQwen3() d'abord.");
+      }
+      if (!this.model || !this.tokenizer) {
+        throw new Error("Qwen3-0.6B n'a pas pu être initialisé");
+      }
+      this.currentModelKey = 'qwen3-0.6b';
+      return;
+    }
+  }
+
+  /**
    * Obtient le tokenizer et le modèle une fois prêts
    */
   public async getModelAndTokenizer(): Promise<{ model: any, tokenizer: any }> {
     await this.ready;
+    
+    if (this.currentModelKey === 'mock') {
+      throw new Error("Mode mock activé - pas de vrai modèle");
+    }
+
     if (!this.model || !this.tokenizer) {
       throw new Error("Le modèle ou le tokenizer ne sont pas initialisés.");
     }
@@ -105,39 +191,38 @@ export class ModelManager {
 
   /**
    * Génère du texte avec streaming via callback
+   * Utilise le modèle actuellement chargé
    */
   public async generateStreaming(
     prompt: string,
     onToken: (token: string) => void,
     maxNewTokens: number = 256
   ): Promise<string> {
+    if (this.currentModelKey === 'mock') {
+      throw new Error("Mode mock - utilise DialoguePluginMock");
+    }
+
     const { model, tokenizer } = await this.getModelAndTokenizer();
     
     try {
       console.log(`[ModelManager] Génération démarrée pour le prompt: "${prompt.substring(0, 50)}..."`);
       
-      // Tokeniser le prompt
       const inputs = tokenizer(prompt, { return_tensors: "pt" });
       
       let fullResponse = "";
-      const promptLength = prompt.length;
       let lastDecodedLength = 0;
       
-      // Générer avec callback
       const outputs = await model.generate({
         ...inputs,
         max_new_tokens: maxNewTokens,
         callback_function: (beams: any) => {
           try {
-            // Décoder la séquence complète
             const decoded = tokenizer.decode(beams[0].output_token_ids, { skip_special_tokens: true });
             
-            // Extraire uniquement le nouveau token
             if (decoded.length > lastDecodedLength) {
               const newToken = decoded.substring(lastDecodedLength);
               lastDecodedLength = decoded.length;
               
-              // Envoyer le token à l'UI
               onToken(newToken);
               fullResponse += newToken;
             }
@@ -147,7 +232,6 @@ export class ModelManager {
         }
       });
       
-      // Décodage final
       const finalOutput = tokenizer.decode(outputs[0], { skip_special_tokens: true });
       console.log(`[ModelManager] ✅ Génération terminée`);
       
@@ -156,6 +240,13 @@ export class ModelManager {
       console.error("[ModelManager] Erreur de génération:", error);
       throw error;
     }
+  }
+
+  /**
+   * Vérifie si un modèle est déjà téléchargé
+   */
+  public isModelDownloaded(modelKey: ModelType): boolean {
+    return this.downloadedModels.has(modelKey);
   }
 }
 

@@ -250,36 +250,23 @@ export class TaskExecutor {
       sseStreamer.streamInfo(`Executing ${task.agentName}...`);
       onChunk({ type: 'status', status: `Exécution de ${task.agentName}...` });
 
-      // Charger le modèle si nécessaire
-      if (!modelManager.isModelLoaded(task.modelKey)) {
-        console.log(`   [Worker] 🔄 Chargement du modèle ${task.modelKey}...`);
-        onChunk({ type: 'status', status: `Chargement du modèle ${task.modelKey}...` });
-        await modelManager.switchModel(task.modelKey);
-      }
-
       const prompt = task.prompt || userPrompt;
+      let fullResponse = "";
 
-      // Streaming de la génération (DANS le job PQueue)
-      // ✅ Paramètres WebLLM corrects: stream, temperature, max_tokens (PAS max_gen_len)
-      const stream = await engine.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        stream: true,
-        temperature: task.temperature,
-        max_tokens: 2048 // ✅ Paramètre correct WebLLM
-      });
-
-      let accumulatedContent = '';
-
-      // CRITIQUE: Cette boucle s'exécute ENTIÈREMENT dans le job
-      for await (const chunk of stream) {
-        if (timedOut) break;
-
-        const content = chunk.choices[0]?.delta?.content;
-        if (content) {
-          accumulatedContent += content;
-          onChunk({ type: 'primary', content });
+      // Streaming de la génération via Transformers.js
+      const onToken = (token: string) => {
+        if (!timedOut) {
+          fullResponse += token;
+          onChunk({ type: 'primary', content: token });
         }
-      }
+      };
+
+      // Générer via ModelManager
+      fullResponse = await modelManager.generateStreaming(
+        prompt,
+        onToken,
+        256
+      );
 
       clearTimeout(timeoutId);
 
@@ -288,10 +275,15 @@ export class TaskExecutor {
       
       console.log(`   [Worker] ✅ ${task.agentName} ${status} (${duration.toFixed(0)}ms)`);
       
+      // Mettre en cache
+      if (!timedOut) {
+        responseCache.set(userPrompt, task.modelKey, fullResponse);
+      }
+      
       return {
         agentName: task.agentName,
         modelKey: task.modelKey,
-        result: accumulatedContent,
+        result: fullResponse,
         status,
         duration
       };
@@ -318,41 +310,39 @@ export class TaskExecutor {
    * Exécute une tâche SANS streaming (pour fallback)
    */
   private async executeTaskWithTimeout(task: Task, userPrompt: string): Promise<TaskResult> {
-    const engine = await modelManager.getEngine();
     const startTime = performance.now();
     const timeoutMs = task.timeout;
     let timedOut = false;
 
-    const timeoutId = setTimeout(async () => {
+    const timeoutId = setTimeout(() => {
       timedOut = true;
-      await engine.interruptGenerate();
+      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}`);
     }, timeoutMs);
 
     try {
       console.log(`   [Worker] ▶️  ${task.agentName} démarré`);
       
-      if (!modelManager.isModelLoaded(task.modelKey)) {
-        await modelManager.switchModel(task.modelKey);
-      }
-
       const prompt = task.prompt || userPrompt;
+      let fullResponse = "";
 
-      // ✅ Paramètres WebLLM corrects: temperature, max_tokens (PAS max_gen_len)
-      const response = await engine.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        temperature: task.temperature,
-        max_tokens: 2048 // ✅ Paramètre correct WebLLM
-      });
+      // Génération sans streaming via Transformers.js
+      const onToken = (token: string) => {
+        fullResponse += token;
+      };
+
+      fullResponse = await modelManager.generateStreaming(
+        prompt,
+        onToken,
+        256
+      );
 
       clearTimeout(timeoutId);
-
-      const content = response.choices[0]?.message?.content || "";
       const duration = performance.now() - startTime;
       
       return {
         agentName: task.agentName,
         modelKey: task.modelKey,
-        result: content,
+        result: fullResponse,
         status: timedOut ? 'timeout' : 'success',
         duration
       };

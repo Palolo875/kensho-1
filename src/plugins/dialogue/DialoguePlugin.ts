@@ -99,15 +99,7 @@ export class DialoguePlugin {
       // 3. S'assurer que le modèle est chargé et marquer comme utilisé
       const currentModel = modelManager.getCurrentModel();
       if (currentModel !== modelKey) {
-        await modelManager.switchModel(modelKey);
-        // ✅ registerLoaded est déjà appelé dans ModelManager.switchModel()
-      } else {
-        // ✅ Juste toucher si déjà chargé
-        try {
-          memoryManager.touch(modelKey);
-        } catch (e) {
-          // Ignorer erreur touch (non critique)
-        }
+        await modelManager.switchToModel(modelKey as any);
       }
 
       // 4. Stream la réponse via TaskExecutor
