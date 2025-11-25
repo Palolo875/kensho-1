@@ -9,18 +9,21 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import ThemeToggle from "./ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { useNavigate } from "react-router-dom";
+import { Download } from "lucide-react";
 
 interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenObservatory?: () => void;
+  onOpenModelSelector?: () => void;
 }
 
-const SettingsModal = ({ open, onOpenChange, onOpenObservatory }: SettingsModalProps) => {
+const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelector }: SettingsModalProps) => {
   const navigate = useNavigate();
   const { firstName, lastName, setFirstName, setLastName } = useUserPreferences();
   const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
@@ -136,6 +139,24 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory }: SettingsModalP
               </Label>
               <Switch id="auto-play" />
             </div>
+          </div>
+
+          <Separator />
+
+          {/* Modèle */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-light">Modèle</h3>
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenModelSelector?.();
+                onOpenChange(false);
+              }}
+              className="w-full justify-start"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Changer de modèle
+            </Button>
           </div>
 
           <Separator />

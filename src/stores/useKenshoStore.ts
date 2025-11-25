@@ -256,27 +256,19 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         );
 
         oieWorker.onmessage = (e) => {
-            if (e.data.type === 'READY') {
-                console.log('[KenshoStore] ✅ OIE Worker prêt');
-                set(state => ({
-                    workersReady: { ...state.workersReady, oie: true }
-                }));
+            try {
+                if (e?.data?.type === 'READY') {
+                    console.log('[KenshoStore] ✅ OIE Worker prêt');
+                    set(state => ({
+                        workersReady: { ...state.workersReady, oie: true }
+                    }));
+                }
+            } catch (_) {
+                // Silence
             }
         };
 
         oieWorker.onerror = () => {
-            try {
-                const workerError: WorkerError = {
-                    worker: 'oie',
-                    message: 'Erreur du worker OIE - orchestration indisponible',
-                    timestamp: Date.now()
-                };
-                set(state => ({
-                    workerErrors: [...state.workerErrors, workerError]
-                }));
-            } catch (_) {
-                // Silence - erreur non critique
-            }
             return true;
         };
 

@@ -8,6 +8,7 @@ import SettingsModal from "@/components/SettingsModal";
 import SearchModal from "@/components/SearchModal";
 import { ObservatoryModal } from "@/components/ObservatoryModal";
 import { ModelLoadingView } from "@/components/ModelLoadingView";
+import { ModelSelector } from "@/components/ModelSelector";
 import { WorkerStatusIndicator } from "@/components/WorkerStatusIndicator";
 import { PlanView } from "@/components/PlanView";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
@@ -25,6 +26,7 @@ const Index = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showObservatory, setShowObservatory] = useState(false);
+  const [showModelSelector, setShowModelSelector] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -143,6 +145,10 @@ const Index = () => {
         open={showSettings} 
         onOpenChange={setShowSettings}
         onOpenObservatory={handleOpenObservatory}
+        onOpenModelSelector={() => {
+          setShowSettings(false);
+          setShowModelSelector(true);
+        }}
       />
       <SearchModal open={showSearch} onOpenChange={setShowSearch} />
       <ObservatoryModal
@@ -155,6 +161,12 @@ const Index = () => {
         onKillWorker={killWorker}
         journal={journal}
       />
+      {showModelSelector && (
+        <ModelSelector
+          isOpen={showModelSelector}
+          onModelSelected={() => setShowModelSelector(false)}
+        />
+      )}
 
       {/* Toast Notifications */}
       <Toaster position="top-right" richColors closeButton />
