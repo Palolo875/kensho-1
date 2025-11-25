@@ -11,7 +11,7 @@
 
 import PQueue from 'p-queue';
 import { modelManager } from './ModelManager';
-import { router } from '../router/Router';
+import { Router } from '../router/Router';
 import { 
   ExecutionPlan, 
   Task, 
@@ -27,12 +27,14 @@ console.log("👷 TaskExecutor v3.0 - Chef de Chantier Intelligent initialisé")
 export class TaskExecutor {
   private queue: PQueue;
   private activeWorkers = 0;
+  private router: Router;
 
   constructor() {
     this.queue = new PQueue({ 
       concurrency: 1,
       timeout: 60000 // Timeout global de 60s
     });
+    this.router = new Router();
   }
 
   /**
@@ -44,11 +46,11 @@ export class TaskExecutor {
 
     try {
       // 1. Obtenir le plan du Router
-      const plan = await router.createPlan(userPrompt);
+      const plan = await this.router.createPlan(userPrompt);
       console.log(`[TaskExecutor] 📋 Plan créé | Stratégie: ${plan.strategy} | Tâches: ${plan.fallbackTasks.length + 1}`);
 
       // Valider le plan
-      await router.validatePlan(plan);
+      await this.router.validatePlan(plan);
 
       // 2. Ajuster la concurrence dynamiquement
       this.queue.concurrency = this.getConcurrencyLimit(plan.strategy);

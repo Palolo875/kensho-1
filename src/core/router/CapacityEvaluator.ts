@@ -80,14 +80,22 @@ export class CapacityEvaluator {
     return 8;
   }
   
-  public determineStrategy(capacityScore: number, priority: 'HIGH' | 'LOW'): ExecutionStrategy {
+  public determineStrategy(capacityScore: number, priority: 'HIGH' | 'MEDIUM' | 'LOW'): ExecutionStrategy {
+    // Priorité HIGH: parallélisation maximale si possible
     if (priority === 'HIGH') {
-      return capacityScore >= 7 ? 'PARALLEL' : 'SERIAL';
+      if (capacityScore >= 8) return 'PARALLEL_FULL';
+      if (capacityScore >= 6) return 'PARALLEL_LIMITED';
+      return 'SERIAL';
     }
     
-    if (capacityScore >= 8) return 'PARALLEL';
-    if (capacityScore >= 5) return 'SERIAL';
+    // Priorité MEDIUM: parallélisation limitée
+    if (priority === 'MEDIUM') {
+      if (capacityScore >= 7) return 'PARALLEL_LIMITED';
+      return 'SERIAL';
+    }
     
+    // Priorité LOW: seulement si ressources excellentes
+    if (capacityScore >= 9) return 'PARALLEL_LIMITED';
     return 'SERIAL';
   }
 }

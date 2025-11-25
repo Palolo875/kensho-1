@@ -4,6 +4,7 @@ import { ROUTER_MODEL_CATALOG, validateModelExists, getModelBySpecialization } f
 import {
   IntentCategory,
   ExecutionPlan,
+  ExecutionStrategy,
   Task,
   TaskPriority,
   RouterError
@@ -187,7 +188,7 @@ export class Router {
     }
   }
   
-  private estimateDuration(primaryTask: Task, fallbackTasks: Task[], strategy: 'SERIAL' | 'PARALLEL'): number {
+  private estimateDuration(primaryTask: Task, fallbackTasks: Task[], strategy: ExecutionStrategy): number {
     const primaryDuration = primaryTask.timeout * 0.6;
     
     if (fallbackTasks.length === 0) {
@@ -196,10 +197,12 @@ export class Router {
     
     const fallbackDuration = fallbackTasks.reduce((sum, task) => sum + (task.timeout * 0.5), 0);
     
-    if (strategy === 'PARALLEL') {
+    // Stratégies parallèles (PARALLEL_LIMITED ou PARALLEL_FULL)
+    if (strategy === 'PARALLEL_LIMITED' || strategy === 'PARALLEL_FULL') {
       return Math.max(primaryDuration, fallbackDuration);
     }
     
+    // Stratégie SERIAL
     return primaryDuration + fallbackDuration;
   }
   
@@ -224,3 +227,6 @@ export class Router {
     return true;
   }
 }
+
+// Instance singleton exportée
+export const router = new Router();
