@@ -79,6 +79,71 @@ if (!decision.canLoad) {
 }
 ```
 
+### Sprint 13: Le Router Intelligent v2.0
+**Date:** Novembre 2025  
+**Statut:** ✅ Implémenté et Production-Ready
+
+Le Sprint 13 introduit un système de routage intelligent qui dirige les requêtes utilisateur vers les experts IA appropriés, avec vérifications de disponibilité des ressources et classification hybride.
+
+**Corrections Critiques Intégrées:**
+1. ✅ **Anti-Hallucination** - `ModelCatalog` vérifié avec UNIQUEMENT des modèles WebLLM/MLC existants (Gemma-3-270M, Qwen2.5-Coder-1.5B, Qwen2.5-Math-1.5B)
+2. ✅ **Classification Hybride** - Mots-clés rapides → Fallback LLM (Gemma-3-270M), pas BGE qui n'est pas dans WebLLM
+3. ✅ **Fail-Aware Classifier** - `ClassificationError` propagées, pas de masquage silencieux
+4. ✅ **Sélection Consciente** - Vérification via `kernelCoordinator.canLoadModel()` avant création de plan
+5. ✅ **Capacity Score Holistique** - CPU + Mémoire + Batterie + Réseau → Score/10 pour décision SERIAL vs PARALLEL
+6. ✅ **Transparence des Downgrades** - `downgradedFromIntent` et `downgradeReason` dans `ExecutionPlan`
+
+**Composants principaux:**
+- **Router** (`src/core/router/Router.ts`): Orchestrateur intelligent créant des plans d'exécution
+- **IntentClassifier** (`src/core/router/IntentClassifier.ts`): Classification hybride des intentions (CODE, MATH, FACTCHECK, DIALOGUE)
+- **CapacityEvaluator** (`src/core/router/CapacityEvaluator.ts`): Évaluation holistique de la capacité système (score 0-10)
+- **ModelCatalog** (`src/core/router/ModelCatalog.ts`): Catalogue vérifié des modèles disponibles avec dates de vérification
+
+**Architecture:**
+```
+User Query
+    ↓
+IntentClassifier (Keywords → LLM Fallback)
+    ↓
+CapacityEvaluator (CPU + Memory + Battery + Network → Score/10)
+    ↓
+Router.selectExperts (Intent + canLoadModel → Model Selection)
+    ↓
+ExecutionPlan (Primary + Fallback + Strategy + Downgrade Info)
+```
+
+**Usage:**
+```typescript
+import { Router } from '@/core/router';
+
+const router = new Router();
+
+// Créer un plan d'exécution
+const plan = await router.createPlan("Comment debugger ce code JavaScript ?");
+// {
+//   primaryTask: { agentName: 'CodeExpert', modelKey: 'qwen2.5-coder-1.5b', ... },
+//   fallbackTasks: [{ agentName: 'GeneralDialogue', modelKey: 'gemma-3-270m', ... }],
+//   strategy: 'PARALLEL',
+//   capacityScore: 8.5,
+//   estimatedDuration: 18000,
+//   downgradedFromIntent: undefined  // Pas de downgrade
+// }
+
+// En cas de downgrade (modèle spécialisé non disponible)
+const degradedPlan = await router.createPlan("Calcule la dérivée de x²");
+// {
+//   primaryTask: { agentName: 'CalculatorAgent', modelKey: 'gemma-3-270m', ... },
+//   fallbackTasks: [],
+//   downgradedFromIntent: 'MATH',
+//   downgradeReason: 'Mémoire saturée (>80%)'
+// }
+```
+
+**Modèles Supportés (Vérifiés WebLLM/MLC):**
+- `gemma-3-270m-it-MLC` - Dialogue généraliste (270M, q4f16_1)
+- `Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC` - Expert code (1.5B, q4f16_1)
+- `Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC` - Expert mathématiques (1.5B, q4f16_1)
+
 The FactCheckerAgent employs a hybrid approach for claim extraction (LLM + Rule-Based fallback) and a 2-step verification process (semantic search via HNSW embeddings + LLM Judge). Verification results include status (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN), confidence scores, and evidence tracking.
 
 **UI/UX Decisions:**
