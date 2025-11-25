@@ -127,71 +127,7 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
             <Clock className="h-5 w-5" />
             {!isCollapsed && <span className="ml-3">Historique</span>}
           </Button>
-
-          <Button
-            variant="ghost"
-            onClick={onOpenObservatory}
-            className={cn(
-              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
-              isCollapsed ? "w-11 px-0" : "w-full justify-start"
-            )}
-          >
-            <Activity className="h-5 w-5" />
-            {!isCollapsed && <span className="ml-3">Observatory</span>}
-          </Button>
-
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/analytics')}
-            className={cn(
-              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
-              isCollapsed ? "w-11 px-0" : "w-full justify-start"
-            )}
-          >
-            <BarChart3 className="h-5 w-5" />
-            {!isCollapsed && <span className="ml-3">Analytics</span>}
-          </Button>
         </div>
-
-        {/* Priority 6: Fact-Checking Section */}
-        {!isCollapsed && (
-          <div className="px-2 my-4">
-            <Button
-              variant="ghost"
-              onClick={() => setFactCheckingExpanded(!factCheckingExpanded)}
-              className="w-full justify-between h-10 hover:bg-sidebar-accent/60 font-semibold text-sm"
-            >
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                <span>Fact-Checking</span>
-              </div>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 transition-transform",
-                  factCheckingExpanded && "rotate-180"
-                )}
-              />
-            </Button>
-
-            {factCheckingExpanded && (
-              <div className="mt-2 space-y-2 ml-2 border-l border-sidebar-border/50 pl-2">
-                <p className="text-xs text-muted-foreground font-semibold">Exemples rapides:</p>
-                {factCheckingExamples.map((example, idx) => (
-                  <Button
-                    key={idx}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => sendMessage(`Vérifie: ${example}`)}
-                    className="w-full justify-start text-xs h-8 hover:bg-primary/10"
-                  >
-                    <Zap className="h-3 w-3 mr-1 flex-shrink-0" />
-                    <span className="truncate text-left">{example}</span>
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Sprint 7: Projects Section */}
         {!isCollapsed && (
@@ -342,68 +278,6 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
             <Clock className="h-5 w-5" />
             <span className="ml-3">Historique</span>
           </Button>
-
-          <Button
-            variant="ghost"
-            onClick={() => {
-              onOpenObservatory();
-              onToggle ? onToggle() : setInternalIsOpen(false);
-            }}
-            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
-          >
-            <Activity className="h-5 w-5" />
-            <span className="ml-3">Observatory</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/analytics')}
-            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
-          >
-            <BarChart3 className="h-5 w-5" />
-            <span className="ml-3">Analytics</span>
-          </Button>
-        </div>
-
-        {/* Priority 6: Fact-Checking Section for Mobile */}
-        <div className="px-2 my-4">
-          <Button
-            variant="ghost"
-            onClick={() => setFactCheckingExpanded(!factCheckingExpanded)}
-            className="w-full justify-between h-10 hover:bg-sidebar-accent/60 font-semibold text-sm"
-          >
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4" />
-              <span>Fact-Checking</span>
-            </div>
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 transition-transform",
-                factCheckingExpanded && "rotate-180"
-              )}
-            />
-          </Button>
-
-          {factCheckingExpanded && (
-            <div className="mt-2 space-y-2 ml-2 border-l border-sidebar-border/50 pl-2">
-              <p className="text-xs text-muted-foreground font-semibold">Exemples rapides:</p>
-              {factCheckingExamples.map((example, idx) => (
-                <Button
-                  key={idx}
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    sendMessage(`Vérifie: ${example}`);
-                    onToggle ? onToggle() : setInternalIsOpen(false);
-                  }}
-                  className="w-full justify-start text-xs h-8 hover:bg-primary/10"
-                >
-                  <Zap className="h-3 w-3 mr-1 flex-shrink-0" />
-                  <span className="truncate text-left">{example}</span>
-                </Button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="flex-1" />

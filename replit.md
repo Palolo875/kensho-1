@@ -243,6 +243,15 @@ export interface Message {
 - ✅ All project features now functional and visible in main interface
 - ✅ Multi-project support with active project tracking
 
+**Sidebar Lightweight Redesign:**
+- ✅ Removed Observatory, Analytics, Fact-Checking from main navigation
+- ✅ Moved Observatory → Settings > Tools
+- ✅ Moved Analytics → Settings > Tools
+- ✅ Moved Fact-Checking examples → Settings > Tools (quick access)
+- ✅ Sidebar now focuses on: Conversation, Search, History, Projects
+- ✅ Cleaner, more focused navigation
+- ✅ All tools still accessible via Settings (⚙️) modal
+
 ## Next Steps (Priority 7+)
 
 1. **Priority 7: Advanced Monitoring**

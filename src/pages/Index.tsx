@@ -139,7 +139,11 @@ const Index = () => {
       {/* Indicateur de statut des workers (en développement) */}
       {import.meta.env.DEV && <WorkerStatusIndicator />}
 
-      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
+      <SettingsModal 
+        open={showSettings} 
+        onOpenChange={setShowSettings}
+        onOpenObservatory={handleOpenObservatory}
+      />
       <SearchModal open={showSearch} onOpenChange={setShowSearch} />
       <ObservatoryModal
         open={showObservatory}

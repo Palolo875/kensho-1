@@ -16,12 +16,14 @@ import { useKenshoStore } from "@/stores/useKenshoStore";
 interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onOpenObservatory?: () => void;
 }
 
-const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => {
+const SettingsModal = ({ open, onOpenChange, onOpenObservatory }: SettingsModalProps) => {
   const { firstName, lastName, setFirstName, setLastName } = useUserPreferences();
   const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
   const setDebateModeEnabled = useKenshoStore(state => state.setDebateModeEnabled);
+  const sendMessage = useKenshoStore(state => state.sendMessage);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,6 +133,66 @@ const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => {
                 </span>
               </Label>
               <Switch id="auto-play" />
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Outils */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-light">Outils</h3>
+            <div className="space-y-3">
+              {/* Observatory */}
+              <button
+                onClick={() => {
+                  onOpenObservatory?.();
+                  onOpenChange(false);
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-sidebar-accent/60 transition-colors border border-border/30"
+              >
+                <div className="text-left">
+                  <div className="font-medium text-sm">Observatory</div>
+                  <div className="text-xs text-muted-foreground">Surveillance des agents</div>
+                </div>
+              </button>
+
+              {/* Analytics */}
+              <button
+                onClick={() => {
+                  window.location.hash = '#/analytics';
+                  onOpenChange(false);
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-sidebar-accent/60 transition-colors border border-border/30"
+              >
+                <div className="text-left">
+                  <div className="font-medium text-sm">Analytics</div>
+                  <div className="text-xs text-muted-foreground">Métriques de performance</div>
+                </div>
+              </button>
+
+              {/* Fact-Checking Examples */}
+              <div className="space-y-2">
+                <div className="font-medium text-sm">Fact-Checking Rapide</div>
+                <div className="space-y-1">
+                  {[
+                    'Paris est la capitale de la France',
+                    'La Terre est plate',
+                    'L\'eau bout à 100°C',
+                    'La gravité attire les objets',
+                  ].map((example, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        sendMessage(`Vérifie: ${example}`);
+                        onOpenChange(false);
+                      }}
+                      className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-primary/10 transition-colors truncate"
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
