@@ -140,6 +140,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
             <BarChart3 className="h-5 w-5" />
             {!isCollapsed && <span className="ml-3">Analytics</span>}
           </Button>
+
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/fact-checking')}
+            className={cn(
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
+            )}
+          >
+            🔍
+            {!isCollapsed && <span className="ml-3">Fact-Checking</span>}
+          </Button>
         </div>
 
         {/* Sprint 7: Projects Section */}

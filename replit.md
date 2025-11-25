@@ -135,22 +135,106 @@ Le Sprint 13 introduit un système de routage intelligent qui dirige les requêt
 
 Le Sprint 12 introduit un noyau asynchrone robuste pour gérer les modèles IA et les ressources système.
 
-## Next Steps (Priority 6+)
+## Sprint 17: Knowledge Graph & Evidence System (Priority 6)
+**Date:** Novembre 2025  
+**Statut:** ✅ Implémenté et Production-Ready
 
-1. **Priority 6: Knowledge Graph & Evidence System**
-   - Integrate GraphWorker for evidence retrieval
-   - Build fact-checking visualization
-   - Connect HNSW embeddings for semantic search
+Le Sprint 17 introduit un système complet d'inférence factuelle avec recherche sémantique et visualisation de graphe de connaissances:
 
-2. **Priority 7: Advanced Monitoring**
+**Priority 6 - Complété ✅**
+- ✅ **FactCheckingResults** (`src/components/FactCheckingResults.tsx`): Visualize verified/contradicted claims
+  - Multi-status display (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN)
+  - Evidence cards with source tracking
+  - Semantic search results tabulation
+  - Confidence scoring
+  
+- ✅ **KnowledgeGraphViewer** (`src/components/KnowledgeGraphViewer.tsx`): Semantic relationship visualization
+  - Entity/node browsing (claims, evidence, sources, concepts)
+  - Relationship graphs with strength indicators
+  - Metadata expansion
+  - Connection tracking
+  
+- ✅ **FactCheckingService** (`src/services/FactCheckingService.ts`): GraphWorker orchestration
+  - Claims verification via semantic search
+  - Evidence retrieval integration
+  - HNSW embeddings support
+  - Source attribution
+  
+- ✅ **useFactCheckingStore** (`src/stores/useFactCheckingStore.ts`): State management
+  - Verified claims storage
+  - Semantic search results
+  - Verification progress tracking
+  
+- ✅ **FactCheckingDemo** (`src/pages/FactCheckingDemo.tsx`): Interactive demo page
+  - Live claim verification interface at `/fact-checking`
+  - Quick example claims
+  - Knowledge graph visualization
+  - Full feature documentation
+  
+- ✅ **AIResponse Integration**: Fact-checking results display
+  - Props: factCheckingClaims, semanticSearchResults
+  - Automatic rendering in chat responses
+  - Collapsible evidence display
+  
+- ✅ **Navigation**: Sidebar links added
+  - Analytics button (`/analytics`)
+  - Fact-Checking button (`/fact-checking`)
+  - Responsive design for mobile/desktop
+
+**Architecture:**
+```
+User Query (FACTCHECK intent)
+    ↓
+Router classifies → FactCheckerAgent
+    ↓
+FactCheckingService.verifyClaims()
+    ├─ GraphWorker: Evidence retrieval
+    ├─ EmbeddingAgent: HNSW semantic search
+    └─ Claims processing
+    ↓
+FactCheckingResults Component
+    ├─ Claim status display
+    ├─ Evidence cards
+    └─ Semantic search results
+    ↓
+KnowledgeGraphViewer
+    ├─ Entity browser
+    └─ Relationship graph
+```
+
+**Components:**
+- `src/components/FactCheckingResults.tsx` - Verification results UI
+- `src/components/KnowledgeGraphViewer.tsx` - Graph visualization
+- `src/pages/FactCheckingDemo.tsx` - Interactive demo
+- `src/services/FactCheckingService.ts` - Orchestration logic
+- `src/stores/useFactCheckingStore.ts` - State management
+
+**Features:**
+- ✅ Semantic fact-checking with HNSW embeddings
+- ✅ Evidence retrieval and ranking
+- ✅ Multi-status verification (4 states)
+- ✅ Knowledge graph visualization
+- ✅ Source attribution and transparency
+- ✅ Confidence scoring
+- ✅ Real-time UI integration
+- ✅ Demo/testing interface
+
+## Next Steps (Priority 7+)
+
+1. **Priority 7: Advanced Monitoring**
    - Real-time agent health monitoring
    - Performance prediction models
    - Anomaly detection
 
-3. **Priority 8: Multi-Modal Support**
+2. **Priority 8: Multi-Modal Support**
    - Image analysis pipeline
    - Document processing (OCR)
    - Audio transcription
+
+3. **Priority 9: Knowledge Base Optimization**
+   - Query optimization
+   - Index tuning
+   - Cache strategies
 
 ## External Dependencies
 - **LLM Providers:** Used for agent reasoning, claim extraction, and verification. Specific models are abstracted but critical to agent operations.

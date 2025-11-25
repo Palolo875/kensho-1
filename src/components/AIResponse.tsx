@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { ThoughtStream } from "./chat/ThoughtStream";
+import { FactCheckingResults } from "./FactCheckingResults";
 import type { ThoughtStep } from "@/agents/oie/types";
 
 interface AIResponseProps {
@@ -12,9 +13,19 @@ interface AIResponseProps {
   statusMessage?: string;
   ocrProgress?: number;
   thoughtProcess?: ThoughtStep[];
+  factCheckingClaims?: any[];
+  semanticSearchResults?: any;
 }
 
-const AIResponse = ({ content, thinking, statusMessage, ocrProgress, thoughtProcess }: AIResponseProps) => {
+const AIResponse = ({
+  content,
+  thinking,
+  statusMessage,
+  ocrProgress,
+  thoughtProcess,
+  factCheckingClaims,
+  semanticSearchResults
+}: AIResponseProps) => {
   const [showThinking, setShowThinking] = useState(false);
   const [thinkingMode, setThinkingMode] = useState<"summary" | "detailed">("summary");
 
@@ -100,6 +111,15 @@ const AIResponse = ({ content, thinking, statusMessage, ocrProgress, thoughtProc
               </div>
             )}
           </div>
+        )}
+
+        {/* Fact-Checking Results (Priority 6) */}
+        {factCheckingClaims && factCheckingClaims.length > 0 && (
+          <FactCheckingResults
+            claims={factCheckingClaims}
+            semanticSearchResults={semanticSearchResults}
+            expanded={false}
+          />
         )}
 
         {/* AI Response Content */}
