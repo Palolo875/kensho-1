@@ -137,87 +137,77 @@ Le Sprint 12 introduit un noyau asynchrone robuste pour gérer les modèles IA e
 
 ## Sprint 17: Knowledge Graph & Evidence System (Priority 6)
 **Date:** Novembre 2025  
-**Statut:** ✅ Implémenté et Production-Ready
+**Statut:** ✅ Implémenté et Production-Ready (INTÉGRÉ dans l'interface principale)
 
-Le Sprint 17 introduit un système complet d'inférence factuelle avec recherche sémantique et visualisation de graphe de connaissances:
+Le Sprint 17 introduit un système complet d'inférence factuelle avec recherche sémantique et visualisation de graphe de connaissances **DIRECTEMENT INTÉGRÉ dans le chat principal**.
 
-**Priority 6 - Complété ✅**
-- ✅ **FactCheckingResults** (`src/components/FactCheckingResults.tsx`): Visualize verified/contradicted claims
-  - Multi-status display (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN)
-  - Evidence cards with source tracking
-  - Semantic search results tabulation
-  - Confidence scoring
-  
-- ✅ **KnowledgeGraphViewer** (`src/components/KnowledgeGraphViewer.tsx`): Semantic relationship visualization
-  - Entity/node browsing (claims, evidence, sources, concepts)
-  - Relationship graphs with strength indicators
-  - Metadata expansion
-  - Connection tracking
-  
-- ✅ **FactCheckingService** (`src/services/FactCheckingService.ts`): GraphWorker orchestration
-  - Claims verification via semantic search
-  - Evidence retrieval integration
-  - HNSW embeddings support
-  - Source attribution
-  
-- ✅ **useFactCheckingStore** (`src/stores/useFactCheckingStore.ts`): State management
-  - Verified claims storage
-  - Semantic search results
-  - Verification progress tracking
-  
-- ✅ **FactCheckingDemo** (`src/pages/FactCheckingDemo.tsx`): Interactive demo page
-  - Live claim verification interface at `/fact-checking`
-  - Quick example claims
-  - Knowledge graph visualization
-  - Full feature documentation
-  
-- ✅ **AIResponse Integration**: Fact-checking results display
-  - Props: factCheckingClaims, semanticSearchResults
-  - Automatic rendering in chat responses
-  - Collapsible evidence display
-  
-- ✅ **Navigation**: Sidebar links added
-  - Analytics button (`/analytics`)
-  - Fact-Checking button (`/fact-checking`)
-  - Responsive design for mobile/desktop
+**Priority 6 - Complété & Migré ✅**
 
-**Architecture:**
+**Architecture - Intégration dans le Chat Principal:**
 ```
-User Query (FACTCHECK intent)
+Chat Interface (/)
     ↓
-Router classifies → FactCheckerAgent
+User Query (ex: "Vérifie si...")
     ↓
-FactCheckingService.verifyClaims()
+Router classifies → FACTCHECK intent
+    ↓
+FactCheckerAgent + FactCheckingService
     ├─ GraphWorker: Evidence retrieval
     ├─ EmbeddingAgent: HNSW semantic search
     └─ Claims processing
     ↓
-FactCheckingResults Component
-    ├─ Claim status display
-    ├─ Evidence cards
+Message.factCheckingClaims + Message.semanticSearchResults
+    ↓
+AIResponse Component
+    ↓
+FactCheckingResults affiche directement dans le chat
+    ├─ Claims status (VERIFIED/CONTRADICTED/AMBIGUOUS/UNKNOWN)
+    ├─ Evidence cards avec relevance scoring
     └─ Semantic search results
     ↓
-KnowledgeGraphViewer
-    ├─ Entity browser
-    └─ Relationship graph
+Utilisateur voit les résultats dans la conversation
 ```
 
-**Components:**
-- `src/components/FactCheckingResults.tsx` - Verification results UI
-- `src/components/KnowledgeGraphViewer.tsx` - Graph visualization
-- `src/pages/FactCheckingDemo.tsx` - Interactive demo
-- `src/services/FactCheckingService.ts` - Orchestration logic
-- `src/stores/useFactCheckingStore.ts` - State management
+**Components Intégrés:**
+- ✅ `src/components/FactCheckingResults.tsx` - Verification results UI (INTÉGRÉ dans AIResponse)
+- ✅ `src/components/KnowledgeGraphViewer.tsx` - Graph visualization (disponible)
+- ✅ `src/services/FactCheckingService.ts` - Orchestration logic (GraphWorker bridge)
+- ✅ `src/stores/useFactCheckingStore.ts` - State management (Zustand)
+- ✅ `src/pages/Index.tsx` - Chat principal (passe factCheckingClaims à AIResponse)
+- ✅ `src/components/AIResponse.tsx` - Affiche FactCheckingResults inline
+
+**Message Structure:**
+```typescript
+export interface Message {
+    id: string;
+    text: string;
+    author: 'user' | 'kensho';
+    timestamp: number;
+    plan?: any;
+    thoughtProcess?: ThoughtStep[];
+    factCheckingClaims?: any[];           // Priority 6
+    semanticSearchResults?: any;          // Priority 6
+}
+```
 
 **Features:**
 - ✅ Semantic fact-checking with HNSW embeddings
 - ✅ Evidence retrieval and ranking
-- ✅ Multi-status verification (4 states)
+- ✅ Multi-status verification (4 states: VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN)
 - ✅ Knowledge graph visualization
 - ✅ Source attribution and transparency
-- ✅ Confidence scoring
-- ✅ Real-time UI integration
-- ✅ Demo/testing interface
+- ✅ Confidence scoring (60-100%)
+- ✅ Real-time UI integration dans le chat
+- ✅ Expandable evidence details
+- ✅ Responsive design (mobile/desktop)
+
+**Flux Utilisateur:**
+1. Utilisateur pose une question avec "vérifie", "fact-check", "vrai", "faux", etc.
+2. Router détecte FACTCHECK intent
+3. FactCheckingService traite les claims
+4. Résultats stockés dans Message.factCheckingClaims
+5. AIResponse affiche FactCheckingResults **directement dans le chat**
+6. Utilisateur explore les preuves et sources sans quitter la conversation
 
 ## Next Steps (Priority 7+)
 
