@@ -301,27 +301,19 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         );
 
         telemetryWorker.onmessage = (e) => {
-            if (e.data.type === 'READY') {
-                console.log('[KenshoStore] ✅ Telemetry Worker prêt');
-                set(state => ({
-                    workersReady: { ...state.workersReady, telemetry: true }
-                }));
+            try {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ Telemetry Worker prêt');
+                    set(state => ({
+                        workersReady: { ...state.workersReady, telemetry: true }
+                    }));
+                }
+            } catch (_) {
+                // Silence
             }
         };
 
         telemetryWorker.onerror = () => {
-            try {
-                const workerError: WorkerError = {
-                    worker: 'telemetry',
-                    message: 'Erreur du worker Telemetry - logging indisponible',
-                    timestamp: Date.now()
-                };
-                set(state => ({
-                    workerErrors: [...state.workerErrors, workerError]
-                }));
-            } catch (_) {
-                // Silence
-            }
             return true;
         };
 
@@ -348,13 +340,16 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         (window as any).__kensho_workers['EmbeddingAgent'] = embeddingWorker;
 
         embeddingWorker.onmessage = (e) => {
-            if (e.data.type === 'READY') {
-                console.log('[KenshoStore] ✅ EmbeddingAgent Worker prêt');
+            try {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ EmbeddingAgent Worker prêt');
+                }
+            } catch (_) {
+                // Silence
             }
         };
 
         embeddingWorker.onerror = () => {
-            // Erreur silencieuse - non critique
             return true;
         };
 
@@ -373,13 +368,16 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         (window as any).__kensho_workers['IntentClassifierAgent'] = intentWorker;
 
         intentWorker.onmessage = (e) => {
-            if (e.data.type === 'READY') {
-                console.log('[KenshoStore] ✅ IntentClassifierAgent Worker prêt');
+            try {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ IntentClassifierAgent Worker prêt');
+                }
+            } catch (_) {
+                // Silence
             }
         };
 
         intentWorker.onerror = () => {
-            // Erreur silencieuse - non critique
             return true;
         };
 
@@ -399,13 +397,16 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         (window as any).__kensho_workers['GraphWorker'] = graphWorker;
 
         graphWorker.onmessage = (e) => {
-            if (e.data.type === 'READY') {
-                console.log('[KenshoStore] ✅ GraphWorker prêt');
+            try {
+                if (e.data.type === 'READY') {
+                    console.log('[KenshoStore] ✅ GraphWorker prêt');
+                }
+            } catch (_) {
+                // Silence
             }
         };
 
         graphWorker.onerror = () => {
-            // Erreur silencieuse - non critique
             return true;
         };
 

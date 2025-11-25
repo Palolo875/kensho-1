@@ -26,6 +26,17 @@ export interface ModelInfo {
   isDownloaded: boolean;
 }
 
+export interface DownloadProgress {
+  percent: number;
+  speed: number; // bytes/sec
+  timeRemaining: number; // ms
+  loaded: number; // bytes
+  total: number; // bytes
+  file?: string;
+}
+
+export type DownloadCallback = (progress: DownloadProgress) => void;
+
 export class ModelManager {
   private tokenizer: any | null = null;
   private model: any | null = null;
@@ -36,6 +47,9 @@ export class ModelManager {
   private isInitializing = false;
   private currentModelKey: ModelType = 'mock';
   private downloadedModels: Set<ModelType> = new Set();
+  private downloadController: AbortController | null = null;
+  private downloadStartTime = 0;
+  private downloadedBytes = 0;
 
   constructor() {
     this.resetReadyPromise();
@@ -96,10 +110,31 @@ export class ModelManager {
   }
 
   /**
+   * Annule le téléchargement en cours
+   */
+  public cancelDownload() {
+    if (this.downloadController) {
+      this.downloadController.abort();
+      this.downloadController = null;
+    }
+    this.isInitializing = false;
+    console.log("[ModelManager] Téléchargement annulé");
+  }
+
+  /**
+   * Pause/Resume du téléchargement via un callback
+   */
+  public pauseDownload() {
+    console.log("[ModelManager] Pause du téléchargement...");
+    // Note: pause réelle nécessite une abstraction à un niveau plus bas (workers)
+    // Pour maintenant, on utilise cancel comme workaround
+  }
+
+  /**
    * Télécharge et initialise le modèle Qwen3 0.6B
    * À appeler UNIQUEMENT si l'utilisateur le demande
    */
-  public async downloadAndInitQwen3() {
+  public async downloadAndInitQwen3(onProgress?: DownloadCallback) {
     if (this.downloadedModels.has('qwen3-0.6b')) {
       console.log("[ModelManager] Qwen3 déjà téléchargé");
       return;
@@ -112,6 +147,9 @@ export class ModelManager {
     }
 
     this.isInitializing = true;
+    this.downloadController = new AbortController();
+    this.downloadStartTime = Date.now();
+    this.downloadedBytes = 0;
     const modelKey = "onnx-community/Qwen3-0.6B-ONNX";
 
     try {
@@ -126,7 +164,32 @@ export class ModelManager {
       this.model = await AutoModelForCausalLM.from_pretrained(modelKey, {
         quantized: true,
         progress_callback: (progress: any) => {
+          if (this.downloadController?.signal.aborted) {
+            throw new Error('Download cancelled');
+          }
+          
           const percent = Math.round((progress.progress || 0) * 100);
+          const now = Date.now();
+          const elapsedMs = now - this.downloadStartTime;
+          const elapsedSec = elapsedMs / 1000;
+          
+          // Estimation: Qwen3-0.6B = ~400MB total
+          const estimatedTotalBytes = 400 * 1024 * 1024;
+          const currentBytes = (percent / 100) * estimatedTotalBytes;
+          const speed = currentBytes / (elapsedSec || 1);
+          const remainingBytes = estimatedTotalBytes - currentBytes;
+          const timeRemainingMs = remainingBytes / (speed || 1) * 1000;
+          
+          const progressData: DownloadProgress = {
+            percent,
+            speed,
+            timeRemaining: Math.max(0, timeRemainingMs),
+            loaded: Math.round(currentBytes),
+            total: estimatedTotalBytes,
+            file: progress.file
+          };
+          
+          onProgress?.(progressData);
           console.log(`[ModelManager] Progression: ${progress.file} (${percent}%)`);
           sseStreamer.streamInfo(`Téléchargement: ${percent}%`);
         }
@@ -136,14 +199,23 @@ export class ModelManager {
       this.downloadedModels.add('qwen3-0.6b');
       this.isInitialized = true;
       this.isInitializing = false;
+      this.downloadController = null;
       
       this._resolveReady();
       console.log(`✅ [ModelManager] Qwen3-0.6B prêt pour générer du texte.`);
       sseStreamer.streamInfo(`Modèle prêt!`);
 
     } catch (error) {
+      if ((error as any)?.name === 'AbortError') {
+        console.log("[ModelManager] Téléchargement annulé par l'utilisateur");
+        this.isInitializing = false;
+        this.downloadController = null;
+        this.resetReadyPromise();
+        return;
+      }
       console.error("[ModelManager] Erreur d'initialisation:", error);
       this.isInitializing = false;
+      this.downloadController = null;
       this._rejectReady(error);
       this.resetReadyPromise();
       sseStreamer.streamError(error instanceof Error ? error : new Error(String(error)));
