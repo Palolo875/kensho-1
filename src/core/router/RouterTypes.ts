@@ -1,8 +1,8 @@
 export type IntentCategory = 'CODE' | 'MATH' | 'DIALOGUE' | 'FACTCHECK' | 'UNKNOWN';
 
-export type ExecutionStrategy = 'SERIAL' | 'PARALLEL';
+export type ExecutionStrategy = 'SERIAL' | 'PARALLEL_LIMITED' | 'PARALLEL_FULL';
 
-export type TaskPriority = 'HIGH' | 'LOW';
+export type TaskPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface ClassificationResult {
   intent: IntentCategory;
@@ -16,6 +16,23 @@ export interface Task {
   priority: TaskPriority;
   timeout: number;
   temperature: number;
+  prompt?: string;
+}
+
+export interface TaskResult {
+  agentName: string;
+  modelKey: string;
+  result?: string;
+  error?: any;
+  status: 'success' | 'error' | 'timeout';
+  duration?: number;
+}
+
+export interface StreamChunk {
+  type: 'primary' | 'expert' | 'fusion' | 'status';
+  content?: string;
+  expertResults?: TaskResult[];
+  status?: string;
 }
 
 export interface ExecutionPlan {
