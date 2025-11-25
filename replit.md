@@ -144,6 +144,26 @@ const degradedPlan = await router.createPlan("Calcule la dérivée de x²");
 - `Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC` - Expert code (1.5B, q4f16_1)
 - `Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC` - Expert mathématiques (1.5B, q4f16_1)
 
+### Sprint 15: Production Hardening & Priority 1-3 Completion
+**Date:** Novembre 2025  
+**Statut:** ✅ Complété
+
+Le Sprint 15 a finalisé les trois priorités critiques identifiées lors de l'analyse :
+
+**Priority 1 - Complété ✅**
+- ✅ **Fusioner v2.0** : Implémenté avec 4 stratégies (COMPLEMENTARY, CONFLICT_RESOLUTION, QUALITY_SYNTHESIS, ENRICHMENT)
+- ✅ **ExecutionTraceContext** : Traçage multi-couche complet pour debug 5 niveaux
+- ✅ **Type-safe Errors** : Remplacement de `any` par union types `SystemErrorType`
+
+**Priority 2 - Complété ✅**
+- ✅ **Router Documentation** : Guide complet des stratégies SERIAL/LIMITED/FULL
+- ✅ **Observable Metrics** : Queue stats + ExecutionTrace reporting
+- ✅ **Stress Test** : 100+ concurrent tasks validation
+
+**Priority 3 - Complété ✅**
+- ✅ **Retry Logic** : `processWithRetry()` avec backoff exponentiel (100ms → 300ms → 900ms)
+- ✅ **Documentation Centralisée** : Single source of truth dans docs/KENSHO_SUMMARY.md
+
 ### Sprint 14: TaskExecutor v3.0 - Chef de Chantier Multi-Queue
 **Date:** Novembre 2025  
 **Statut:** ✅ Implémenté et Production-Ready

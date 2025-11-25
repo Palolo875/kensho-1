@@ -363,6 +363,37 @@ export class TaskExecutor {
       parallelFullQueue: { pending: this.queueParallelFull.pending, concurrency: this.queueParallelFull.concurrency }
     };
   }
+
+  /**
+   * Retry avec backoff exponentiel
+   * Stratégie: 3 tentatives max, délai: 100ms, 300ms, 900ms
+   */
+  public async processWithRetry(
+    userPrompt: string,
+    maxRetries = 3,
+    initialBackoffMs = 100
+  ): Promise<string> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[TaskExecutor] Tentative ${attempt}/${maxRetries}`);
+        return await this.process(userPrompt);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        if (attempt < maxRetries) {
+          const backoffMs = initialBackoffMs * Math.pow(3, attempt - 1);
+          console.warn(
+            `[TaskExecutor] Tentative ${attempt} échouée, retry dans ${backoffMs}ms`
+          );
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
+      }
+    }
+
+    throw new Error(`Failed after ${maxRetries} retries: ${lastError?.message}`);
+  }
 }
 
 export const taskExecutor = new TaskExecutor();
