@@ -18,7 +18,13 @@ export function ProjectDashboard() {
 
     const activeProject = projects.find(p => p.id === activeProjectId);
 
-    if (!activeProjectId || !activeProject || activeProject.name === 'Général') {
+    // Afficher le dashboard pour tous les projets SAUF "Général"
+    if (!activeProjectId || !activeProject) {
+        return null;
+    }
+    
+    // Masquer uniquement le projet "Général"
+    if (activeProject.name === 'Général') {
         return null;
     }
 

@@ -939,31 +939,37 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     },
 
     /**
-     * Sprint 7: Charge tous les projets depuis le GraphWorker
+     * Sprint 7: Charge tous les projets depuis le GraphWorker ou localStorage
      */
     loadProjects: async () => {
-        const { mainBus } = get();
-        if (!mainBus) {
-            console.error('[KenshoStore] MessageBus non disponible');
-            return;
-        }
-
         try {
+            // Essayer d'abord le GraphWorker
+            const { mainBus } = get();
             const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
-            if (!graphWorker) {
-                console.warn('[KenshoStore] GraphWorker non disponible');
-                return;
+            
+            if (mainBus && graphWorker) {
+                try {
+                    const projects = await mainBus.request<Project[]>('GraphWorker', {
+                        method: 'getActiveProjects',
+                        args: []
+                    });
+                    console.log(`[KenshoStore] ${projects.length} projet(s) chargé(s) depuis GraphWorker`);
+                    set({ projects });
+                    return;
+                } catch (workerError) {
+                    console.warn('[KenshoStore] GraphWorker indisponible, fallback vers localStorage');
+                }
             }
-
-            const projects = await mainBus.request<Project[]>('GraphWorker', {
-                method: 'getActiveProjects',
-                args: []
-            });
-
-            console.log(`[KenshoStore] ${projects.length} projet(s) chargé(s)`);
+            
+            // Fallback: charger depuis localStorage
+            const stored = localStorage.getItem('kensho_projects');
+            const projects: Project[] = stored ? JSON.parse(stored) : [];
+            
+            console.log(`[KenshoStore] ${projects.length} projet(s) chargé(s) depuis localStorage`);
             set({ projects });
         } catch (error) {
             console.error('[KenshoStore] Erreur lors du chargement des projets:', error);
+            set({ projects: [] });
         }
     },
 
@@ -999,17 +1005,40 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
      * Sprint 7: Crée un nouveau projet
      */
     createProject: async (name: string, goal: string) => {
-        const { mainBus, loadProjects } = get();
-        if (!mainBus) return;
+        const { mainBus, projects, loadProjects } = get();
 
         try {
+            let projectId: string;
             const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
-            if (!graphWorker) return;
-
-            const projectId = await mainBus.request<string>('GraphWorker', {
-                method: 'createProject',
-                args: [name, goal]
-            });
+            
+            if (mainBus && graphWorker) {
+                try {
+                    projectId = await mainBus.request<string>('GraphWorker', {
+                        method: 'createProject',
+                        args: [name, goal]
+                    });
+                    console.log(`[KenshoStore] Projet créé via GraphWorker: ${name} (${projectId})`);
+                } catch (workerError) {
+                    console.warn('[KenshoStore] GraphWorker indisponible, création locale');
+                    projectId = `proj_${Date.now()}`;
+                }
+            } else {
+                projectId = `proj_${Date.now()}`;
+            }
+            
+            // Créer le projet localement
+            const newProject: Project = {
+                id: projectId,
+                name,
+                goal,
+                createdAt: Date.now(),
+                isArchived: false,
+                lastActivityAt: Date.now()
+            };
+            
+            const updatedProjects = [...projects, newProject];
+            localStorage.setItem('kensho_projects', JSON.stringify(updatedProjects));
+            set({ projects: updatedProjects });
 
             console.log(`[KenshoStore] Projet créé: ${name} (${projectId})`);
             await loadProjects();
