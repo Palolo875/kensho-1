@@ -110,6 +110,7 @@ self.postMessage({
 
 runAgent({
     name: 'MainLLMAgent',
+    config: { useNoOpStorage: true },
     init: (runtime: AgentRuntime) => {
         console.log('[MainLLMAgent] 🚀 Initialisation...');
         runtime.log('info', `LLM Agent initialisé. Chargement du modèle ${MODEL_ID}...`);

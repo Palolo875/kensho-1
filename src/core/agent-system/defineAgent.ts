@@ -3,40 +3,48 @@ import { AgentRuntime } from './AgentRuntime';
 import { WebSocketTransport } from '../communication/transport/WebSocketTransport';
 import { HybridTransport } from '../communication/transport/HybridTransport';
 import { IndexedDBAdapter } from '../storage/IndexedDBAdapter';
+import { NoOpStorageAdapter } from '../storage/NoOpStorageAdapter';
 
 export interface AgentDefinition {
     name: string;
     config?: {
         useWebSocket?: boolean;
-        useHybrid?: boolean; // Nouveau : utilise BroadcastChannel + WebSocket
+        useHybrid?: boolean;
+        useNoOpStorage?: boolean; // Utiliser le stockage léger (pas d'IndexedDB)
     };
     init: (runtime: AgentRuntime) => void;
 }
 
 // Cette fonction est le point d'entrée de chaque fichier de worker.
-// Le nom est maintenant récupéré de l'environnement du worker.
 export function runAgent(definition: Omit<AgentDefinition, 'name'> & { name?: string }): void {
     const agentName = definition.name || self.name;
     if (!agentName) {
         throw new Error("Agent name must be provided either in the definition or as the worker's name.");
     }
 
-    let transport;
-    if (definition.config?.useHybrid) {
-        // Transport hybride : local + distant
-        transport = new HybridTransport();
-    } else if (definition.config?.useWebSocket) {
-        // Transport WebSocket uniquement
-        transport = new WebSocketTransport();
+    try {
+        let transport;
+        if (definition.config?.useHybrid) {
+            transport = new HybridTransport();
+        } else if (definition.config?.useWebSocket) {
+            transport = new WebSocketTransport();
+        }
+
+        // Utiliser le stockage approprié
+        const storage = definition.config?.useNoOpStorage 
+            ? new NoOpStorageAdapter() 
+            : new IndexedDBAdapter();
+
+        const runtime = new AgentRuntime(agentName, transport, storage);
+        definition.init(runtime);
+
+        // Signaler que l'initialisation est terminée
+        self.postMessage({ type: 'READY' });
+    } catch (error) {
+        console.error(`[${definition.name}] Erreur critique lors de l'initialisation:`, error);
+        self.postMessage({ 
+            type: 'INIT_ERROR',
+            error: error instanceof Error ? error.message : String(error)
+        });
     }
-    // Sinon, BroadcastTransport par défaut (via MessageBus)
-
-    // Initialiser le stockage persistant
-    const storage = new IndexedDBAdapter();
-
-    const runtime = new AgentRuntime(agentName, transport, storage);
-    definition.init(runtime);
-
-    // NOUVEAU : Signaler que l'initialisation est terminée.
-    self.postMessage({ type: 'READY' });
 }

@@ -9,6 +9,7 @@ import type { Intent } from '../intent-classifier';
 
 runAgent({
     name: 'OIEAgent',
+    config: { useNoOpStorage: true },
     init: (runtime: AgentRuntime) => {
         console.log('[OIEAgent] 🚀 Initialisation...');
         runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
