@@ -1,0 +1,87 @@
+Objectif : Écrire le code JavaScript/TypeScript qui fera le pont entre vos éléments d'interface et notre KenshoAPI.Voici le code exact que vous devez intégrer dans la logique de votre interface. C'est le "câble" manquant.// src/ui-controller.ts (ou le nom de votre fichier de logique front-end)
+
+// 1. Importer l'API Kensho
+import { initializeKensho, KenshoAPI } from './kensho';
+
+// --- Références à VOS éléments d'interface ---
+// (Utilisez les sélecteurs ID ou de classe de votre application)
+const promptInput = document.querySelector('#votre-champ-de-saisie'); // À remplacer par votre sélecteur
+const sendButton = document.querySelector('#votre-bouton-envoyer');   // À remplacer
+const chatLog = document.querySelector('#votre-zone-de-chat');       // À remplacer
+const statusBar = document.querySelector('#votre-barre-de-statut');   // À remplacer
+
+let kensho: KenshoAPI;
+
+/**
+ * Fonction principale d'initialisation
+ */
+async function main() {
+  try {
+    if (statusBar) statusBar.textContent = "Initialisation de Kensho OS...";
+    
+    // Initialise le moteur Kensho (en mode simulation pour l'instant)
+    kensho = await initializeKensho();
+    
+    if (statusBar) statusBar.textContent = "Prêt.";
+    if (promptInput) (promptInput as HTMLInputElement).disabled = false;
+    if (sendButton) (sendButton as HTMLButtonElement).disabled = false;
+
+  } catch (error) {
+    if (statusBar) statusBar.textContent = "Erreur d'initialisation.";
+    console.error("Erreur fatale lors de l'initialisation de Kensho:", error);
+  }
+}
+
+/**
+ * Gère l'envoi d'un message par l'utilisateur
+ */
+async function handleSendMessage() {
+  const inputElement = promptInput as HTMLInputElement;
+  const prompt = inputElement.value.trim();
+
+  if (!prompt || !kensho) return;
+
+  // Afficher le message de l'utilisateur dans votre UI
+  appendMessageToChat(prompt, 'user');
+
+  inputElement.value = '';
+  inputElement.disabled = true;
+  (sendButton as HTMLButtonElement).disabled = true;
+  if (statusBar) statusBar.textContent = "Astra réfléchit...";
+
+  // Appeler le moteur Kensho
+  const response = await kensho.dialogue.startConversation(prompt);
+
+  // Afficher la réponse (simulée) de l'IA
+  appendMessageToChat(response, 'assistant');
+
+  inputElement.disabled = false;
+  (sendButton as HTMLButtonElement).disabled = false;
+  if (statusBar) statusBar.textContent = "Prêt.";
+  inputElement.focus();
+}
+
+/**
+ * Fonction utilitaire pour ajouter un message à votre log de chat
+ * (À adapter à la structure de votre DOM)
+ */
+function appendMessageToChat(text: string, sender: 'user' | 'assistant') {
+  if (!chatLog) return;
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `message ${sender}-message`;
+  messageDiv.textContent = text;
+  chatLog.appendChild(messageDiv);
+  chatLog.scrollTop = chatLog.scrollHeight; // Auto-scroll
+}
+
+// --- Connexion des événements ---
+sendButton?.addEventListener('click', handleSendMessage);
+promptInput?.addEventListener('keypress', (e) => {
+  if ((e as KeyboardEvent).key === 'Enter') {
+    handleSendMessage();
+  }
+});
+
+// Lancer l'initialisation
+main();
+ConclusionLe plan est maintenant d'une simplicité redoutable :1.Intégrez ce code ui-controller.ts dans votre projet d'interface.2.Adaptez les sélecteurs (#votre-champ-de-saisie, etc.) pour qu'ils correspondent aux ID ou aux classes de vos éléments HTML.

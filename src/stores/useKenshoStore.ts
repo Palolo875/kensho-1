@@ -886,7 +886,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 name,
                 goal,
                 createdAt: Date.now(),
-                isArchived: false,
+                isArchived: 0,
                 lastActivityAt: Date.now()
             };
             
