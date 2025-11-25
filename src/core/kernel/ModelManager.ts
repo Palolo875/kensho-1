@@ -2,6 +2,7 @@ import { MLCEngine, CreateMLCEngine, InitProgressReport } from "@mlc-ai/web-llm"
 import { MODEL_CATALOG, ModelMeta } from "./ModelCatalog";
 import { memoryManager } from "./MemoryManager";
 import { sseStreamer } from "../streaming/SSEStreamer";
+import { WEBLLM_CONFIG } from "../../config/webllm.config";
 
 console.log("📦 Initialisation du ModelManager v3.1 (Memory-Aware + Streaming)...");
 
@@ -56,7 +57,9 @@ export class ModelManager {
 
       console.log(`[ModelManager] Pré-chargement du modèle par défaut : ${modelMeta.model_id}`);
       
-      const config: any = {};
+      const config: any = {
+        appConfig: WEBLLM_CONFIG
+      };
       if (progressCallback) {
         config.initProgressCallback = progressCallback;
       }
@@ -126,7 +129,9 @@ export class ModelManager {
     console.log(`[ModelManager] Changement vers ${modelMeta.model_id}`);
     sseStreamer.streamInfo(`Loading model ${modelKey}...`);
     
-    const config: any = {};
+    const config: any = {
+      appConfig: WEBLLM_CONFIG
+    };
     if (progressCallback) {
       config.initProgressCallback = progressCallback;
     }
