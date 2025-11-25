@@ -11,12 +11,13 @@ import { ModelLoadingView } from "@/components/ModelLoadingView";
 import { WorkerStatusIndicator } from "@/components/WorkerStatusIndicator";
 import { PlanView } from "@/components/PlanView";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
+import { KenshoChat } from "@/components/KenshoChat";
 import { useObservatory } from "@/contexts/ObservatoryContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, MessageSquare } from "lucide-react";
 import { Toaster } from "sonner";
 
 
@@ -26,6 +27,7 @@ const Index = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [showObservatory, setShowObservatory] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showGemmaChat, setShowGemmaChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { workers, leader, epoch, logs, journal, isEnabled, startObservatory, killWorker } = useObservatory();
@@ -65,17 +67,29 @@ const Index = () => {
       {/* Model Loading Overlay */}
       <ModelLoadingView />
 
-      {/* Top bar with new conversation button and sidebar trigger */}
+      {/* Top bar with new conversation button, Gemma toggle, and sidebar trigger */}
       <div className="fixed top-4 left-4 right-4 z-50 flex justify-between items-center pointer-events-none">
-        <Button
-          onClick={handleNewConversation}
-          variant="ghost"
-          size="icon"
-          disabled={!modelReady}
-          className="pointer-events-auto hover:bg-accent/80 backdrop-blur-sm disabled:opacity-50"
-        >
-          <Plus className="h-6 w-6" />
-        </Button>
+        <div className="flex gap-2 pointer-events-auto">
+          <Button
+            onClick={handleNewConversation}
+            variant="ghost"
+            size="icon"
+            disabled={!modelReady}
+            className="hover:bg-accent/80 backdrop-blur-sm disabled:opacity-50"
+            title="New Conversation"
+          >
+            <Plus className="h-6 w-6" />
+          </Button>
+          <Button
+            onClick={() => setShowGemmaChat(!showGemmaChat)}
+            variant={showGemmaChat ? "default" : "outline"}
+            size="icon"
+            className="hover:bg-accent/80 backdrop-blur-sm"
+            title="Chat with Gemma 3 270m"
+          >
+            <MessageSquare className="h-6 w-6" />
+          </Button>
+        </div>
         <div className="pointer-events-auto">
           <SidebarTrigger onClick={() => setSidebarOpen(!sidebarOpen)} />
         </div>
@@ -90,51 +104,64 @@ const Index = () => {
         onNewConversation={handleNewConversation}
       />
 
-      <main className={cn(
-        "transition-all duration-300 min-h-screen",
-        "pb-32 sm:pb-36 md:pb-40",
-        !isMobile && "ml-16 lg:ml-64",
-        "pt-16 md:pt-4"
-      )}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6">
-          {/* Sprint 7: Project Dashboard */}
-          <ProjectDashboard />
+      {showGemmaChat ? (
+        // Gemma Chat Interface
+        <main className={cn(
+          "fixed inset-0 z-40",
+          !isMobile && "ml-16 lg:ml-64"
+        )}>
+          <KenshoChat />
+        </main>
+      ) : (
+        // Standard Kensho Interface
+        <>
+          <main className={cn(
+            "transition-all duration-300 min-h-screen",
+            "pb-32 sm:pb-36 md:pb-40",
+            !isMobile && "ml-16 lg:ml-64",
+            "pt-16 md:pt-4"
+          )}>
+            <div className="max-w-4xl mx-auto px-4 sm:px-6">
+              {/* Sprint 7: Project Dashboard */}
+              <ProjectDashboard />
 
-          {messages.length === 0 ? (
-            <TimeBasedGreeting />
-          ) : (
-            <div className="space-y-1">
-              {messages.map((msg) =>
-                msg.author === 'user' ? (
-                  <MessageBubble
-                    key={msg.id}
-                    content={msg.text}
-                    isUser={true}
-                  />
-                ) : (
-                  <div key={msg.id}>
-                    {/* Afficher le plan de réflexion s'il existe */}
-                    {msg.plan && <PlanView plan={msg.plan} />}
-                    <AIResponse
-                      content={msg.text}
-                      thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
-                      statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
-                      ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
-                      thoughtProcess={msg.thoughtProcess}
-                      factCheckingClaims={msg.factCheckingClaims}
-                      semanticSearchResults={msg.semanticSearchResults}
-                    />
-                  </div>
-                )
+              {messages.length === 0 ? (
+                <TimeBasedGreeting />
+              ) : (
+                <div className="space-y-1">
+                  {messages.map((msg) =>
+                    msg.author === 'user' ? (
+                      <MessageBubble
+                        key={msg.id}
+                        content={msg.text}
+                        isUser={true}
+                      />
+                    ) : (
+                      <div key={msg.id}>
+                        {/* Afficher le plan de réflexion s'il existe */}
+                        {msg.plan && <PlanView plan={msg.plan} />}
+                        <AIResponse
+                          content={msg.text}
+                          thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
+                          statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
+                          ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
+                          thoughtProcess={msg.thoughtProcess}
+                          factCheckingClaims={msg.factCheckingClaims}
+                          semanticSearchResults={msg.semanticSearchResults}
+                        />
+                      </div>
+                    )
+                  )}
+                  {/* Élément invisible pour auto-scroll */}
+                  <div ref={messagesEndRef} />
+                </div>
               )}
-              {/* Élément invisible pour auto-scroll */}
-              <div ref={messagesEndRef} />
             </div>
-          )}
-        </div>
-      </main>
+          </main>
 
-      <ChatInput showSuggestions={messages.length === 0} />
+          <ChatInput showSuggestions={messages.length === 0} />
+        </>
+      )}
 
       {/* Indicateur de statut des workers (en développement) */}
       {import.meta.env.DEV && <WorkerStatusIndicator />}
