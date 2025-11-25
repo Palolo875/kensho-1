@@ -6,10 +6,10 @@ export type ModelMeta = {
 };
 
 export const MODEL_CATALOG: Record<string, ModelMeta> = {
-  "gemma-3-270m": {
-    model_id: "gemma-3-270m-it-MLC",
-    size: "270M",
-    description: "Modèle Gemma 3 ultra-compact et haute-performance pour WebGPU.",
+  "gemma-2-2b": {
+    model_id: "Gemma-2-2b-it-q4f16_1-MLC",
+    size: "2B",
+    description: "Modèle Gemma 2 ultra-compact et haute-performance pour WebGPU (modèle officiel WebLLM stable).",
     quantization: "q4f16_1"
   },
   "qwen2-e5-embed": {
