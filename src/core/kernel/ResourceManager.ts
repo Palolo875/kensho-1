@@ -14,6 +14,8 @@ class ResourceManager {
   
   private eventHandlers = new Map<ResourceEvent, Set<EventHandler>>();
   private listeners: Array<{ target: any; event: string; handler: any }> = [];
+  private windowOnlineHandler: (() => void) | null = null;
+  private windowOfflineHandler: (() => void) | null = null;
 
   constructor() {
     this.currentStatus = {
@@ -73,13 +75,16 @@ class ResourceManager {
       });
     }
 
-    window.addEventListener('online', () => {
+    this.windowOnlineHandler = () => {
       this.currentStatus.network.isOnline = true;
-    });
-    window.addEventListener('offline', () => {
+    };
+    this.windowOfflineHandler = () => {
       this.currentStatus.network.isOnline = false;
       this.emit('network-offline');
-    });
+    };
+    
+    window.addEventListener('online', this.windowOnlineHandler);
+    window.addEventListener('offline', this.windowOfflineHandler);
   }
 
   private updateMemoryTrend(current: number): 'stable' | 'rising' | 'falling' {
@@ -165,6 +170,16 @@ class ResourceManager {
       target.removeEventListener(event, handler);
     });
     this.listeners = [];
+    
+    if (this.windowOnlineHandler) {
+      window.removeEventListener('online', this.windowOnlineHandler);
+      this.windowOnlineHandler = null;
+    }
+    if (this.windowOfflineHandler) {
+      window.removeEventListener('offline', this.windowOfflineHandler);
+      this.windowOfflineHandler = null;
+    }
+    
     this.eventHandlers.clear();
   }
 }

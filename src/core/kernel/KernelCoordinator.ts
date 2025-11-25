@@ -62,7 +62,7 @@ class KernelCoordinator {
     }
   }
 
-  public async canLoadModel(modelKey: string): Promise<ModelLoadDecision> {
+  public async canLoadModel(modelKey: string, allowOfflineSwitch = true): Promise<ModelLoadDecision> {
     const status = await resourceManager.getStatus();
     const modelMeta = MODEL_CATALOG[modelKey];
 
@@ -71,6 +71,13 @@ class KernelCoordinator {
         canLoad: false, 
         reason: `Modèle inconnu: ${modelKey}` 
       };
+    }
+
+    const currentModel = modelManager.getCurrentModel();
+    const isAlreadyLoaded = currentModel === modelKey;
+    
+    if (isAlreadyLoaded) {
+      return { canLoad: true };
     }
 
     if (status.memory.usageRatio > 0.8) {
@@ -88,6 +95,10 @@ class KernelCoordinator {
     }
 
     if (!status.network.isOnline) {
+      if (allowOfflineSwitch) {
+        console.log('[KernelCoordinator] Mode hors ligne - Tentative de switch vers modèle possiblement en cache');
+        return { canLoad: true };
+      }
       return { 
         canLoad: false, 
         reason: 'Aucune connexion réseau' 

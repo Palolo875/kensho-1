@@ -5,14 +5,23 @@ console.log("📦 Initialisation du ModelManager v2.0...");
 
 export class ModelManager {
   private engine: MLCEngine | null = null;
-  public readonly ready: Promise<void>;
+  private _ready!: Promise<void>;
   private _resolveReady!: () => void;
   private _rejectReady!: (error: any) => void;
   private currentModelKey: string | null = null;
   private isInitialized = false;
+  private isInitializing = false;
 
   constructor() {
-    this.ready = new Promise<void>((resolve, reject) => {
+    this.resetReadyPromise();
+  }
+
+  public get ready(): Promise<void> {
+    return this._ready;
+  }
+
+  private resetReadyPromise() {
+    this._ready = new Promise<void>((resolve, reject) => {
       this._resolveReady = resolve;
       this._rejectReady = reject;
     });
@@ -26,6 +35,14 @@ export class ModelManager {
       console.warn("[ModelManager] Init déjà appelé, ignoré.");
       return;
     }
+
+    if (this.isInitializing) {
+      console.warn("[ModelManager] Init en cours, attente...");
+      await this.ready;
+      return;
+    }
+
+    this.isInitializing = true;
 
     try {
       console.log("[ModelManager] Initialisation du moteur WebLLM...");
@@ -46,12 +63,15 @@ export class ModelManager {
       
       this.currentModelKey = defaultModelKey;
       this.isInitialized = true;
+      this.isInitializing = false;
       this._resolveReady();
       console.log("✅ [ModelManager] Prêt. Le noyau de dialogue est opérationnel.");
 
     } catch (error) {
       console.error("[ModelManager] Échec critique de l'initialisation.", error);
+      this.isInitializing = false;
       this._rejectReady(error);
+      this.resetReadyPromise();
       throw error;
     }
   }
