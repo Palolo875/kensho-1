@@ -39,6 +39,7 @@ export interface Message {
     author: 'user' | 'kensho';
     timestamp: number;
     plan?: any; // Plan généré par l'OIE pour affichage dans l'UI
+    thinking?: string; // Résumé du processus de pensée/réflexion (Mode Simulation)
     thoughtProcess?: ThoughtStep[]; // Étapes de pensée pour le débat interne (Sprint 6)
     factCheckingClaims?: any[]; // Résultats de vérification (Priority 6)
     semanticSearchResults?: any; // Résultats de recherche sémantique (Priority 6)
@@ -580,11 +581,28 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                         saveMessagesToLocalStorage(updatedMessages);
                         return { messages: updatedMessages };
                     });
+                } else if (event.type === 'thinking_step') {
+                    // Ignorer les étapes de pensée pour l'UI (elles sont ajoutées au complete)
+                    // mais on pourrait les afficher en temps réel ici si voulu
+                    console.log(`[KenshoStore] 🧠 Étape: ${event.data.label}`);
                 } else if (event.type === 'complete') {
-                    // Stream terminé
+                    // Stream terminé - ajouter la pensée et les étapes
                     console.log('[KenshoStore] ✅ Stream terminé (mode simulation)');
-                    set({
-                        isKenshoWriting: false
+                    set(state => {
+                        const updatedMessages = state.messages.map(msg =>
+                            msg.id === kenshoResponsePlaceholder.id
+                                ? {
+                                    ...msg,
+                                    thinking: event.data.thinking,
+                                    thoughtProcess: event.data.thoughtProcess
+                                  }
+                                : msg
+                        );
+                        saveMessagesToLocalStorage(updatedMessages);
+                        return {
+                            messages: updatedMessages,
+                            isKenshoWriting: false
+                        };
                     });
                 }
             }

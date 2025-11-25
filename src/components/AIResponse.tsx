@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { ThoughtStream } from "./chat/ThoughtStream";
+import { MessageThinking } from "./chat/MessageThinking";
 import { FactCheckingResults } from "./FactCheckingResults";
 import type { ThoughtStep } from "@/agents/oie/types";
 
@@ -32,8 +33,13 @@ const AIResponse = ({
   return (
     <div className="px-4 md:px-8 py-6 group">
       <div className="max-w-4xl">
+        {/* Message Thinking (Mode Simulation) */}
+        {thinking && thinking !== "Kensho réfléchit..." && (
+          <MessageThinking thinking={thinking} thoughtProcess={thoughtProcess} />
+        )}
+
         {/* ThoughtStream for Debate Process (Sprint 6) */}
-        {thoughtProcess && thoughtProcess.length > 0 && (
+        {thoughtProcess && thoughtProcess.length > 0 && !thinking && (
           <div className="mb-4">
             <ThoughtStream />
           </div>

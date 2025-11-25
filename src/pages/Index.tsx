@@ -117,7 +117,7 @@ const Index = () => {
                     {msg.plan && <PlanView plan={msg.plan} />}
                     <AIResponse
                       content={msg.text}
-                      thinking={isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : ""}
+                      thinking={msg.thinking || (isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : "")}
                       statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
                       ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
                       thoughtProcess={msg.thoughtProcess}
