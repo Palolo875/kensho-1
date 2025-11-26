@@ -1,8 +1,8 @@
 import { KenshoMessage } from './types';
+import { createLogger } from '../../lib/logger';
 
-/**
- * Sanitize une chaîne pour éviter les XSS
- */
+const log = createLogger('Validation');
+
 export function sanitizeString(input: unknown): string {
     if (typeof input !== 'string') {
         return String(input || '').substring(0, 10000);
@@ -21,9 +21,6 @@ export function sanitizeString(input: unknown): string {
         });
 }
 
-/**
- * Valide et nettoie un payload de message
- */
 export function validatePayload(payload: unknown): Record<string, unknown> {
     if (!payload || typeof payload !== 'object') {
         return {};
@@ -51,25 +48,22 @@ export function validatePayload(payload: unknown): Record<string, unknown> {
     return cleaned;
 }
 
-/**
- * Validateur de messages Kensho
- */
 export const payloadValidator = {
     validate: (message: KenshoMessage): boolean => {
         if (!message?.messageId || !message?.type) {
-            console.warn('[Validation] Message invalide: ID ou type manquant');
+            log.warn('Message invalide: ID ou type manquant');
             return false;
         }
 
         if (message.messageId.length > 1000) {
-            console.warn('[Validation] messageId trop long');
+            log.warn('messageId trop long');
             return false;
         }
 
         if (message.payload && typeof message.payload === 'object') {
             const payloadSize = JSON.stringify(message.payload).length;
             if (payloadSize > 10_000_000) {
-                console.warn('[Validation] Payload trop volumineux:', payloadSize);
+                log.warn('Payload trop volumineux:', { size: payloadSize });
                 return false;
             }
         }

@@ -47,7 +47,7 @@ runAgent({
             const match = text.match(rule.pattern);
             if (match) {
               const content = rule.extract.replace(/\$(\d+)/g, (_, n) => match[parseInt(n)]);
-              console.log(`[IntentClassifier] Intent détecté par Regex: ${intentType}`);
+              log.info(`Intent détecté par Regex: ${intentType}`);
               return {
                 type: intentType as 'MEMORIZE' | 'FORGET',
                 content: content.trim(),
@@ -58,7 +58,7 @@ runAgent({
           }
         }
 
-        console.log(`[IntentClassifier] Aucune intention spécifique détectée. Type: CHAT.`);
+        log.info('Aucune intention spécifique détectée. Type: CHAT.');
         return { type: 'CHAT', confidence: 0.5 };
       }
     );

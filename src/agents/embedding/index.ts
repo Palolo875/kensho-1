@@ -30,19 +30,18 @@ runAgent({
         isLoadingModel = true;
         const dm = DownloadManager.getInstance();
         dm.register(DOWNLOAD_ID, 'embedding', 'Modèle d\'embedding', (progress) => {
-          console.log(`[EmbeddingAgent] 📥 ${progress.name}: ${Math.round(progress.progress * 100)}%`);
+          log.debug(`${progress.name}: ${Math.round(progress.progress * 100)}%`);
         });
 
         runtime.log('info', `[EmbeddingAgent] Chargement du modèle d'embedding: ${EMBEDDING_MODEL}...`);
-        console.log(`[EmbeddingAgent] 🚀 Chargement du modèle: ${EMBEDDING_MODEL}`);
+        log.info(`Chargement du modèle: ${EMBEDDING_MODEL}`);
         try {
           extractor = await pipeline('feature-extraction', EMBEDDING_MODEL, {
             progress_callback: (progress: any) => {
-              // Vérifier si en pause
               if (dm.isPaused(DOWNLOAD_ID)) {
                 dm.waitIfPaused(DOWNLOAD_ID);
               }
-              console.log(`[EmbeddingAgent] Chargement: ${progress.file} (${Math.round(progress.progress)}%)`);
+              log.debug(`Chargement: ${progress.file} (${Math.round(progress.progress)}%)`);
               dm.updateProgress(DOWNLOAD_ID, {
                 id: DOWNLOAD_ID,
                 type: 'embedding',
@@ -53,13 +52,13 @@ runAgent({
             }
           });
           runtime.log('info', '[EmbeddingAgent] Modèle d\'embedding prêt.');
-          console.log('[EmbeddingAgent] ✅ Modèle d\'embedding prêt.');
+          log.info('Modèle d\'embedding prêt.');
           dm.unregister(DOWNLOAD_ID);
         } catch (error) {
           isLoadingModel = false;
           dm.unregister(DOWNLOAD_ID);
           const err = error instanceof Error ? error : new Error(String(error));
-          console.error('[EmbeddingAgent] ❌ Erreur modèle:', err.message);
+          log.error('Erreur modèle:', err);
           throw err;
         }
       }
@@ -78,7 +77,7 @@ runAgent({
 
       try {
         const texts = itemsToProcess.map(item => item.text);
-        console.log(`[EmbeddingAgent] Traitement d'un batch de ${texts.length} textes.`);
+        log.info(`Traitement d'un batch de ${texts.length} textes.`);
         const extractorInstance = await getExtractor();
         
         const embeddings = await extractorInstance(texts, { pooling: 'mean', normalize: true });
