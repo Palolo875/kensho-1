@@ -14,9 +14,9 @@ runAgent({
     name: 'OIEAgent',
     config: { useNoOpStorage: true },
     init: (runtime: AgentRuntime) => {
-        console.log('[OIEAgent] 🚀 Initialisation...');
+        log.info('Initialisation...');
         runtime.log('info', '[OIEAgent] Initialisé et prêt à orchestrer avec LLMPlanner.');
-        console.log('[OIEAgent] ✅ Prêt à recevoir des requêtes');
+        log.info('Prêt à recevoir des requêtes');
 
         const planner = new LLMPlanner(runtime);
         const graphWorker = new GraphWorker();
@@ -25,15 +25,15 @@ runAgent({
 
         // Initialisation avec barrier pour éviter les race conditions
         graphWorker.ensureReady().then(() => {
-            console.log('[OIEAgent] GraphWorker initialisé');
+            log.info('GraphWorker initialisé');
             const sqliteManager = graphWorker.getSQLiteManager();
             const hnswManager = graphWorker.getHNSWManager();
             memoryRetriever = new MemoryRetriever(runtime, sqliteManager, hnswManager);
-            console.log('[OIEAgent] MemoryRetriever initialisé');
+            log.info('MemoryRetriever initialisé');
             isReady = true;
-            console.log('[OIEAgent] ✅ Système prêt à traiter les requêtes');
+            log.info('Système prêt à traiter les requêtes');
         }).catch(err => {
-            console.error('[OIEAgent] Échec de l\'initialisation du GraphWorker:', err);
+            log.error('Échec de l\'initialisation du GraphWorker:', err as Error);
             isReady = false;
         });
 
@@ -42,11 +42,11 @@ runAgent({
             'executeQuery',
             async (payload: any, stream: AgentStreamEmitter) => {
                 try {
-                    console.log('[OIEAgent] 📨 Requête reçue:', payload);
+                    log.debug('Requête reçue:', { payload });
                     
                     // Barrier: Attendre que le système soit prêt avant de traiter
                     if (!isReady) {
-                        console.warn('[OIEAgent] ⏳ Système en cours d\'initialisation, requête mise en attente');
+                        log.warn('Système en cours d\'initialisation, requête mise en attente');
                         let retries = 0;
                         while (!isReady && retries < 100) {
                             await new Promise(resolve => setTimeout(resolve, 50));
@@ -54,7 +54,7 @@ runAgent({
                         }
                         if (!isReady) {
                             const error = new Error('OIEAgent not ready after initialization timeout');
-                            console.error('[OIEAgent] ❌', error.message);
+                            log.error('Timeout d\'initialisation', error);
                             stream.error(error);
                             return;
                         }
@@ -63,7 +63,7 @@ runAgent({
                     // Validation du payload
                     if (!payload || typeof payload.query !== 'string') {
                         const error = new Error('Invalid payload: query must be a non-empty string');
-                        console.error('[OIEAgent] ❌ Payload invalide:', payload);
+                        log.error('Payload invalide:', { payload });
                         runtime.log('error', error.message);
                         stream.error(error);
                         return;
@@ -74,7 +74,7 @@ runAgent({
                     // Rejeter les queries vides ou trop courtes
                     if (query.trim().length === 0) {
                         const error = new Error('Query cannot be empty');
-                        console.error('[OIEAgent] ❌ Query vide');
+                        log.error('Query vide', error);
                         runtime.log('error', error.message);
                         stream.error(error);
                         return;
@@ -82,23 +82,23 @@ runAgent({
 
                     if (query.trim().length < 2) {
                         const error = new Error('Query is too short (minimum 2 characters)');
-                        console.error('[OIEAgent] ❌ Query trop courte');
+                        log.error('Query trop courte', error);
                         runtime.log('error', error.message);
                         stream.error(error);
                         return;
                     }
 
-                    console.log('[OIEAgent] 🎯 Query valide:', query);
+                    log.info(`Query valide: ${query}`);
                     runtime.log('info', `Nouvelle requête reçue: "${query}"`);
 
-                    console.log('[OIEAgent] 🔍 Classification de l\'intention...');
+                    log.info('Classification de l\'intention...');
                     const intent = await runtime.callAgent<Intent>(
                         'IntentClassifierAgent', 'classify', [{ text: query }]
                     );
-                    console.log('[OIEAgent] Intent détecté:', intent);
+                    log.info(`Intent détecté: ${intent.type}`);
 
                     if (intent.type === 'MEMORIZE') {
-                        console.log('[OIEAgent] 💾 Intention MEMORIZE détectée');
+                        log.info('Intention MEMORIZE détectée');
                         try {
                             await graphWorker.ensureReady();
                             const embedding = await runtime.callAgent<number[]>(
@@ -122,7 +122,7 @@ runAgent({
                             return;
                         } catch (error) {
                             const err = error instanceof Error ? error : new Error(String(error));
-                            console.error('[OIEAgent] Erreur lors de la mémorisation:', err.message);
+                            log.error('Erreur lors de la mémorisation:', err);
                             stream.chunk({ type: 'text', data: "Désolé, je n'ai pas pu enregistrer cette information." });
                             stream.end();
                             return;
@@ -130,7 +130,7 @@ runAgent({
                     }
 
                     if (intent.type === 'FORGET') {
-                        console.log('[OIEAgent] 🗑️ Intention FORGET détectée');
+                        log.info('Intention FORGET détectée');
                         try {
                             await graphWorker.ensureReady();
                             const deletedCount = await graphWorker.deleteNodesByTopic(intent.content);
@@ -142,7 +142,7 @@ runAgent({
                             return;
                         } catch (error) {
                             const err = error instanceof Error ? error : new Error(String(error));
-                            console.error('[OIEAgent] Erreur lors de l\'oubli:', err.message);
+                            log.error('Erreur lors de l\'oubli:', err);
                             stream.chunk({ type: 'text', data: "Désolé, je n'ai pas pu oublier cette information." });
                             stream.end();
                             return;
@@ -150,15 +150,15 @@ runAgent({
                     }
 
                     if (memoryRetriever) {
-                        console.log('[OIEAgent] 🧠 Récupération des souvenirs pertinents...');
+                        log.info('Récupération des souvenirs pertinents...');
                         const memories = await memoryRetriever.retrieve(query);
-                        console.log(`[OIEAgent] ${memories.length} souvenirs récupérés`);
+                        log.debug(`${memories.length} souvenirs récupérés`);
                         if (memories.length > 0) {
-                            console.log('[OIEAgent] Souvenirs:', memories.map(m => m.content));
+                            log.debug('Souvenirs:', { count: memories.length });
                         }
                     }
 
-                    console.log('[OIEAgent] 🧠 Début de la planification...');
+                    log.info('Début de la planification...');
                     runtime.log('info', 'Planification de la tâche avec LLMPlanner...');
                     
                     const plannerContext = {
@@ -173,12 +173,12 @@ runAgent({
                     
                     const plan = await planner.generatePlan(query, plannerContext);
                     
-                    console.log('[OIEAgent] 📋 Plan généré:', plan);
+                    log.info(`Plan généré`, { steps: plan.steps.length });
                     runtime.log('info', `Plan généré: "${plan.thought}"`);
                     runtime.log('info', `Plan contient ${plan.steps.length} étape(s)`);
 
                     stream.chunk({ type: 'plan', data: plan });
-                    console.log('[OIEAgent] 📤 Plan envoyé à l\'UI');
+                    log.info('Plan envoyé à l\'UI');
                     
                     if (plan.type === 'DebatePlan' && plan.steps) {
                         const thoughtSteps = plan.steps.map(step => ({
@@ -187,10 +187,10 @@ runAgent({
                             status: 'pending' as const
                         }));
                         stream.chunk({ type: 'thought_process_start', data: { steps: thoughtSteps } });
-                        console.log('[OIEAgent] 📤 Structure du processus de pensée envoyée à l\'UI');
+                        log.info('Structure du processus de pensée envoyée à l\'UI');
                     }
 
-                    console.log('[OIEAgent] ⚙️ Début de l\'exécution du plan...');
+                    log.info('Début de l\'exécution du plan...');
                     runtime.log('info', 'Exécution du plan avec TaskExecutor...');
                     
                     const executionContext = {
@@ -205,10 +205,10 @@ runAgent({
                     const executor = new TaskExecutor(runtime, executionContext);
                     await executor.execute(plan, stream);
                     
-                    console.log('[OIEAgent] ✅ Exécution terminée');
+                    log.info('Exécution terminée');
                 } catch (error) {
                     const err = error instanceof Error ? error : new Error('Erreur inconnue');
-                    console.error('[OIEAgent] ❌ Erreur durant l\'orchestration:', err);
+                    log.error('Erreur durant l\'orchestration:', err);
                     runtime.log('error', `Erreur durant l'orchestration: ${err.message}`);
                     stream.error(err);
                 }

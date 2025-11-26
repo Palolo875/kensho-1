@@ -1,6 +1,9 @@
 import initSqlJs, { Database } from 'sql.js';
 import { IMemoryTransaction } from './types';
 import { MIGRATIONS, getCurrentVersion, setVersion } from './migrations';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('SQLiteManager');
 
 const SQL_WASM_URL = '/sql-wasm.wasm';
 const BACKUP_DB_NAME = 'KenshoBackups';
@@ -26,7 +29,7 @@ export class SQLiteManager {
     
     this.checkpointInterval = window.setInterval(() => {
       this.checkpoint().catch(err => {
-        console.error('[SQLiteManager] Échec du checkpoint automatique:', err);
+        log.error('Échec du checkpoint automatique:', err as Error);
       });
     }, 30000);
   }
@@ -35,25 +38,25 @@ export class SQLiteManager {
     if (this.isInitialized) return;
 
     try {
-      console.log('[SQLiteManager] Initialisation...');
+      log.info('Initialisation...');
       const SQL = await initSqlJs({ locateFile: () => SQL_WASM_URL });
       const storedDb = await this.loadFromIndexedDB();
 
       if (storedDb) {
-        console.log('[SQLiteManager] Chargement de la base de données existante...');
+        log.info('Chargement de la base de données existante...');
         this.db = new SQL.Database(storedDb);
-        console.log('[SQLiteManager] Base de données chargée depuis IndexedDB.');
+        log.info('Base de données chargée depuis IndexedDB');
       } else {
-        console.log('[SQLiteManager] Création d\'une nouvelle base de données...');
+        log.info('Création d\'une nouvelle base de données...');
         this.db = new SQL.Database();
       }
 
       await this.runMigrations();
 
       this.isInitialized = true;
-      console.log('[SQLiteManager] ✅ Prêt.');
+      log.info('Prêt');
     } catch (error) {
-      console.error('[SQLiteManager] ❌ Échec critique de l\'initialisation:', error);
+      log.error('Échec critique de l\'initialisation:', error as Error);
       throw error;
     }
   }
@@ -70,36 +73,36 @@ export class SQLiteManager {
     const currentVersion = getCurrentVersion(this.db);
     const targetVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
 
-    console.log(`[SQLiteManager] Version actuelle: ${currentVersion}, Version cible: ${targetVersion}`);
+    log.info(`Version actuelle: ${currentVersion}, Version cible: ${targetVersion}`);
 
     if (currentVersion >= targetVersion) {
-      console.log('[SQLiteManager] Schéma à jour, pas de migration nécessaire.');
+      log.info('Schéma à jour, pas de migration nécessaire');
       await this.ensureGeneralProjectExists();
       return;
     }
 
     const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion);
-    console.log(`[SQLiteManager] ${pendingMigrations.length} migration(s) en attente.`);
+    log.info(`${pendingMigrations.length} migration(s) en attente`);
 
     const backupData = this.db.export();
     await this.createBackup(`pre-migration-v${currentVersion}`, backupData);
 
     for (const migration of pendingMigrations) {
       try {
-        console.log(`[SQLiteManager] Application de la migration vers v${migration.version}...`);
+        log.info(`Application de la migration vers v${migration.version}...`);
         migration.up(this.db);
         setVersion(this.db, migration.version);
-        console.log(`[SQLiteManager] ✅ Migration v${migration.version} réussie`);
+        log.info(`Migration v${migration.version} réussie`);
       } catch (error) {
-        console.error(`[SQLiteManager] ❌ ÉCHEC de la migration v${migration.version}!`, error);
-        console.log('[SQLiteManager] Tentative de restauration depuis le backup...');
+        log.error(`ÉCHEC de la migration v${migration.version}!`, error as Error);
+        log.info('Tentative de restauration depuis le backup...');
         
         const SQL = await initSqlJs({ locateFile: () => SQL_WASM_URL });
         this.db.close();
         this.db = new SQL.Database(backupData);
         
         const errorMessage = `La mise à jour de la base de données a échoué. Votre session a été restaurée. Veuillez contacter le support.`;
-        console.error('[SQLiteManager]', errorMessage);
+        log.error('Migration échouée', new Error(errorMessage));
         
         throw new Error(`Migration v${migration.version} a échoué et a été annulée.`);
       }
@@ -115,7 +118,7 @@ export class SQLiteManager {
    */
   private async createBackup(name: string, data: Uint8Array): Promise<void> {
     return new Promise((resolve, reject) => {
-      console.log(`[SQLiteManager] Création du backup: ${name}...`);
+      log.debug(`Création du backup: ${name}...`);
       const request = indexedDB.open(BACKUP_DB_NAME, 1);
 
       request.onupgradeneeded = (event) => {
@@ -133,19 +136,19 @@ export class SQLiteManager {
 
         tx.oncomplete = () => {
           db.close();
-          console.log(`[SQLiteManager] ✅ Backup ${name} créé avec succès`);
+          log.debug(`Backup ${name} créé avec succès`);
           resolve();
         };
 
         tx.onerror = () => {
           db.close();
-          console.error('[SQLiteManager] Erreur lors de la création du backup:', tx.error);
+          log.error('Erreur lors de la création du backup:', tx.error as Error);
           reject(tx.error);
         };
       };
 
       request.onerror = () => {
-        console.error('[SQLiteManager] Erreur lors de l\'ouverture de la base de backups:', request.error);
+        log.error('Erreur lors de l\'ouverture de la base de backups:', request.error as Error);
         reject(request.error);
       };
     });
@@ -162,7 +165,7 @@ export class SQLiteManager {
       const result = this.db.exec(`SELECT id FROM projects WHERE name = 'Général' LIMIT 1`);
       
       if (!result[0] || result[0].values.length === 0) {
-        console.log('[SQLiteManager] Création du projet "Général" par défaut...');
+        log.info('Création du projet "Général" par défaut...');
         const now = Date.now();
         const id = `proj-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         
@@ -172,10 +175,10 @@ export class SQLiteManager {
         `, [id, 'Général', 'Un espace pour toutes vos conversations générales.', now, now]);
         
         this.markAsDirty();
-        console.log('[SQLiteManager] ✅ Projet "Général" créé');
+        log.info('Projet "Général" créé');
       }
     } catch (error) {
-      console.warn('[SQLiteManager] Impossible de créer le projet par défaut:', error);
+      log.warn('Impossible de créer le projet par défaut:', error as Error);
     }
   }
 
@@ -199,14 +202,14 @@ export class SQLiteManager {
       return;
     }
 
-    console.log('[SQLiteManager] Checkpoint vers IndexedDB...');
+    log.debug('Checkpoint vers IndexedDB...');
     try {
       const data = this.db.export();
       await this.saveToIndexedDB(data);
       this.isDirty = false;
-      console.log('[SQLiteManager] ✅ Checkpoint réussi.');
+      log.debug('Checkpoint réussi');
     } catch (error) {
-      console.error('[SQLiteManager] ❌ Échec du checkpoint:', error);
+      log.error('Échec du checkpoint:', error as Error);
       throw error;
     }
   }
@@ -307,6 +310,6 @@ export class SQLiteManager {
     }
     
     this.isInitialized = false;
-    console.log('[SQLiteManager] Nettoyage terminé.');
+    log.info('Nettoyage terminé');
   }
 }

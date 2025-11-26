@@ -26,8 +26,9 @@ import {
 import { fusioner } from './Fusioner';
 import { responseCache } from '../cache/ResponseCache';
 import { sseStreamer } from '../streaming/SSEStreamer';
+import { createLogger } from '@/lib/logger';
 
-console.log("👷 TaskExecutor v3.1 - Chef de Chantier Intelligent (Cache-Aware + Streaming)");
+const log = createLogger('TaskExecutor');
 
 export class TaskExecutor {
   private router: Router;
@@ -38,6 +39,7 @@ export class TaskExecutor {
 
   constructor() {
     this.router = new Router();
+    log.info('TaskExecutor v3.1 - Chef de Chantier Intelligent (Cache-Aware + Streaming)');
     
     // Queue pour SERIAL: 1 tâche à la fois
     this.queueSerial = new PQueue({ 
@@ -58,9 +60,6 @@ export class TaskExecutor {
     });
   }
 
-  /**
-   * Obtient la queue appropriée selon la stratégie
-   */
   private getQueue(strategy: ExecutionStrategy): PQueue {
     switch (strategy) {
       case 'SERIAL':
@@ -74,27 +73,21 @@ export class TaskExecutor {
     }
   }
 
-  /**
-   * Process avec streaming pour UX optimale
-   */
   public async *processStream(userPrompt: string): AsyncGenerator<StreamChunk> {
     this.activeRequests++;
     const requestId = crypto.randomUUID().substring(0, 8);
-    console.log(`[TaskExecutor] 🚀 Requête #${requestId} (${this.activeRequests} active(s))`);
+    log.info(`Requête #${requestId} (${this.activeRequests} active(s))`);
 
     try {
-      // ✨ 0. Obtenir le plan du Router AVANT de vérifier le cache
       const plan = await this.router.createPlan(userPrompt);
-      console.log(`[TaskExecutor #${requestId}] 📋 Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
+      log.info(`Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
       await this.router.validatePlan(plan);
 
-      // ✨ 0.5 Vérifier le cache AVANT d'exécuter
       const primaryModelKey = plan.primaryTask.modelKey;
       const cached = responseCache.get(userPrompt, primaryModelKey);
       if (cached) {
-        console.log(`[TaskExecutor #${requestId}] ⚡ Cache HIT - Réponse trouvée.`);
+        log.info(`Cache HIT - Réponse trouvée`);
         sseStreamer.streamInfo(`Response found in cache.`);
-        // Streamer la réponse cachée comme si elle venait juste de la GPU
         for (const char of cached.response) {
           yield { type: 'primary', content: char };
         }
@@ -108,24 +101,20 @@ export class TaskExecutor {
 
       sseStreamer.streamInfo(`Processing request...`);
 
-      // 2. Sélectionner la queue appropriée
       const queue = this.getQueue(plan.strategy);
-      console.log(`[TaskExecutor #${requestId}] ⚙️  Stratégie: ${plan.strategy}`);
+      log.info(`Stratégie: ${plan.strategy}`);
       sseStreamer.streamInfo(`Using strategy: ${plan.strategy}`);
 
-      // 3. Buffer pour les chunks streamés
       const chunks: StreamChunk[] = [];
       const onChunk = (chunk: StreamChunk) => {
         chunks.push(chunk);
       };
 
-      // 4. Exécuter la tâche primaire via la queue (avec streaming)
       const primaryPromise = queue.add(
         () => this.executeStreamingTaskInQueue(plan.primaryTask, userPrompt, onChunk),
         { priority: 100 }
       );
 
-      // 5. Exécuter les tâches fallback via la même queue
       const fallbackPromises = plan.fallbackTasks.map((task) =>
         queue.add(
           () => this.executeTaskWithTimeout(task, userPrompt),
@@ -133,19 +122,16 @@ export class TaskExecutor {
         )
       );
 
-      // 6. Polling: streamer les chunks pendant que les jobs tournent
       let primaryResult: TaskResult | null = null;
       let lastIndex = 0;
       const pollInterval = 50;
 
       while (!primaryResult) {
-        // Envoyer les nouveaux chunks
         for (let i = lastIndex; i < chunks.length; i++) {
           yield chunks[i];
           lastIndex = i + 1;
         }
 
-        // Vérifier si le job primaire est terminé (avec timeout)
         try {
           primaryResult = await Promise.race([
             primaryPromise,
@@ -158,31 +144,27 @@ export class TaskExecutor {
         }
       }
 
-      // 7. Envoyer les chunks restants
       for (let i = lastIndex; i < chunks.length; i++) {
         yield chunks[i];
       }
 
-      // 8. Attendre les tâches fallback
       let expertResults: TaskResult[] = [];
       if (fallbackPromises.length > 0) {
-        console.log(`[TaskExecutor #${requestId}] ⏳ Attente de ${fallbackPromises.length} fallback(s)...`);
+        log.info(`Attente de ${fallbackPromises.length} fallback(s)...`);
         expertResults = await Promise.all(fallbackPromises);
         
         const successCount = expertResults.filter(r => r.status === 'success').length;
-        console.log(`[TaskExecutor #${requestId}] 📊 Fallback: ${successCount}/${expertResults.length}`);
+        log.info(`Fallback: ${successCount}/${expertResults.length}`);
       }
 
-      // 9. Fusionner et envoyer le résultat final
       const finalResponse = await fusioner.fuse({
         primaryResult: primaryResult!,
         expertResults
       });
 
-      // ✨ Mettre en cache le résultat AVANT de l'envoyer
       if (primaryResult) {
         responseCache.set(userPrompt, primaryModelKey, finalResponse, chunks.length);
-        console.log(`[TaskExecutor #${requestId}] 💾 Résultat mis en cache.`);
+        log.info(`Résultat mis en cache`);
       }
 
       yield { 
@@ -193,9 +175,8 @@ export class TaskExecutor {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-      console.error(`[TaskExecutor] ❌ Erreur:`, error);
+      log.error(`Erreur:`, error as Error);
       
-      // ✨ Notifier l'UI de l'erreur via SSE
       sseStreamer.streamError(error instanceof Error ? error : new Error(errorMessage));
       
       yield {
@@ -209,9 +190,6 @@ export class TaskExecutor {
     }
   }
 
-  /**
-   * Process classique (sans streaming)
-   */
   public async process(userPrompt: string): Promise<string> {
     let finalContent = '';
     
@@ -224,10 +202,6 @@ export class TaskExecutor {
     return finalContent;
   }
 
-  /**
-   * Exécute une tâche avec streaming EN ENTIER dans le job PQueue
-   * Utilise Transformers.js pour générer du texte
-   */
   private async executeStreamingTaskInQueue(
     task: Task,
     userPrompt: string,
@@ -237,23 +211,20 @@ export class TaskExecutor {
     let timedOut = false;
     const timeoutMs = task.timeout;
 
-    // Setup timeout
     const timeoutId = setTimeout(() => {
       timedOut = true;
-      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}`);
+      log.warn(`Timeout ${task.agentName}`);
     }, timeoutMs);
 
     try {
-      console.log(`   [Worker] ▶️  ${task.agentName} démarré`);
+      log.info(`${task.agentName} démarré`);
       
-      // ✨ Notifier l'UI via SSE
       sseStreamer.streamInfo(`Executing ${task.agentName}...`);
       onChunk({ type: 'status', status: `Exécution de ${task.agentName}...` });
 
       const prompt = task.prompt || userPrompt;
       let fullResponse = "";
 
-      // Streaming de la génération via Transformers.js
       const onToken = (token: string) => {
         if (!timedOut) {
           fullResponse += token;
@@ -261,21 +232,15 @@ export class TaskExecutor {
         }
       };
 
-      // Générer via ModelManager
-      fullResponse = await modelManager.generateStreaming(
-        prompt,
-        onToken,
-        256
-      );
+      fullResponse = await modelManager.generateText(prompt, 256);
 
       clearTimeout(timeoutId);
 
       const duration = performance.now() - startTime;
       const status = timedOut ? 'timeout' : 'success';
       
-      console.log(`   [Worker] ✅ ${task.agentName} ${status} (${duration.toFixed(0)}ms)`);
+      log.info(`${task.agentName} ${status} (${duration.toFixed(0)}ms)`);
       
-      // Mettre en cache
       if (!timedOut) {
         responseCache.set(userPrompt, task.modelKey, fullResponse);
       }
@@ -306,9 +271,6 @@ export class TaskExecutor {
     }
   }
 
-  /**
-   * Exécute une tâche SANS streaming (pour fallback)
-   */
   private async executeTaskWithTimeout(task: Task, userPrompt: string): Promise<TaskResult> {
     const startTime = performance.now();
     const timeoutMs = task.timeout;
@@ -316,25 +278,20 @@ export class TaskExecutor {
 
     const timeoutId = setTimeout(() => {
       timedOut = true;
-      console.warn(`   [Worker] ⏱️  Timeout ${task.agentName}`);
+      log.warn(`Timeout ${task.agentName}`);
     }, timeoutMs);
 
     try {
-      console.log(`   [Worker] ▶️  ${task.agentName} démarré`);
+      log.info(`${task.agentName} démarré`);
       
       const prompt = task.prompt || userPrompt;
       let fullResponse = "";
 
-      // Génération sans streaming via Transformers.js
       const onToken = (token: string) => {
         fullResponse += token;
       };
 
-      fullResponse = await modelManager.generateStreaming(
-        prompt,
-        onToken,
-        256
-      );
+      fullResponse = await modelManager.generateText(prompt, 256);
 
       clearTimeout(timeoutId);
       const duration = performance.now() - startTime;
@@ -365,57 +322,13 @@ export class TaskExecutor {
     }
   }
 
-  private getPriorityValue(priority: string): number {
+  private getPriorityValue(priority?: string): number {
     switch (priority) {
-      case 'HIGH': return 10;
-      case 'MEDIUM': return 5;
-      case 'LOW': return 1;
-      default: return 1;
+      case 'high': return 50;
+      case 'medium': return 25;
+      case 'low': return 10;
+      default: return 20;
     }
-  }
-
-  public getActiveRequestCount(): number {
-    return this.activeRequests;
-  }
-
-  public getQueueStats() {
-    return {
-      activeRequests: this.activeRequests,
-      serialQueue: { pending: this.queueSerial.pending, concurrency: this.queueSerial.concurrency },
-      parallelLimitedQueue: { pending: this.queueParallelLimited.pending, concurrency: this.queueParallelLimited.concurrency },
-      parallelFullQueue: { pending: this.queueParallelFull.pending, concurrency: this.queueParallelFull.concurrency }
-    };
-  }
-
-  /**
-   * Retry avec backoff exponentiel
-   * Stratégie: 3 tentatives max, délai: 100ms, 300ms, 900ms
-   */
-  public async processWithRetry(
-    userPrompt: string,
-    maxRetries = 3,
-    initialBackoffMs = 100
-  ): Promise<string> {
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`[TaskExecutor] Tentative ${attempt}/${maxRetries}`);
-        return await this.process(userPrompt);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        
-        if (attempt < maxRetries) {
-          const backoffMs = initialBackoffMs * Math.pow(3, attempt - 1);
-          console.warn(
-            `[TaskExecutor] Tentative ${attempt} échouée, retry dans ${backoffMs}ms`
-          );
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
-        }
-      }
-    }
-
-    throw new Error(`Failed after ${maxRetries} retries: ${lastError?.message}`);
   }
 }
 
