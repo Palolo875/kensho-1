@@ -13,19 +13,28 @@ interface EmbedRequest {
   text: string;
 }
 
+interface ProgressData {
+  file: string;
+  progress: number;
+}
+
+interface EmbeddingExtractor {
+  (texts: string[], options: { pooling: string; normalize: boolean }): Promise<{ tolist(): number[][] }>;
+}
+
 interface QueueItem {
   text: string;
   resolve: (value: number[]) => void;
-  reject: (reason?: any) => void;
+  reject: (reason?: Error) => void;
 }
 
 runAgent({
   name: 'EmbeddingAgent',
   init: async (runtime: AgentRuntime) => {
-    let extractor: any = null;
+    let extractor: EmbeddingExtractor | null = null;
     let isLoadingModel = false;
 
-    async function getExtractor(): Promise<any> {
+    async function getExtractor(): Promise<EmbeddingExtractor> {
       if (!extractor && !isLoadingModel) {
         isLoadingModel = true;
         const dm = DownloadManager.getInstance();
@@ -37,7 +46,7 @@ runAgent({
         log.info(`Chargement du modèle: ${EMBEDDING_MODEL}`);
         try {
           extractor = await pipeline('feature-extraction', EMBEDDING_MODEL, {
-            progress_callback: (progress: any) => {
+            progress_callback: (progress: ProgressData) => {
               if (dm.isPaused(DOWNLOAD_ID)) {
                 dm.waitIfPaused(DOWNLOAD_ID);
               }
@@ -50,7 +59,7 @@ runAgent({
                 progress: progress.progress / 100,
               });
             }
-          });
+          }) as EmbeddingExtractor;
           runtime.log('info', '[EmbeddingAgent] Modèle d\'embedding prêt.');
           log.info('Modèle d\'embedding prêt.');
           dm.unregister(DOWNLOAD_ID);
@@ -61,6 +70,9 @@ runAgent({
           log.error('Erreur modèle:', err);
           throw err;
         }
+      }
+      if (!extractor) {
+        throw new Error('Extractor not available');
       }
       return extractor;
     }
@@ -104,11 +116,13 @@ runAgent({
       'embed',
       (payload: EmbedRequest): Promise<number[]> => {
         return new Promise((resolve, reject) => {
-          embeddingQueue.push({ text: payload.text, resolve, reject });
+          embeddingQueue.push({
+            text: payload.text,
+            resolve,
+            reject
+          });
         });
       }
     );
-
-    runtime.log('info', '[EmbeddingAgent] Initialisé et prêt.');
   }
 });
