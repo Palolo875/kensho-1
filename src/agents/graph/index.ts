@@ -9,6 +9,9 @@ import {
   IGraphStats,
 } from './types';
 import type { VerificationResult } from '../../types/verification';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('GraphWorker');
 
 /**
  * GraphWorker: Orchestrateur principal du système de Graphe de Connaissances.

@@ -8,6 +8,9 @@
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
 import { GraphWorker } from './index';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('GraphWorker');
 
 runAgent({
     name: 'GraphWorker',

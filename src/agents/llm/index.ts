@@ -4,6 +4,9 @@ import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentR
 import { ModelLoader } from '../../core/models/ModelLoader';
 import { DownloadManager } from '../../core/downloads/DownloadManager';
 import * as webllm from '@mlc-ai/web-llm';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('MainLLMAgent');
 
 const MODEL_ID = 'gemma-3-270m-it-MLC'; // Sprint 12: Gemma-3-270M (validé WebLLM/MLC)
 const DOWNLOAD_ID = 'llm-model';
@@ -34,9 +37,8 @@ const dm = DownloadManager.getInstance();
 
 // Le ModelLoader enverra ses mises à jour au thread principal via postMessage
 const modelLoader = new ModelLoader((progress) => {
-    // Vérifier si l'utilisateur a annulé
     if (isDownloadCancelled) {
-        console.log('[MainLLMAgent] ⛔ Téléchargement annulé par l\'utilisateur');
+        log.info('⛔ Téléchargement annulé par l\'utilisateur');
         return;
     }
     
@@ -60,8 +62,7 @@ self.addEventListener('message', (event) => {
         modelLoader.resume();
         dm.resume(DOWNLOAD_ID);
     } else if (event.data.type === 'CANCEL_DOWNLOAD') {
-        // Annuler complètement le téléchargement
-        console.log('[MainLLMAgent] ⛔ Annulation du téléchargement demandée');
+        log.info('⛔ Annulation du téléchargement demandée');
         isDownloadCancelled = true;
         modelLoader.cancel();
         dm.markCancelled(DOWNLOAD_ID);
@@ -72,24 +73,22 @@ self.addEventListener('message', (event) => {
             payload: { phase: 'idle', progress: 0, text: 'Téléchargement annulé' }
         });
     } else if (event.data.type === 'START_DOWNLOAD') {
-        // Réinitialiser isDownloadCancelled si c'est un nouveau téléchargement
         isDownloadCancelled = false;
-        // Démarrer le téléchargement à la demande de l'utilisateur
         if (!modelLoadingPromise) {
-            console.log('[MainLLMAgent] 🚀 Démarrage du chargement du modèle (sur demande):', MODEL_ID);
+            log.info(`🚀 Démarrage du chargement du modèle (sur demande): ${MODEL_ID}`);
             dm.register(DOWNLOAD_ID, 'llm', 'Modèle LLM (Gemma-3-270M)', (progress) => {
-                console.log(`[MainLLMAgent] 📥 ${progress.name}: ${Math.round(progress.progress * 100)}%`);
+                log.debug(`📥 ${progress.name}: ${Math.round(progress.progress * 100)}%`);
             });
             modelLoadingPromise = modelLoader.loadModel(MODEL_ID).then(() => {
                 engine = modelLoader.getEngine();
-                console.log('[MainLLMAgent] ✅ Moteur LLM prêt et opérationnel');
+                log.info('✅ Moteur LLM prêt et opérationnel');
                 dm.unregister(DOWNLOAD_ID);
                 self.postMessage({
                     type: 'MODEL_PROGRESS',
                     payload: { phase: 'ready', progress: 1, text: 'Modèle prêt.' }
                 });
             }).catch((error) => {
-                console.error('[MainLLMAgent] ❌ Échec du chargement du modèle:', error);
+                log.error('❌ Échec du chargement du modèle', error);
                 dm.unregister(DOWNLOAD_ID);
                 self.postMessage({
                     type: 'MODEL_ERROR',
@@ -100,9 +99,7 @@ self.addEventListener('message', (event) => {
     }
 });
 
-// NE PAS charger automatiquement le modèle
-// L'utilisateur décidera quand démarrer le téléchargement
-console.log('[MainLLMAgent] ⏳ Prêt à recevoir la commande de téléchargement du modèle');
+log.info('⏳ Prêt à recevoir la commande de téléchargement du modèle');
 self.postMessage({
     type: 'MODEL_PROGRESS',
     payload: { phase: 'idle', progress: 0, text: 'En attente du démarrage du téléchargement...' }
@@ -112,9 +109,9 @@ runAgent({
     name: 'MainLLMAgent',
     config: { useNoOpStorage: true },
     init: (runtime: AgentRuntime) => {
-        console.log('[MainLLMAgent] 🚀 Initialisation...');
+        log.info('🚀 Initialisation...');
         runtime.log('info', `LLM Agent initialisé. Chargement du modèle ${MODEL_ID}...`);
-        console.log('[MainLLMAgent] ✅ Prêt à recevoir des requêtes de génération');
+        log.info('✅ Prêt à recevoir des requêtes de génération');
 
         // Exposer une méthode pour obtenir les capacités du système
         runtime.registerMethod('getSystemCapabilities', async () => {
@@ -125,30 +122,29 @@ runAgent({
         runtime.registerStreamMethod(
             'generateResponse',
             async (payload: any, stream: AgentStreamEmitter) => {
-                console.log('[MainLLMAgent] 📨 Requête de génération reçue:', payload);
+                log.debug('📨 Requête de génération reçue', { payload });
 
                 const [prompt, customParams] = payload.args || [payload, {}];
 
                 if (!engine) {
                     const error = new Error('Le moteur LLM n\'est pas encore prêt. Veuillez patienter...');
-                    console.error('[MainLLMAgent] ❌ Moteur non prêt');
+                    log.error('❌ Moteur non prêt', error);
                     runtime.log('error', error.message);
                     stream.error(error);
                     return;
                 }
 
-                console.log('[MainLLMAgent] ✅ Moteur disponible');
+                log.debug('✅ Moteur disponible');
 
-                // Valider le prompt
                 if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
                     const error = new Error('Le prompt doit être une chaîne de caractères non vide.');
-                    console.error('[MainLLMAgent] ❌ Prompt invalide:', prompt);
+                    log.error('❌ Prompt invalide', error);
                     runtime.log('error', error.message);
                     stream.error(error);
                     return;
                 }
 
-                console.log('[MainLLMAgent] ✅ Prompt valide:', prompt.substring(0, 50) + '...');
+                log.debug('✅ Prompt valide', { preview: prompt.substring(0, 50) + '...' });
 
                 // Sprint 7: Enrichir le system prompt avec contexte projet si actif (simple version pour worker)
                 let systemPrompt = customParams?.system_prompt ?? DEFAULT_SYSTEM_PROMPT;
@@ -177,16 +173,15 @@ runAgent({
                 }
 
                 try {
-                    console.log('[MainLLMAgent] 🔄 Début de la génération...');
+                    log.info('🔄 Début de la génération...');
                     runtime.log('info', `Début de la génération pour le prompt: "${String(prompt).substring(0, 50)}..." (temp: ${params.temperature}, max_tokens: ${params.max_tokens})`);
 
-                    // Construire les messages avec le system prompt
                     const messages: any[] = [
                         { role: 'system', content: params.system_prompt },
                         { role: 'user', content: String(prompt) }
                     ];
 
-                    console.log('[MainLLMAgent] 🤖 Appel du moteur LLM...');
+                    log.debug('🤖 Appel du moteur LLM...');
                     const streamIterator = await engine.chat.completions.create({
                         messages,
                         stream: true,
@@ -195,27 +190,26 @@ runAgent({
                         top_p: params.top_p,
                     });
 
-                    console.log('[MainLLMAgent] 📡 Stream démarré, attente des chunks...');
+                    log.debug('📡 Stream démarré, attente des chunks...');
                     let totalChunks = 0;
                     for await (const chunk of streamIterator) {
                         const textChunk = (chunk as any).choices?.[0]?.delta?.content || '';
                         if (textChunk) {
                             totalChunks++;
                             if (totalChunks === 1) {
-                                console.log('[MainLLMAgent] 📦 Premier chunk reçu');
+                                log.debug('📦 Premier chunk reçu');
                             }
-                            // Envoyer chaque morceau de texte via le stream
                             stream.chunk({ text: textChunk });
                         }
                     }
 
-                    console.log(`[MainLLMAgent] ✅ Génération terminée. ${totalChunks} chunks envoyés.`);
+                    log.info(`✅ Génération terminée. ${totalChunks} chunks envoyés.`);
                     runtime.log('info', `Génération terminée. ${totalChunks} chunks envoyés.`);
-                    stream.end({ totalChunks }); // Signaler la fin du stream
+                    stream.end({ totalChunks });
 
                 } catch (error) {
                     const err = error instanceof Error ? error : new Error('Erreur inconnue durant l\'inférence');
-                    console.error('[MainLLMAgent] ❌ Erreur d\'inférence:', err);
+                    log.error('❌ Erreur d\'inférence', err);
                     runtime.log('error', `Erreur d'inférence: ${err.message}`);
                     stream.error(err);
                 }

@@ -6,6 +6,9 @@ import { TaskExecutor } from './executor';
 import { GraphWorker } from '../graph';
 import { MemoryRetriever } from '../graph/MemoryRetriever';
 import type { Intent } from '../intent-classifier';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('OIEAgent');
 
 runAgent({
     name: 'OIEAgent',

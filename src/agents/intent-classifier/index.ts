@@ -1,5 +1,8 @@
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('IntentClassifier');
 
 export type Intent = 
   | { type: 'MEMORIZE', content: string, confidence: number }

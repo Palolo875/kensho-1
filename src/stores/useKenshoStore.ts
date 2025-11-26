@@ -28,6 +28,9 @@ import { appConfig } from '../config/app.config';
 import { ThoughtStep } from '../agents/oie/types';
 import { Project, ProjectTask } from '../agents/graph/types';
 import { TaskCompletionDetector } from '../core/oie/TaskCompletionDetector';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('KenshoStore');
 
 
 const STORAGE_KEY = 'kensho_conversation_history';
@@ -123,11 +126,11 @@ const loadMessagesFromLocalStorage = (): Message[] => {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             const messages = JSON.parse(stored);
-            console.log(`[KenshoStore] ${messages.length} messages chargés depuis localStorage`);
+            log.info(`${messages.length} messages chargés depuis localStorage`);
             return messages;
         }
     } catch (error) {
-        console.error('[KenshoStore] Erreur lors du chargement des messages:', error);
+        log.error('Erreur lors du chargement des messages', error instanceof Error ? error : undefined);
     }
     return [];
 };
@@ -137,11 +140,10 @@ const loadMessagesFromLocalStorage = (): Message[] => {
  */
 const saveMessagesToLocalStorage = (messages: Message[]) => {
     try {
-        // Limiter le nombre de messages stockés pour éviter d'excéder les quotas
         const messagesToStore = messages.slice(-MAX_STORED_MESSAGES);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesToStore));
     } catch (error) {
-        console.error('[KenshoStore] Erreur lors de la sauvegarde des messages:', error);
+        log.error('Erreur lors de la sauvegarde des messages', error instanceof Error ? error : undefined);
     }
 };
 
@@ -162,15 +164,15 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
             try {
                 if (!e?.data) return;
                 if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ LLM Worker prêt');
+                    log.info('✅ LLM Worker prêt');
                     set(state => ({
                         workersReady: { ...state.workersReady, llm: true }
                     }));
                 } else if (e.data.type === 'MODEL_PROGRESS') {
-                    console.log('[KenshoStore] Progression du modèle:', e.data.payload);
+                    log.debug('Progression du modèle', { payload: e.data.payload });
                     set({ modelProgress: e.data.payload });
                 } else if (e.data.type === 'MODEL_ERROR') {
-                    console.error('[KenshoStore] Erreur de chargement du modèle:', e.data.payload);
+                    log.error('Erreur de chargement du modèle', new Error(e.data.payload.message));
                     toast.error('Erreur de chargement du modèle', {
                         description: e.data.payload.message,
                         duration: 8000
@@ -192,9 +194,9 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
             return true;
         };
 
-        console.log('[KenshoStore] 🚀 LLM Worker démarré');
+        log.info('🚀 LLM Worker démarré');
     } catch (error) {
-        console.error('[KenshoStore] Erreur lors du démarrage du LLM Worker:', error);
+        log.error('Erreur lors du démarrage du LLM Worker', error instanceof Error ? error : undefined);
         const workerError: WorkerError = {
             worker: 'llm',
             message: error instanceof Error ? error.message : 'Impossible de démarrer le worker LLM',
@@ -216,21 +218,21 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
  * Tous les workers sont optionnels - erreurs ignorées gracieusement
  */
 const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
-    console.log(`[KenshoStore] Mode: ${appConfig.mode} | LLM enabled: ${appConfig.llm.enabled} | Autoload: ${appConfig.llm.autoload}`);
+    log.info(`Mode: ${appConfig.mode} | LLM enabled: ${appConfig.llm.enabled} | Autoload: ${appConfig.llm.autoload}`);
 
     if (appConfig.llm.enabled && appConfig.llm.autoload) {
-        console.log('[KenshoStore] Démarrage automatique du LLM Worker...');
+        log.info('Démarrage automatique du LLM Worker...');
         set({
             modelProgress: { phase: 'downloading', progress: 0, text: 'Initialisation du modèle...' }
         });
         startLLMWorker(set);
     } else if (appConfig.mode === 'lite') {
-        console.log('[KenshoStore] 🟢 Mode Lite activé - LLM désactivé');
+        log.info('🟢 Mode Lite activé - LLM désactivé');
         set({
             modelProgress: { phase: 'ready', progress: 1, text: 'Mode Lite (sans IA)' }
         });
     } else {
-        console.log('[KenshoStore] 🎭 Mode Simulation activé - Utilise des mocks');
+        log.info('🎭 Mode Simulation activé - Utilise des mocks');
         set({
             modelProgress: { phase: 'ready', progress: 1, text: 'Mode Simulation (mocks)' }
         });
@@ -246,7 +248,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         oieWorker.onmessage = (e) => {
             try {
                 if (e?.data?.type === 'READY') {
-                    console.log('[KenshoStore] ✅ OIE Worker prêt');
+                    log.info('✅ OIE Worker prêt');
                     set(state => ({
                         workersReady: { ...state.workersReady, oie: true }
                     }));
@@ -260,9 +262,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             return true;
         };
 
-        console.log('[KenshoStore] OIE Worker démarré');
+        log.info('OIE Worker démarré');
     } catch (error) {
-        console.error('[KenshoStore] Erreur lors du démarrage du OIE Worker:', error);
+        log.error('Erreur lors du démarrage du OIE Worker', error instanceof Error ? error : undefined);
         const workerError: WorkerError = {
             worker: 'oie',
             message: error instanceof Error ? error.message : 'Impossible de démarrer le worker OIE',
@@ -283,7 +285,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         telemetryWorker.onmessage = (e) => {
             try {
                 if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ Telemetry Worker prêt');
+                    log.info('✅ Telemetry Worker prêt');
                     set(state => ({
                         workersReady: { ...state.workersReady, telemetry: true }
                     }));
@@ -297,9 +299,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             return true;
         };
 
-        console.log('[KenshoStore] Telemetry Worker démarré');
+        log.info('Telemetry Worker démarré');
     } catch (error) {
-        console.warn('[KenshoStore] Telemetry Worker non disponible:', error);
+        log.warn('Telemetry Worker non disponible', { error });
         const workerError: WorkerError = {
             worker: 'telemetry',
             message: error instanceof Error ? error.message : 'Impossible de démarrer le worker Telemetry',
@@ -322,7 +324,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         embeddingWorker.onmessage = (e) => {
             try {
                 if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ EmbeddingAgent Worker prêt');
+                    log.info('✅ EmbeddingAgent Worker prêt');
                 }
             } catch (_) {
                 // Silence
@@ -333,9 +335,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             return true;
         };
 
-        console.log('[KenshoStore] EmbeddingAgent Worker démarré');
+        log.info('EmbeddingAgent Worker démarré');
     } catch (error) {
-        console.warn('[KenshoStore] EmbeddingAgent Worker non disponible:', error);
+        log.warn('EmbeddingAgent Worker non disponible', { error });
     }
 
     try {
@@ -350,7 +352,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         intentWorker.onmessage = (e) => {
             try {
                 if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ IntentClassifierAgent Worker prêt');
+                    log.info('✅ IntentClassifierAgent Worker prêt');
                 }
             } catch (_) {
                 // Silence
@@ -361,9 +363,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             return true;
         };
 
-        console.log('[KenshoStore] IntentClassifierAgent Worker démarré');
+        log.info('IntentClassifierAgent Worker démarré');
     } catch (error) {
-        console.warn('[KenshoStore] IntentClassifierAgent Worker non disponible:', error);
+        log.warn('IntentClassifierAgent Worker non disponible', { error });
     }
 
     // Démarrer le GraphWorker (Sprint 7)
@@ -379,7 +381,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
         graphWorker.onmessage = (e) => {
             try {
                 if (e.data.type === 'READY') {
-                    console.log('[KenshoStore] ✅ GraphWorker prêt');
+                    log.info('✅ GraphWorker prêt');
                 }
             } catch (_) {
                 // Silence
@@ -390,9 +392,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             return true;
         };
 
-        console.log('[KenshoStore] GraphWorker démarré');
+        log.info('GraphWorker démarré');
     } catch (error) {
-        console.warn('[KenshoStore] GraphWorker non disponible:', error);
+        log.warn('GraphWorker non disponible', { error });
     }
 };
 
@@ -438,11 +440,11 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     init: () => {
         const state = get();
         if (state.isInitialized) {
-            console.log('[KenshoStore] Déjà initialisé, ignoré.');
+            log.debug('Déjà initialisé, ignoré.');
             return;
         }
 
-        console.log('[KenshoStore] Initialisation...');
+        log.info('Initialisation...');
 
         const mainBus = new MessageBus('MainThread');
 
@@ -450,10 +452,10 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         const projectSyncChannel = new BroadcastChannel('kensho_project_sync');
         projectSyncChannel.onmessage = (event) => {
             if (event.data.type === 'projects_updated') {
-                console.log('[KenshoStore] Synchronisation multi-onglets: rechargement des projets');
+                log.debug('Synchronisation multi-onglets: rechargement des projets');
                 get().loadProjects();
             } else if (event.data.type === 'tasks_updated') {
-                console.log('[KenshoStore] Synchronisation multi-onglets: rechargement des tâches');
+                log.debug('Synchronisation multi-onglets: rechargement des tâches');
                 const { projectId } = event.data;
                 if (projectId) {
                     get().loadProjectTasks(projectId);
@@ -463,19 +465,17 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
 
         set({ mainBus, projectSyncChannel, isInitialized: true });
 
-        // Cleanup au unload pour éviter les fuites de ressources
         window.addEventListener('beforeunload', () => {
             if (projectSyncChannel) {
                 projectSyncChannel.close();
-                console.log('[KenshoStore] BroadcastChannel fermé');
+                log.debug('BroadcastChannel fermé');
             }
         });
 
-        // Démarrer la constellation de workers - gérée avec isolation des erreurs
         try {
             startConstellation(set);
         } catch (err) {
-            console.error('[KenshoStore] Erreur constellation workers:', err);
+            log.error('Erreur constellation workers', err instanceof Error ? err : undefined);
             // Continue malgré l'erreur - les workers sont optionnels
             set({ modelProgress: { phase: 'ready', progress: 1, text: 'Mode Simulation (Fallback)' } });
         }
@@ -488,12 +488,12 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         const state = get();
         
         if (state.workersReady.llm) {
-            console.log('[KenshoStore] LLM Worker déjà démarré');
+            log.debug('LLM Worker déjà démarré');
             return;
         }
         
         if (state.modelProgress.phase !== 'idle' && state.modelProgress.phase !== 'ready') {
-            console.log('[KenshoStore] LLM Worker déjà en cours de chargement');
+            log.debug('LLM Worker déjà en cours de chargement');
             return;
         }
         
@@ -505,7 +505,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             return;
         }
 
-        console.log('[KenshoStore] Démarrage manuel du LLM Worker...');
+        log.info('Démarrage manuel du LLM Worker...');
         set({
             modelProgress: { phase: 'downloading', progress: 0, text: 'Démarrage...' }
         });
@@ -527,7 +527,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         }
 
         if (modelProgress.phase !== 'ready') {
-            console.warn('[KenshoStore] ⚠️ Le modèle n\'est pas encore prêt. Phase actuelle:', modelProgress.phase);
+            log.warn(`⚠️ Le modèle n'est pas encore prêt. Phase actuelle: ${modelProgress.phase}`);
             return;
         }
 
@@ -554,7 +554,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         });
         saveMessagesToLocalStorage(newMessages);
 
-        console.log('[KenshoStore] 📤 Envoi du message (Mode Simulation):', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+        log.info('📤 Envoi du message (Mode Simulation)', { preview: text.substring(0, 50) + (text.length > 50 ? '...' : '') });
 
         // Utiliser DialoguePluginMock pour générer la réponse
         const { DialoguePluginMock } = await import('../plugins/dialogue/DialoguePluginMock');
@@ -574,12 +574,9 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                         return { messages: updatedMessages };
                     });
                 } else if (event.type === 'thinking_step') {
-                    // Ignorer les étapes de pensée pour l'UI (elles sont ajoutées au complete)
-                    // mais on pourrait les afficher en temps réel ici si voulu
-                    console.log(`[KenshoStore] 🧠 Étape: ${event.data.label}`);
+                    log.debug(`🧠 Étape: ${event.data.label}`);
                 } else if (event.type === 'complete') {
-                    // Stream terminé - ajouter la pensée et les étapes
-                    console.log('[KenshoStore] ✅ Stream terminé (mode simulation)');
+                    log.info('✅ Stream terminé (mode simulation)');
                     set(state => {
                         const updatedMessages = state.messages.map(msg =>
                             msg.id === kenshoResponsePlaceholder.id
@@ -599,7 +596,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 }
             }
         } catch (error) {
-            console.error('[KenshoStore] ❌ Erreur de stream:', error);
+            log.error('❌ Erreur de stream', error instanceof Error ? error : undefined);
             set(state => {
                 const updatedMessages = state.messages.filter(msg =>
                     msg.id !== kenshoResponsePlaceholder.id
@@ -619,7 +616,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     clearMessages: () => {
         set({ messages: [] });
         localStorage.removeItem(STORAGE_KEY);
-        console.log('[KenshoStore] 🗑️ Conversation effacée');
+        log.info('🗑️ Conversation effacée');
     },
 
     /**
@@ -711,13 +708,13 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     startModelDownload: () => {
         const state = get();
         if (state.modelDownloadStarted) {
-            console.log('[KenshoStore] Téléchargement déjà démarré');
+            log.debug('Téléchargement déjà démarré');
             return;
         }
         
         const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
-            console.log('[KenshoStore] 🚀 Demande de démarrage du téléchargement du modèle');
+            log.info('🚀 Demande de démarrage du téléchargement du modèle');
             llmWorker.postMessage({ type: 'START_DOWNLOAD' });
             set({ modelDownloadStarted: true });
         }
@@ -729,7 +726,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     pauseModelDownload: () => {
         const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
-            console.log('[KenshoStore] ⏸️ Mise en pause du téléchargement');
+            log.info('⏸️ Mise en pause du téléchargement');
             llmWorker.postMessage({ type: 'PAUSE_DOWNLOAD' });
             set({ isLoadingPaused: true });
         }
@@ -741,7 +738,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     resumeModelDownload: () => {
         const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
-            console.log('[KenshoStore] ▶️ Reprise du téléchargement');
+            log.info('▶️ Reprise du téléchargement');
             llmWorker.postMessage({ type: 'RESUME_DOWNLOAD' });
             set({ isLoadingPaused: false });
         }
@@ -753,7 +750,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     pauseAllDownloads: () => {
         const dm = DownloadManager.getInstance();
         dm.pauseAll();
-        console.log('[KenshoStore] ⏸️ Tous les téléchargements mis en pause');
+        log.info('⏸️ Tous les téléchargements mis en pause');
         set({ isLoadingPaused: true });
     },
 
@@ -763,7 +760,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     resumeAllDownloads: () => {
         const dm = DownloadManager.getInstance();
         dm.resumeAll();
-        console.log('[KenshoStore] ▶️ Tous les téléchargements repris');
+        log.info('▶️ Tous les téléchargements repris');
         set({ isLoadingPaused: false });
     },
 
@@ -773,7 +770,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     cancelModelDownload: () => {
         const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
-            console.log('[KenshoStore] ⛔ Annulation du téléchargement du modèle');
+            log.info('⛔ Annulation du téléchargement du modèle');
             llmWorker.postMessage({ type: 'CANCEL_DOWNLOAD' });
             set({ modelDownloadStarted: false, isLoadingPaused: false });
         }
@@ -789,23 +786,17 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         if (llmWorker) {
             llmWorker.postMessage({ type: 'CANCEL_DOWNLOAD' });
         }
-        console.log('[KenshoStore] ⛔ Tous les téléchargements annulés');
+        log.info('⛔ Tous les téléchargements annulés');
         set({ modelDownloadStarted: false, isLoadingPaused: false });
     },
 
-    /**
-     * Active/désactive le mode débat (Sprint 6)
-     */
     setDebateModeEnabled: (enabled: boolean) => {
-        console.log('[KenshoStore] Mode débat:', enabled ? 'activé ✅' : 'désactivé ❌');
+        log.info(`Mode débat: ${enabled ? 'activé ✅' : 'désactivé ❌'}`);
         set({ isDebateModeEnabled: enabled });
     },
 
-    /**
-     * Sprint 7: Définit le projet actif
-     */
     setActiveProjectId: (id: string | null) => {
-        console.log('[KenshoStore] Projet actif:', id);
+        log.debug('Projet actif', { id });
         set({ activeProjectId: id });
     },
 
@@ -824,22 +815,21 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                         method: 'getActiveProjects',
                         args: []
                     });
-                    console.log(`[KenshoStore] ${projects.length} projet(s) chargé(s) depuis GraphWorker`);
+                    log.info(`${projects.length} projet(s) chargé(s) depuis GraphWorker`);
                     set({ projects });
                     return;
                 } catch (workerError) {
-                    console.warn('[KenshoStore] GraphWorker indisponible, fallback vers localStorage');
+                    log.warn('GraphWorker indisponible, fallback vers localStorage');
                 }
             }
             
-            // Fallback: charger depuis localStorage
             const stored = localStorage.getItem('kensho_projects');
             const projects: Project[] = stored ? JSON.parse(stored) : [];
             
-            console.log(`[KenshoStore] ${projects.length} projet(s) chargé(s) depuis localStorage`);
+            log.info(`${projects.length} projet(s) chargé(s) depuis localStorage`);
             set({ projects });
         } catch (error) {
-            console.error('[KenshoStore] Erreur lors du chargement des projets:', error);
+            log.error('Erreur lors du chargement des projets', error instanceof Error ? error : undefined);
             set({ projects: [] });
         }
     },
@@ -866,9 +856,9 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 return { projectTasks: newTasksMap };
             });
 
-            console.log(`[KenshoStore] ${tasks.length} tâche(s) chargée(s) pour projet ${projectId}`);
+            log.debug(`${tasks.length} tâche(s) chargée(s) pour projet ${projectId}`);
         } catch (error) {
-            console.error('[KenshoStore] Erreur lors du chargement des tâches:', error);
+            log.error('Erreur lors du chargement des tâches', error instanceof Error ? error : undefined);
         }
     },
 
@@ -888,9 +878,9 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                         method: 'createProject',
                         args: [name, goal]
                     });
-                    console.log(`[KenshoStore] Projet créé via GraphWorker: ${name} (${projectId})`);
+                    log.info(`Projet créé via GraphWorker: ${name} (${projectId})`);
                 } catch (workerError) {
-                    console.warn('[KenshoStore] GraphWorker indisponible, création locale');
+                    log.warn('GraphWorker indisponible, création locale');
                     projectId = `proj_${Date.now()}`;
                 }
             } else {
@@ -911,7 +901,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             localStorage.setItem('kensho_projects', JSON.stringify(updatedProjects));
             set({ projects: updatedProjects });
 
-            console.log(`[KenshoStore] Projet créé: ${name} (${projectId})`);
+            log.info(`Projet créé: ${name} (${projectId})`);
             await loadProjects();
             
             // Sprint 7: Synchronisation multi-onglets
@@ -925,7 +915,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 duration: 3000
             });
         } catch (error) {
-            console.error('[KenshoStore] Erreur lors de la création du projet:', error);
+            log.error('Erreur lors de la création du projet', error instanceof Error ? error : undefined);
             toast.error('Erreur', {
                 description: 'Impossible de créer le projet',
                 duration: 4000
@@ -949,16 +939,15 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 args: [projectId, text]
             });
 
-            console.log(`[KenshoStore] Tâche créée pour projet ${projectId}`);
+            log.info(`Tâche créée pour projet ${projectId}`);
             await loadProjectTasks(projectId);
             
-            // Sprint 7: Synchronisation multi-onglets
             const { projectSyncChannel } = get();
             if (projectSyncChannel) {
                 projectSyncChannel.postMessage({ type: 'tasks_updated', projectId });
             }
         } catch (error) {
-            console.error('[KenshoStore] Erreur lors de la création de la tâche:', error);
+            log.error('Erreur lors de la création de la tâche', error instanceof Error ? error : undefined);
         }
     },
 
@@ -991,9 +980,9 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
                 }
             }
 
-            console.log(`[KenshoStore] Tâche ${taskId} basculée`);
+            log.debug(`Tâche ${taskId} basculée`);
         } catch (error) {
-            console.error('[KenshoStore] Erreur lors de la bascule de la tâche:', error);
+            log.error('Erreur lors de la bascule de la tâche', error instanceof Error ? error : undefined);
         }
     }
     };

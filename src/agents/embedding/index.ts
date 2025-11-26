@@ -2,6 +2,9 @@ import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
 import { pipeline } from '@xenova/transformers';
 import { DownloadManager } from '../../core/downloads/DownloadManager';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('EmbeddingAgent');
 
 const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2';
 const DOWNLOAD_ID = 'embedding-model';
