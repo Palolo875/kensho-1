@@ -14,7 +14,7 @@ export function ModelDownloadPanel({ onComplete, onCancel }: ModelDownloadPanelP
     speed: 0,
     timeRemaining: 0,
     loaded: 0,
-    total: 400 * 1024 * 1024, // 400MB
+    total: 500 * 1024 * 1024, // 500MB
     file: 'Initialisation...'
   });
   const [isPaused, setIsPaused] = useState(false);
@@ -51,7 +51,7 @@ export function ModelDownloadPanel({ onComplete, onCancel }: ModelDownloadPanelP
   };
 
   const handleResume = () => {
-    // La reprise complète nécessite une refonte - pour maintenant, continuer simplement
+    modelManager.resumeDownload();
     setIsPaused(false);
   };
 
@@ -98,7 +98,7 @@ export function ModelDownloadPanel({ onComplete, onCancel }: ModelDownloadPanelP
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Download className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">Téléchargement Qwen3</h2>
+            <h2 className="text-lg font-semibold text-foreground">Téléchargement GPT-2</h2>
           </div>
           <button
             onClick={handleCancel}

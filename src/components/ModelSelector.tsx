@@ -29,23 +29,23 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
       return;
     }
 
-    if (modelId === 'qwen3-0.6b') {
-      if (modelManager.isModelDownloaded('qwen3-0.6b')) {
+    if (modelId === 'gpt2') {
+      if (modelManager.isModelDownloaded('gpt2')) {
         // Déjà téléchargé
-        setSelectedModel('qwen3-0.6b');
-        await modelManager.switchToModel('qwen3-0.6b');
+        setSelectedModel('gpt2');
+        await modelManager.switchToModel('gpt2');
         setShowModal(false);
-        onModelSelected?.('qwen3-0.6b');
-        localStorage.setItem('kensho_selected_model', 'qwen3-0.6b');
+        onModelSelected?.('gpt2');
+        localStorage.setItem('kensho_selected_model', 'gpt2');
         return;
       }
 
       // Demander confirmation avant téléchargement
-      if (!confirm('Télécharger Qwen3 0.6B (~400MB)? Cela peut prendre quelques minutes.\n\nVous pouvez mettre en pause, reprendre ou arrêter à tout moment.')) {
+      if (!confirm('Télécharger GPT-2 (~500MB)? Cela peut prendre quelques minutes.\n\nVous pouvez mettre en pause, reprendre ou arrêter à tout moment.')) {
         return;
       }
 
-      setSelectedModel('qwen3-0.6b');
+      setSelectedModel('gpt2');
       setShowDownloadPanel(true);
     }
   };
@@ -53,11 +53,11 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
   const handleDownloadComplete = async () => {
     setShowDownloadPanel(false);
     setShowModal(false);
-    onModelSelected?.('qwen3-0.6b');
-    localStorage.setItem('kensho_selected_model', 'qwen3-0.6b');
+    onModelSelected?.('gpt2');
+    localStorage.setItem('kensho_selected_model', 'gpt2');
     setModels(modelManager.getAvailableModels());
     
-    await modelManager.switchToModel('qwen3-0.6b');
+    await modelManager.switchToModel('gpt2');
   };
 
   const handleDownloadCancel = () => {
@@ -101,7 +101,7 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
                   <p className="text-sm text-muted-foreground mt-1">{model.description}</p>
                   <p className="text-xs text-muted-foreground mt-2">Taille: {model.size}</p>
                 </div>
-                {model.id === 'qwen3-0.6b' && !model.isDownloaded && (
+                {model.id === 'gpt2' && !model.isDownloaded && (
                   <Download className="h-5 w-5 text-muted-foreground flex-shrink-0 ml-2" />
                 )}
               </div>
@@ -120,11 +120,11 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
           </Button>
           <Button
             onClick={() => {
-              handleSelectModel('qwen3-0.6b');
+              handleSelectModel('gpt2');
             }}
           >
             <Download className="h-4 w-4 mr-2" />
-            Télécharger Qwen3
+            Télécharger GPT-2
           </Button>
         </div>
       </div>

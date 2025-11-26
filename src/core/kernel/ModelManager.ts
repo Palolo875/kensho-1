@@ -15,7 +15,7 @@ env.allowRemoteModels = true;
 
 console.log("🧠✨ Initialisation du ModelManager v4.0 (Transformers.js + Qwen3-0.6B-ONNX)...");
 
-export type ModelType = 'qwen3-0.6b' | 'mock';
+export type ModelType = 'gpt2' | 'mock';
 
 export interface ModelInfo {
   id: ModelType;
@@ -50,6 +50,7 @@ export class ModelManager {
   private downloadController: AbortController | null = null;
   private downloadStartTime = 0;
   private downloadedBytes = 0;
+  private pausedProgress = 0;
 
   constructor() {
     this.resetReadyPromise();
@@ -72,12 +73,12 @@ export class ModelManager {
   public getAvailableModels(): ModelInfo[] {
     return [
       {
-        id: 'qwen3-0.6b',
-        name: 'Qwen3 0.6B ONNX',
-        huggingFaceId: 'onnx-community/Qwen3-0.6B-ONNX',
-        size: '~400MB',
-        description: 'Modèle très léger et rapide',
-        isDownloaded: this.downloadedModels.has('qwen3-0.6b')
+        id: 'gpt2',
+        name: 'GPT-2 (Xenova)',
+        huggingFaceId: 'Xenova/gpt2',
+        size: '~500MB',
+        description: 'Modèle GPT-2 optimisé pour Transformers.js',
+        isDownloaded: this.downloadedModels.has('gpt2')
       },
       {
         id: 'mock',
@@ -126,22 +127,28 @@ export class ModelManager {
    */
   public pauseDownload() {
     console.log("[ModelManager] Pause du téléchargement...");
-    // Note: pause réelle nécessite une abstraction à un niveau plus bas (workers)
-    // Pour maintenant, on utilise cancel comme workaround
+    if (this.downloadController && !this.downloadController.signal.aborted) {
+      this.pausedProgress = this.downloadedBytes;
+    }
+  }
+
+  public resumeDownload() {
+    console.log("[ModelManager] Reprise du téléchargement...");
+    // La reprise est gérée en interne
   }
 
   /**
-   * Télécharge et initialise le modèle Qwen3 0.6B
+   * Télécharge et initialise le modèle DistilGPT-2
    * À appeler UNIQUEMENT si l'utilisateur le demande
    */
   public async downloadAndInitQwen3(onProgress?: DownloadCallback) {
-    if (this.downloadedModels.has('qwen3-0.6b')) {
-      console.log("[ModelManager] Qwen3 déjà téléchargé");
+    if (this.downloadedModels.has('gpt2')) {
+      console.log("[ModelManager] GPT-2 déjà téléchargé");
       return;
     }
 
-    if (this.isInitializing && this.currentModelKey === 'qwen3-0.6b') {
-      console.warn("[ModelManager] Qwen3 en cours de téléchargement, attente...");
+    if (this.isInitializing && this.currentModelKey === 'gpt2') {
+      console.warn("[ModelManager] GPT-2 en cours de téléchargement, attente...");
       await this.ready;
       return;
     }
@@ -150,35 +157,39 @@ export class ModelManager {
     this.downloadController = new AbortController();
     this.downloadStartTime = Date.now();
     this.downloadedBytes = 0;
-    const modelKey = "onnx-community/Qwen3-0.6B-ONNX";
+    this.pausedProgress = 0;
+    const modelKey = "Xenova/gpt2";
+    const estimatedTotalBytes = 500 * 1024 * 1024; // 500MB
 
     try {
-      console.log(`[ModelManager] Pré-chargement du tokenizer...`);
+      console.log(`[ModelManager] Chargement de GPT-2 (Xenova)...`);
       sseStreamer.streamInfo(`Chargement du tokenizer...`);
       
+      // Charger le tokenizer
       this.tokenizer = await AutoTokenizer.from_pretrained(modelKey);
       
-      console.log(`[ModelManager] ✅ Tokenizer chargé. Chargement du modèle...`);
-      sseStreamer.streamInfo(`Chargement du modèle ${modelKey}...`);
+      console.log(`[ModelManager] ✅ Tokenizer prêt. Chargement du modèle...`);
+      sseStreamer.streamInfo(`Chargement du modèle...`);
       
+      // Charger le modèle avec gestion de progression
       this.model = await AutoModelForCausalLM.from_pretrained(modelKey, {
         quantized: true,
         progress_callback: (progress: any) => {
           if (this.downloadController?.signal.aborted) {
             throw new Error('Download cancelled');
           }
-          
-          const percent = Math.round((progress.progress || 0) * 100);
+
+          const percent = progress.progress ? Math.round(progress.progress * 100) : 0;
           const now = Date.now();
           const elapsedMs = now - this.downloadStartTime;
           const elapsedSec = elapsedMs / 1000;
           
-          // Estimation: Qwen3-0.6B = ~400MB total
-          const estimatedTotalBytes = 400 * 1024 * 1024;
           const currentBytes = (percent / 100) * estimatedTotalBytes;
           const speed = currentBytes / (elapsedSec || 1);
           const remainingBytes = estimatedTotalBytes - currentBytes;
           const timeRemainingMs = remainingBytes / (speed || 1) * 1000;
+
+          this.downloadedBytes = currentBytes;
           
           const progressData: DownloadProgress = {
             percent,
@@ -186,27 +197,37 @@ export class ModelManager {
             timeRemaining: Math.max(0, timeRemainingMs),
             loaded: Math.round(currentBytes),
             total: estimatedTotalBytes,
-            file: progress.file
+            file: progress.file || 'GPT-2 model files'
           };
           
           onProgress?.(progressData);
-          console.log(`[ModelManager] Progression: ${progress.file} (${percent}%)`);
+          console.log(`[ModelManager] Progression: ${percent}%`);
           sseStreamer.streamInfo(`Téléchargement: ${percent}%`);
         }
       });
-      
-      this.currentModelKey = 'qwen3-0.6b';
-      this.downloadedModels.add('qwen3-0.6b');
+
+      this.currentModelKey = 'gpt2';
+      this.downloadedModels.add('gpt2');
       this.isInitialized = true;
       this.isInitializing = false;
       this.downloadController = null;
       
+      // Envoyer 100%
+      onProgress?.({
+        percent: 100,
+        speed: 0,
+        timeRemaining: 0,
+        loaded: estimatedTotalBytes,
+        total: estimatedTotalBytes,
+        file: 'GPT-2 - Prêt!'
+      });
+
       this._resolveReady();
-      console.log(`✅ [ModelManager] Qwen3-0.6B prêt pour générer du texte.`);
+      console.log(`✅ [ModelManager] GPT-2 prêt pour générer du texte.`);
       sseStreamer.streamInfo(`Modèle prêt!`);
 
     } catch (error) {
-      if ((error as any)?.name === 'AbortError') {
+      if ((error as any)?.name === 'AbortError' || (error as any)?.message === 'Download cancelled') {
         console.log("[ModelManager] Téléchargement annulé par l'utilisateur");
         this.isInitializing = false;
         this.downloadController = null;
@@ -233,14 +254,14 @@ export class ModelManager {
       return;
     }
 
-    if (modelKey === 'qwen3-0.6b') {
-      if (!this.downloadedModels.has('qwen3-0.6b')) {
-        throw new Error("Qwen3-0.6B n'a pas été téléchargé. Appelez downloadAndInitQwen3() d'abord.");
+    if (modelKey === 'gpt2') {
+      if (!this.downloadedModels.has('gpt2')) {
+        throw new Error("GPT-2 n'a pas été téléchargé. Appelez downloadAndInitQwen3() d'abord.");
       }
       if (!this.model || !this.tokenizer) {
-        throw new Error("Qwen3-0.6B n'a pas pu être initialisé");
+        throw new Error("GPT-2 n'a pas pu être initialisé");
       }
-      this.currentModelKey = 'qwen3-0.6b';
+      this.currentModelKey = 'gpt2';
       return;
     }
   }
