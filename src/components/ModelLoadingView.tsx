@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 import { Progress } from '@/components/ui/progress';
 import { X, Minimize2, Maximize2, Pause, Play, HardDrive, Database, Sparkles } from 'lucide-react';
@@ -200,7 +200,6 @@ export function ModelLoadingView() {
     const isMinimized = useKenshoStore(state => state.isLoadingMinimized);
     const isPaused = useKenshoStore(state => state.isLoadingPaused);
     const setMinimized = useKenshoStore(state => state.setLoadingMinimized);
-    const setPaused = useKenshoStore(state => state.setLoadingPaused);
     const startModelDownload = useKenshoStore(state => state.startModelDownload);
     const pauseModelDownload = useKenshoStore(state => state.pauseModelDownload);
     const resumeModelDownload = useKenshoStore(state => state.resumeModelDownload);
@@ -313,13 +312,6 @@ export function ModelLoadingView() {
             </div>
         );
     }
-
-    // Version complète (dialog)
-    const handleCloseDialog = () => {
-        if (modelProgress.phase === 'idle' || modelProgress.phase === 'error') {
-            setMinimized(true);
-        }
-    };
 
     return (
         <Dialog open={true} onOpenChange={(open) => {

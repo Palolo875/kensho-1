@@ -1,5 +1,5 @@
 // src/contexts/ObservatoryContext.tsx
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { MessageBus } from '@/core/communication/MessageBus';
 
 export interface WorkerStatus {

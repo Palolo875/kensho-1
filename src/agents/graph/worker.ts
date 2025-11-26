@@ -8,14 +8,10 @@
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime } from '../../core/agent-system/AgentRuntime';
 import { GraphWorker } from './index';
-import { createLogger } from '../../lib/logger';
-
-const log = createLogger('GraphWorker');
 
 runAgent({
     name: 'GraphWorker',
     init: async (runtime: AgentRuntime) => {
-        console.log('[GraphWorker] 🚀 Initialisation du worker de graphe...');
         
         const graphWorker = new GraphWorker();
         
@@ -28,20 +24,21 @@ runAgent({
         // Méthodes existantes du Knowledge Graph
         // ========================================
 
-        runtime.registerMethod('atomicAddNode', async (payload: { node: any }) => {
-            return await graphWorker.atomicAddNode(payload.node);
+        runtime.registerMethod('atomicAddNode', async (payload) => {
+            return await graphWorker.atomicAddNode((payload as any).node);
         });
 
-        runtime.registerMethod('search', async (payload: { embedding: number[]; k: number }) => {
-            return await graphWorker.search(payload.embedding, payload.k);
+        runtime.registerMethod('search', async (payload) => {
+            const p = payload as any;
+            return await graphWorker.search(p.embedding, p.k);
         });
 
-        runtime.registerMethod('addEdge', async (payload: { edge: any }) => {
-            return await graphWorker.addEdge(payload.edge);
+        runtime.registerMethod('addEdge', async (payload) => {
+            return await graphWorker.addEdge((payload as any).edge);
         });
 
-        runtime.registerMethod('getNode', async (payload: { id: string }) => {
-            return await graphWorker.getNode(payload.id);
+        runtime.registerMethod('getNode', async (payload) => {
+            return await graphWorker.getNode((payload as any).id);
         });
 
         runtime.registerMethod('getStats', async () => {
@@ -56,60 +53,63 @@ runAgent({
             return await graphWorker.rebuildIndex();
         });
 
-        runtime.registerMethod('deleteNodesByTopic', async (payload: { topic: string }) => {
-            return await graphWorker.deleteNodesByTopic(payload.topic);
+        runtime.registerMethod('deleteNodesByTopic', async (payload) => {
+            return await graphWorker.deleteNodesByTopic((payload as any).topic);
         });
 
         // ========================================
         // Nouvelles méthodes Sprint 7 : Projets
         // ========================================
 
-        runtime.registerMethod('createProject', async (payload: { name: string; goal?: string }) => {
-            return await graphWorker.createProject(payload.name, payload.goal || '');
+        runtime.registerMethod('createProject', async (payload) => {
+            const p = payload as any;
+            return await graphWorker.createProject(p.name, p.goal || '');
         });
 
-        runtime.registerMethod('getProject', async (payload: { id: string }) => {
-            return await graphWorker.getProject(payload.id);
+        runtime.registerMethod('getProject', async (payload) => {
+            return await graphWorker.getProject((payload as any).id);
         });
 
         runtime.registerMethod('getActiveProjects', async () => {
             return await graphWorker.getActiveProjects();
         });
 
-        runtime.registerMethod('updateProject', async (payload: { id: string; updates: any }) => {
-            return await graphWorker.updateProject(payload.id, payload.updates);
+        runtime.registerMethod('updateProject', async (payload) => {
+            const p = payload as any;
+            return await graphWorker.updateProject(p.id, p.updates);
         });
 
-        runtime.registerMethod('deleteProject', async (payload: { id: string }) => {
-            return await graphWorker.deleteProject(payload.id);
+        runtime.registerMethod('deleteProject', async (payload) => {
+            return await graphWorker.deleteProject((payload as any).id);
         });
 
         // ========================================
         // Nouvelles méthodes Sprint 7 : Tâches
         // ========================================
 
-        runtime.registerMethod('createTask', async (payload: { projectId: string; text: string }) => {
-            return await graphWorker.createTask(payload.projectId, payload.text);
+        runtime.registerMethod('createTask', async (payload) => {
+            const p = payload as any;
+            return await graphWorker.createTask(p.projectId, p.text);
         });
 
-        runtime.registerMethod('getProjectTasks', async (payload: { projectId: string }) => {
-            return await graphWorker.getProjectTasks(payload.projectId);
+        runtime.registerMethod('getProjectTasks', async (payload) => {
+            return await graphWorker.getProjectTasks((payload as any).projectId);
         });
 
-        runtime.registerMethod('toggleTask', async (payload: { taskId: string }) => {
-            return await graphWorker.toggleTask(payload.taskId);
+        runtime.registerMethod('toggleTask', async (payload) => {
+            return await graphWorker.toggleTask((payload as any).taskId);
         });
 
-        runtime.registerMethod('deleteTask', async (payload: { taskId: string }) => {
-            return await graphWorker.deleteTask(payload.taskId);
+        runtime.registerMethod('deleteTask', async (payload) => {
+            return await graphWorker.deleteTask((payload as any).taskId);
         });
 
         // ========================================
         // Sprint 9: Fact-Checking Evidence Search
         // ========================================
 
-        runtime.registerMethod('findEvidence', async (payload: { embedding: number[] }) => {
-            return await graphWorker.findEvidence(payload.embedding, 3);
+        runtime.registerMethod('findEvidence', async (payload) => {
+            return await graphWorker.findEvidence((payload as any).embedding, 3);
         });
 
         runtime.log('info', '[GraphWorker] ✅ Toutes les méthodes enregistrées');
