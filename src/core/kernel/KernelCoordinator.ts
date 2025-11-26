@@ -3,8 +3,11 @@ import { resourceManager } from './ResourceManager';
 import { MODEL_CATALOG } from './ModelCatalog';
 import { ModelLoadDecision, DeviceStatus } from './KernelTypes';
 import { InitProgressReport } from '@mlc-ai/web-llm';
+import { createLogger } from '../../lib/logger';
 
-console.log("🎯 Initialisation du KernelCoordinator...");
+const log = createLogger('KernelCoordinator');
+
+log.info('Initialisation du KernelCoordinator...');
 
 class KernelCoordinator {
   private isInitialized = false;
@@ -14,12 +17,12 @@ class KernelCoordinator {
     progressCallback?: (report: InitProgressReport) => void
   ) {
     if (this.isInitialized) {
-      console.warn("[KernelCoordinator] Déjà initialisé, ignoré.");
+      log.warn("Déjà initialisé, ignoré.");
       return;
     }
 
     try {
-      console.log("[KernelCoordinator] Démarrage du noyau Kensho...");
+      log.info("Démarrage du noyau Kensho...");
 
       const status = await resourceManager.getStatus();
       
@@ -28,7 +31,7 @@ class KernelCoordinator {
       }
 
       resourceManager.on('memory-critical', async (status: DeviceStatus) => {
-        console.warn('[KernelCoordinator] ⚠️ Mémoire critique détectée:', {
+        log.warn('Mémoire critique détectée:', {
           usageRatio: status.memory.usageRatio,
           jsHeapUsed: status.memory.jsHeapUsed,
           trend: status.memory.trend
@@ -36,28 +39,28 @@ class KernelCoordinator {
       });
 
       resourceManager.on('battery-low', async (status: DeviceStatus) => {
-        console.warn('[KernelCoordinator] 🔋 Batterie faible détectée:', {
+        log.warn('Batterie faible détectée:', {
           level: status.battery?.level,
           isCharging: status.battery?.isCharging
         });
       });
 
       resourceManager.on('network-offline', async (status: DeviceStatus) => {
-        console.warn('[KernelCoordinator] 📡 Perte de connexion réseau');
+        log.warn('Perte de connexion réseau');
       });
 
       await modelManager.init(defaultModelKey, (report) => {
-        console.log(`[KernelCoordinator] Chargement du modèle: ${report.text}`);
+        log.info(`Chargement du modèle: ${report.text}`);
         if (progressCallback) {
           progressCallback(report);
         }
       });
 
       this.isInitialized = true;
-      console.log('✅ [KernelCoordinator] Kensho kernel opérationnel');
+      log.info('Kensho kernel opérationnel');
 
     } catch (error) {
-      console.error('[KernelCoordinator] Échec de l\'initialisation:', error);
+      log.error('Échec de l\'initialisation:', error as Error);
       throw error;
     }
   }
@@ -96,7 +99,7 @@ class KernelCoordinator {
 
     if (!status.network.isOnline) {
       if (allowOfflineSwitch) {
-        console.log('[KernelCoordinator] Mode hors ligne - Tentative de switch vers modèle possiblement en cache');
+        log.info('Mode hors ligne - Tentative de switch vers modèle possiblement en cache');
         return { canLoad: true };
       }
       return { 
@@ -122,37 +125,12 @@ class KernelCoordinator {
     return { canLoad: true };
   }
 
-  public async switchModel(
-    modelKey: string, 
-    progressCallback?: (report: InitProgressReport) => void
-  ): Promise<void> {
+  public async switchModel(modelKey: string): Promise<void> {
     const decision = await this.canLoadModel(modelKey);
-    
     if (!decision.canLoad) {
-      throw new Error(`Impossible de charger le modèle: ${decision.reason}`);
+      throw new Error(`Cannot load model: ${decision.reason}`);
     }
-
-    console.log(`[KernelCoordinator] Changement de modèle vers ${modelKey}`);
-    await modelManager.switchModel(modelKey, progressCallback);
-  }
-
-  public getCurrentModel(): string | null {
-    return modelManager.getCurrentModel();
-  }
-
-  public async getSystemStatus(): Promise<DeviceStatus> {
-    return await resourceManager.getStatus(true);
-  }
-
-  public getAvailableModels() {
-    return MODEL_CATALOG;
-  }
-
-  public async dispose() {
-    console.log('[KernelCoordinator] Libération des ressources...');
-    await modelManager.dispose();
-    resourceManager.destroy();
-    this.isInitialized = false;
+    await modelManager.switchToModel(modelKey as any);
   }
 }
 
