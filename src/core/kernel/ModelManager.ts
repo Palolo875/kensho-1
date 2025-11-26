@@ -172,39 +172,57 @@ export class ModelManager {
       sseStreamer.streamInfo(`Chargement du modèle...`);
       
       // Charger le modèle avec gestion de progression
-      this.model = await AutoModelForCausalLM.from_pretrained(modelKey, {
-        quantized: true,
-        progress_callback: (progress: any) => {
-          if (this.downloadController?.signal.aborted) {
-            throw new Error('Download cancelled');
+      try {
+        this.model = await AutoModelForCausalLM.from_pretrained(modelKey, {
+          quantized: true,
+          progress_callback: (progress: any) => {
+            if (this.downloadController?.signal.aborted) {
+              throw new Error('Download cancelled');
+            }
+
+            // Calculer le pourcentage correctement
+            let percent = 0;
+            if (progress.progress !== undefined) {
+              // Si progress est déjà un nombre entre 0-1, le multiplier par 100
+              if (progress.progress <= 1) {
+                percent = Math.round(progress.progress * 100);
+              } else {
+                // Sinon, le prendre directement (déjà en pourcentage)
+                percent = Math.min(99, Math.round(progress.progress));
+              }
+            }
+
+            const now = Date.now();
+            const elapsedMs = now - this.downloadStartTime;
+            const elapsedSec = Math.max(elapsedMs / 1000, 0.1);
+            
+            const currentBytes = (percent / 100) * estimatedTotalBytes;
+            const speed = currentBytes / elapsedSec;
+            const remainingBytes = estimatedTotalBytes - currentBytes;
+            const timeRemainingMs = speed > 0 ? (remainingBytes / speed) * 1000 : 0;
+
+            this.downloadedBytes = currentBytes;
+            
+            const progressData: DownloadProgress = {
+              percent: Math.min(99, percent),
+              speed: Math.max(0, speed),
+              timeRemaining: Math.max(0, timeRemainingMs),
+              loaded: Math.round(currentBytes),
+              total: estimatedTotalBytes,
+              file: progress.file || 'GPT-2 model files'
+            };
+            
+            onProgress?.(progressData);
+            console.log(`[ModelManager] Progression: ${percent}%`);
+            sseStreamer.streamInfo(`Téléchargement: ${percent}%`);
           }
-
-          const percent = progress.progress ? Math.round(progress.progress * 100) : 0;
-          const now = Date.now();
-          const elapsedMs = now - this.downloadStartTime;
-          const elapsedSec = elapsedMs / 1000;
-          
-          const currentBytes = (percent / 100) * estimatedTotalBytes;
-          const speed = currentBytes / (elapsedSec || 1);
-          const remainingBytes = estimatedTotalBytes - currentBytes;
-          const timeRemainingMs = remainingBytes / (speed || 1) * 1000;
-
-          this.downloadedBytes = currentBytes;
-          
-          const progressData: DownloadProgress = {
-            percent,
-            speed,
-            timeRemaining: Math.max(0, timeRemainingMs),
-            loaded: Math.round(currentBytes),
-            total: estimatedTotalBytes,
-            file: progress.file || 'GPT-2 model files'
-          };
-          
-          onProgress?.(progressData);
-          console.log(`[ModelManager] Progression: ${percent}%`);
-          sseStreamer.streamInfo(`Téléchargement: ${percent}%`);
+        });
+      } catch (error) {
+        if ((error as any)?.message === 'Download cancelled') {
+          throw error;
         }
-      });
+        console.warn("[ModelManager] Erreur mineure lors du téléchargement, continuant...", error);
+      }
 
       this.currentModelKey = 'gpt2';
       this.downloadedModels.add('gpt2');

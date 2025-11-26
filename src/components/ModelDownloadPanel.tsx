@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Pause, Play, X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { modelManager, type DownloadProgress } from '@/core/kernel/ModelManager';
@@ -19,28 +19,46 @@ export function ModelDownloadPanel({ onComplete, onCancel }: ModelDownloadPanelP
   });
   const [isPaused, setIsPaused] = useState(false);
   const [isDownloading, setIsDownloading] = useState(true);
+  const downloadRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const startDownload = async () => {
       try {
-        await modelManager.downloadAndInitQwen3((prog) => {
-          setProgress(prog);
-          if (prog.percent === 100) {
-            setIsDownloading(false);
-            setTimeout(() => onComplete?.(), 500);
+        downloadRef.current = modelManager.downloadAndInitQwen3((prog) => {
+          if (isMounted) {
+            // Valider les données avant mise à jour
+            const validProgress = {
+              ...prog,
+              percent: Math.min(100, Math.max(0, Math.round(prog.percent || 0)))
+            };
+            setProgress(validProgress);
+            
+            if (validProgress.percent >= 100) {
+              setIsDownloading(false);
+              setTimeout(() => onComplete?.(), 500);
+            }
           }
         });
+        await downloadRef.current;
       } catch (error) {
-        if ((error as any)?.name === 'AbortError' || (error as any)?.message === 'Download cancelled') {
-          console.log('Download cancelled by user');
-        } else {
-          console.error('Download error:', error);
+        if (isMounted) {
+          if ((error as any)?.name === 'AbortError' || (error as any)?.message === 'Download cancelled') {
+            console.log('Download cancelled by user');
+          } else {
+            console.error('Download error:', error);
+          }
+          setIsDownloading(false);
         }
-        setIsDownloading(false);
       }
     };
 
     startDownload();
+
+    return () => {
+      isMounted = false;
+    };
   }, [onComplete]);
 
   const handlePause = () => {
