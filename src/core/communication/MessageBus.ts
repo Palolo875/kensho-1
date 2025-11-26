@@ -14,8 +14,10 @@ import {
 } from './managers';
 import { MetricsCollector } from '../monitoring';
 import { payloadValidator } from './validation';
+import { createLogger } from '@/lib/logger';
 
-// Re-export StreamCallbacks for public API compatibility
+const log = createLogger('MessageBus');
+
 export type { StreamCallbacks };
 
 export interface MessageBusConfig {
@@ -23,6 +25,10 @@ export interface MessageBusConfig {
     transport?: NetworkTransport;
     storage?: StorageAdapter;
     enableMetrics?: boolean;
+}
+
+interface ErrorWithCode extends Error {
+    code?: string;
 }
 
 /**
@@ -37,7 +43,6 @@ export class MessageBus {
     private readonly offlineQueue: OfflineQueue;
     private requestHandler?: RequestHandler;
 
-    // Managers
     private readonly requestManager: RequestManager;
     private readonly streamManager: StreamManager;
     private readonly duplicateDetector: DuplicateDetector;
@@ -51,86 +56,64 @@ export class MessageBus {
     constructor(name: WorkerName, config: MessageBusConfig = {}) {
         this.workerName = name;
         this.transport = config.transport || new BroadcastTransport(name);
-        this.metricsEnabled = config.enableMetrics !== false; // Enabled by default
+        this.metricsEnabled = config.enableMetrics !== false;
 
-        // Initialize Managers
         this.requestManager = new RequestManager(config.defaultTimeout);
         this.streamManager = new StreamManager();
         this.duplicateDetector = new DuplicateDetector();
         this.messageRouter = new MessageRouter();
         this.metricsCollector = new MetricsCollector();
 
-        // Initialize OfflineQueue
         this.offlineQueue = new OfflineQueue(config.storage);
 
-        // Setup Router Handlers
         this.setupMessageHandlers();
 
-        // Setup Transport
         this.transport.onMessage((message) => this.handleIncomingMessage(message));
     }
 
-    private setupMessageHandlers() {
+    private setupMessageHandlers(): void {
         this.messageRouter.setHandlers({
             onRequest: (msg) => this.handleRequest(msg),
-            // Stream requests are handled similarly to normal requests but might trigger different logic in handler
             onStreamRequest: (msg) => this.handleRequest(msg),
             onResponse: (msg) => { this.requestManager.handleResponse(msg); },
             onStreamChunk: (msg) => { this.streamManager.handleChunk(msg); },
             onStreamEnd: (msg) => { this.streamManager.handleEnd(msg); },
             onStreamError: (msg) => { this.streamManager.handleError(msg); },
             onStreamCancel: (msg) => {
-                // Gérer côté consommateur
                 this.streamManager.handleCancel(msg);
-                // Notifier les subscribers système (pour les producteurs)
                 this.notifySystemSubscribers(msg);
             },
             onBroadcast: (msg) => this.handleBroadcast(msg),
             onUnknown: (msg) => {
-                // System messages might fall here if they don't fit standard types, 
-                // or we can handle 'broadcast' type specifically if defined.
-                // For now, we treat 'broadcast' as the system message type usually.
-                console.warn(`[MessageBus] Unknown message type: ${msg.type}`, msg);
+                log.warn(`Unknown message type: ${msg.type}`, { messageId: msg.messageId });
             }
         });
     }
 
-    /**
-     * Point d'entrée pour tous les messages entrants.
-     */
     private handleIncomingMessage(message: KenshoMessage): void {
-        // 1. Validation avec PayloadValidator (Zod)
         if (!payloadValidator.validate(message)) {
-            const sourceWorker = (message as any)?.sourceWorker || 'unknown';
-            console.warn(`[MessageBus] Invalid message rejected from ${sourceWorker}`);
+            const sourceWorker = (message as KenshoMessage)?.sourceWorker || 'unknown';
+            log.warn(`Invalid message rejected from ${sourceWorker}`);
             return;
         }
 
-        // 2. Ignorer ses propres messages (sauf si boucle locale désirée, mais généralement non)
         if (message.sourceWorker === this.workerName) {
             return;
         }
 
-        // 3. Router le message
         this.messageRouter.route(message);
     }
 
-    /**
-     * Gère une requête entrante (RPC ou Stream Init).
-     */
     private async handleRequest(message: KenshoMessage): Promise<void> {
-        // 1. Détection de doublons
         if (this.duplicateDetector.isDuplicate(message.messageId)) {
-            console.warn(`[MessageBus] Duplicate request detected: ${message.messageId}`);
+            log.debug(`Duplicate request detected: ${message.messageId}`);
             const cached = this.duplicateDetector.getCachedResponse(message.messageId);
             if (cached) {
-                // Renvoyer la réponse mise en cache
                 this.sendResponse(message, cached.response, cached.error);
             }
             return;
         }
 
-        // 2. Traitement
         if (!this.requestHandler) {
             const error: SerializedError = {
                 message: `No handler for request in ${this.workerName}`,
@@ -142,24 +125,21 @@ export class MessageBus {
         }
 
         try {
-            // Appeler le handler avec le payload
             const result = await this.requestHandler(message.payload);
 
-            // 3. Envoyer la réponse (seulement si ce n'est pas une requête de stream qui gère ses propres réponses via chunks)
             if (!message.streamId) {
                 this.sendResponse(message, result);
             }
-        } catch (error: any) {
+        } catch (err: unknown) {
+            const error = err as ErrorWithCode;
             const serializedError: SerializedError = {
                 message: error.message || 'Unknown error',
                 name: error.name || 'Error',
                 code: error.code || 'INTERNAL_ERROR',
                 stack: error.stack
             };
-            // En cas d'erreur, on l'envoie toujours, même pour un stream (init failed)
             this.sendResponse(message, null, serializedError);
 
-            // Collecter métrique d'erreur
             if (this.metricsEnabled) {
                 this.metricsCollector.incrementCounter('error', 1, { type: serializedError.code || 'UNKNOWN' });
             }
@@ -170,24 +150,17 @@ export class MessageBus {
         this.notifySystemSubscribers(message);
     }
 
-    /**
-     * Notifie les abonnés aux messages système.
-     */
     private notifySystemSubscribers(message: KenshoMessage): void {
         this.systemMessageSubscribers.forEach(callback => {
             try {
                 callback(message);
-            } catch (err) {
-                console.error('[MessageBus] Error in system message subscriber:', err);
+            } catch (err: unknown) {
+                log.error('Error in system message subscriber', err as Error);
             }
         });
     }
 
-    /**
-     * Envoie une réponse et la met en cache.
-     */
     private sendResponse(originalMessage: KenshoMessage, payload: unknown, error?: SerializedError): void {
-        // Marquer comme traité pour la détection de doublons
         this.duplicateDetector.markAsProcessed(originalMessage.messageId, payload, error);
 
         const responseMessage: KenshoMessage = {
@@ -204,11 +177,6 @@ export class MessageBus {
         this.sendMessage(responseMessage);
     }
 
-    // --- Public API ---
-
-    /**
-     * Envoie une requête RPC et attend la réponse.
-     */
     public async request<TResponse>(
         target: WorkerName,
         payload: unknown,
@@ -217,7 +185,6 @@ export class MessageBus {
         const messageId = this.generateMessageId();
         const startTime = performance.now();
 
-        // Créer la promesse gérée par RequestManager
         const promise = this.requestManager.createRequest<TResponse>(messageId, timeout);
 
         const message: KenshoMessage = {
@@ -229,14 +196,11 @@ export class MessageBus {
             payload
         };
 
-        // Envoyer le message
         this.sendMessage(message);
 
-        // Collecter les métriques
         try {
             const result = await promise;
 
-            // Métrique: latence
             if (this.metricsEnabled) {
                 const latency = performance.now() - startTime;
                 this.metricsCollector.recordTiming('request_latency', latency, { target, status: 'success' });
@@ -244,60 +208,22 @@ export class MessageBus {
             }
 
             return result;
-        } catch (error) {
-            // Métrique: erreur
+        } catch (err: unknown) {
             if (this.metricsEnabled) {
                 const latency = performance.now() - startTime;
+                const error = err as ErrorWithCode;
                 this.metricsCollector.recordTiming('request_latency', latency, { target, status: 'error' });
-                this.metricsCollector.incrementCounter('request_error', 1, { target, code: (error as any).code || 'UNKNOWN' });
+                this.metricsCollector.incrementCounter('request_error', 1, { target, code: error.code || 'UNKNOWN' });
             }
-            throw error;
+            throw err;
         }
     }
 
-    /**
-     * Initie un stream vers une cible et retourne l'ID du stream.
-     * 
-     * Cette méthode permet de recevoir des données en continu depuis un worker distant.
-     * Les callbacks permettent de traiter les données au fur et à mesure de leur arrivée.
-     * 
-     * Cycle de vie d'un stream:
-     * 1. Appel de requestStream() → création du stream et envoi de la requête initiale
-     * 2. Le worker distant traite la requête et émet des chunks via AgentStreamEmitter
-     * 3. Chaque chunk déclenche le callback onChunk()
-     * 4. Le stream se termine via onEnd() (succès) ou onError() (échec)
-     * 
-     * @template TChunk - Type des données reçues dans chaque chunk
-     * @param target - Nom du worker cible qui traitera le stream
-     * @param payload - Données de la requête (typiquement { method: string, args: any[] })
-     * @param callbacks - Callbacks pour gérer les événements du stream:
-     *   - onChunk: Appelé pour chaque morceau de données reçu
-     *   - onEnd: Appelé quand le stream se termine avec succès
-     *   - onError: Appelé en cas d'erreur durant le stream
-     * @returns L'ID unique du stream créé (utile pour cancelStream())
-     * 
-     * @example
-     * ```typescript
-     * const streamId = messageBus.requestStream(
-     *   'MainLLMAgent',
-     *   { method: 'generateResponse', args: ['Bonjour!'] },
-     *   {
-     *     onChunk: (chunk) => console.log('Reçu:', chunk.text),
-     *     onEnd: () => console.log('Stream terminé'),
-     *     onError: (err) => console.error('Erreur:', err)
-     *   }
-     * );
-     * 
-     * // Optionnel: annuler le stream
-     * messageBus.cancelStream(streamId);
-     * ```
-     */
     public requestStream<TChunk>(
         target: WorkerName,
         payload: unknown,
         callbacks: StreamCallbacks<TChunk>
     ): string {
-        // Créer le stream géré par StreamManager
         const streamId = this.streamManager.createStream(target, callbacks);
         const messageId = this.generateMessageId();
 
@@ -306,7 +232,7 @@ export class MessageBus {
             traceId: this.currentTraceId,
             sourceWorker: this.workerName,
             targetWorker: target,
-            type: 'request', // On utilise 'request' avec streamId
+            type: 'request',
             streamId,
             payload
         };
@@ -343,6 +269,7 @@ export class MessageBus {
     }
 
     public sendStreamError(streamId: string, error: Error, target: WorkerName): void {
+        const errorWithCode = error as ErrorWithCode;
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
             traceId: this.currentTraceId,
@@ -354,15 +281,12 @@ export class MessageBus {
             error: {
                 message: error.message,
                 name: error.name || 'Error',
-                code: (error as any).code || 'STREAM_ERROR'
+                code: errorWithCode.code || 'STREAM_ERROR'
             }
         };
         this.sendMessage(message);
     }
 
-    /**
-     * Envoie un message de cancel de stream au producteur ou consommateur distant.
-     */
     public sendStreamCancel(streamId: string, reason: string, target: WorkerName): void {
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
@@ -376,25 +300,13 @@ export class MessageBus {
         this.sendMessage(message);
     }
 
-    /**
-     * Annule un stream du côté consommateur et notifie le producteur distant.
-     * Ceci envoie un message stream_cancel au producteur pour qu'il arrête d'émettre.
-     * 
-     * @param streamId - L'ID du stream à annuler
-     * @param reason - Raison optionnelle de l'annulation
-     * @param targetWorker - Le worker producteur à notifier (optionnel, sera détecté depuis le stream)
-     * @returns true si le stream a été annulé localement, false s'il n'existait pas
-     */
     public cancelStream(streamId: string, reason?: string, targetWorker?: WorkerName): boolean {
-        const stream = (this.streamManager as any).activeStreams?.get(streamId);
-        const target = targetWorker || stream?.target;
+        const target = targetWorker || this.streamManager.getStreamTarget(streamId);
 
-        // Envoyer le message de cancel au producteur distant si on a la cible
         if (target) {
             this.sendStreamCancel(streamId, reason || 'Stream cancelled by consumer', target);
         }
 
-        // Nettoyer localement
         return this.streamManager.cancelStream(streamId, reason);
     }
 
@@ -411,22 +323,20 @@ export class MessageBus {
             messageId: this.generateMessageId(),
             traceId: this.currentTraceId,
             sourceWorker: this.workerName,
-            targetWorker: '*', // Broadcast target
-            type: 'broadcast', // Using 'broadcast' type instead of generic 'system'
-            payload: { type, data: payload } // Wrapper pour compatibilité
+            targetWorker: '*',
+            type: 'broadcast',
+            payload: { type, data: payload }
         };
         this.sendMessage(message);
     }
 
     public sendSystemMessage(target: WorkerName, type: string, payload: unknown): void {
-        // TODO: Implement direct system message if needed
-        // For now, reuse broadcast or request
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
             traceId: this.currentTraceId,
             sourceWorker: this.workerName,
             targetWorker: target,
-            type: 'broadcast', // Using 'broadcast' type for system messages even if targeted
+            type: 'broadcast',
             payload: { type, data: payload }
         };
         this.sendMessage(message);
@@ -437,22 +347,21 @@ export class MessageBus {
     }
 
     public notifyWorkerOnline(workerName: WorkerName): void {
-        // Flush offline queue for this worker
         const messages = this.offlineQueue.flush(workerName);
         messages.forEach(msg => {
             this.transport.send(msg);
         });
     }
 
-    public notifyWorkerOffline(workerName: WorkerName): void {
-        // Rien de spécial à faire pour l'instant, l'OfflineQueue gérera les futurs messages
+    public notifyWorkerOffline(_workerName: WorkerName): void {
+        // OfflineQueue handles future messages automatically
     }
 
-    public getQueueStats() {
+    public getQueueStats(): ReturnType<OfflineQueue['getStats']> {
         return this.offlineQueue.getStats();
     }
 
-    public getStats() {
+    public getStats(): Record<string, unknown> {
         const baseStats = {
             queue: this.offlineQueue.getStats(),
             requests: this.requestManager.getStats(),
@@ -461,7 +370,6 @@ export class MessageBus {
             router: this.messageRouter.getStats()
         };
 
-        // Ajouter les métriques si activées
         if (this.metricsEnabled) {
             return {
                 ...baseStats,
@@ -472,9 +380,6 @@ export class MessageBus {
         return baseStats;
     }
 
-    /**
-     * Retourne un rapport formaté des métriques
-     */
     public getMetricsReport(): string {
         if (!this.metricsEnabled) {
             return 'Metrics are disabled';
@@ -483,9 +388,6 @@ export class MessageBus {
         return JSON.stringify(metrics, null, 2);
     }
 
-    /**
-     * Réinitialise les métriques
-     */
     public resetMetricsWindow(): void {
         if (this.metricsEnabled) {
             this.metricsCollector.reset();
@@ -501,11 +403,11 @@ export class MessageBus {
     }
 
     public waitForWorkerAndRetry<TResponse>(
-        target: WorkerName,
-        originalMessageId: string,
-        timeout: number,
-        resolve: (value: TResponse) => void,
-        reject: (reason?: unknown) => void
+        _target: WorkerName,
+        _originalMessageId: string,
+        _timeout: number,
+        _resolve: (value: TResponse) => void,
+        _reject: (reason?: unknown) => void
     ): void {
         // Deprecated/No-op in new architecture
     }
@@ -514,10 +416,7 @@ export class MessageBus {
         this.requestManager.dispose();
         this.streamManager.dispose();
         this.duplicateDetector.dispose();
-        // Transport dispose if needed?
     }
-
-    // --- Private Helpers ---
 
     private sendMessage(message: KenshoMessage): string {
         this.transport.send(message);

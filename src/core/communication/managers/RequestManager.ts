@@ -1,23 +1,25 @@
 // src/core/communication/managers/RequestManager.ts
 
-import { KenshoMessage, WorkerName, SerializedError } from '../types';
+import { KenshoMessage } from '../types';
 import { globalMetrics } from '../../monitoring';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('RequestManager');
+
+interface ErrorWithCode extends Error {
+    code?: string;
+}
 
 export interface PendingRequest<T = unknown> {
     resolve: (value: T) => void;
     reject: (reason?: unknown) => void;
-    timeout: NodeJS.Timeout;
+    timeout: ReturnType<typeof setTimeout>;
     messageId: string;
     startTime: number;
 }
 
 /**
  * RequestManager gère le cycle de vie des requêtes RPC (request/response).
- * 
- * Responsabilités :
- * - Créer des requêtes avec timeout
- * - Résoudre les Promises quand une réponse arrive
- * - Timeout automatique si pas de réponse
  */
 export class RequestManager {
     private pendingRequests = new Map<string, PendingRequest>();
@@ -27,10 +29,6 @@ export class RequestManager {
         this.defaultTimeout = defaultTimeout;
     }
 
-    /**
-     * Crée une nouvelle requête avec Promise et timeout.
-     * Retourne une Promise qui sera résolue/rejetée quand la réponse arrive.
-     */
     public createRequest<TResponse>(
         messageId: string,
         timeout?: number
@@ -59,34 +57,27 @@ export class RequestManager {
         });
     }
 
-    /**
-     * Traite une réponse entrante et résout la Promise correspondante.
-     */
     public handleResponse(message: KenshoMessage): boolean {
         const messageId = message.correlationId;
         if (!messageId) {
-            console.warn('[RequestManager] Response message without correlationId', message);
+            log.warn('Response message without correlationId', { messageId: message.messageId });
             return false;
         }
 
         const pending = this.pendingRequests.get(messageId);
         if (!pending) {
-            // Peut arriver si la requête a timeout entre-temps
             return false;
         }
 
-        // Clear le timeout
         clearTimeout(pending.timeout);
         this.pendingRequests.delete(messageId);
 
-        // Calculer la latence
         const latency = performance.now() - pending.startTime;
         globalMetrics.recordTiming('request.latency_ms', latency);
 
-        // Résoudre ou rejeter selon la présence d'une erreur
         if (message.error) {
-            const error = new Error(message.error.message || 'Unknown error');
-            (error as Error & { code?: string }).code = message.error.code;
+            const error = new Error(message.error.message || 'Unknown error') as ErrorWithCode;
+            error.code = message.error.code;
             globalMetrics.incrementCounter('request.failed');
             globalMetrics.recordTiming('request.failed.latency_ms', latency);
             pending.reject(error);
@@ -99,9 +90,6 @@ export class RequestManager {
         return true;
     }
 
-    /**
-     * Annule une requête en attente (par exemple lors d'un timeout).
-     */
     public cancelRequest(messageId: string): boolean {
         const pending = this.pendingRequests.get(messageId);
         if (!pending) {
@@ -113,24 +101,19 @@ export class RequestManager {
         return true;
     }
 
-    /**
-     * Vérifie si une requête est en attente.
-     */
     public hasPendingRequest(messageId: string): boolean {
         return this.pendingRequests.has(messageId);
     }
 
-    /**
-     * Retourne le nombre de requêtes en attente.
-     */
     public getPendingCount(): number {
         return this.pendingRequests.size;
     }
 
-    /**
-     * Retourne les statistiques pour l'observabilité.
-     */
-    public getStats() {
+    public getStats(): {
+        pendingCount: number;
+        pendingRequests: string[];
+        oldestRequest: number;
+    } {
         globalMetrics.recordGauge('request.pending_count', this.pendingRequests.size);
         
         return {
@@ -140,9 +123,6 @@ export class RequestManager {
         };
     }
     
-    /**
-     * Retourne l'âge de la requête la plus ancienne (en ms).
-     */
     private getOldestRequestAge(): number {
         let oldest = 0;
         const now = performance.now();
@@ -157,9 +137,6 @@ export class RequestManager {
         return oldest;
     }
 
-    /**
-     * Nettoie toutes les requêtes en attente (dispose).
-     */
     public dispose(): void {
         this.pendingRequests.forEach(pending => {
             clearTimeout(pending.timeout);

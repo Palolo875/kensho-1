@@ -1,6 +1,9 @@
 // src/core/communication/managers/MessageRouter.ts
 
 import { KenshoMessage } from '../types';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('MessageRouter');
 
 export type MessageHandler = (message: KenshoMessage) => void | Promise<void>;
 
@@ -16,19 +19,13 @@ export interface MessageHandlers {
     onUnknown?: MessageHandler;
 }
 
-/**
- * MessageRouter route les messages entrants vers les bons handlers.
- * 
- * Responsabilités :
- * - Valider les messages entrants
- * - Router selon le type de message
- * - Gérer les messages inconnus
- */
 export interface MessageRouterConfig {
-    /** Mode strict : rejette les messages inconnus au lieu de juste les logger (défaut: false) */
     strictMode?: boolean;
 }
 
+/**
+ * MessageRouter route les messages entrants vers les bons handlers.
+ */
 export class MessageRouter {
     private handlers: MessageHandlers = {};
     private readonly strictMode: boolean;
@@ -38,19 +35,13 @@ export class MessageRouter {
         this.strictMode = config.strictMode || false;
     }
 
-    /**
-     * Configure les handlers pour chaque type de message.
-     */
     public setHandlers(handlers: MessageHandlers): void {
         this.handlers = handlers;
     }
 
-    /**
-     * Route un message vers le bon handler.
-     */
     public route(message: KenshoMessage): boolean {
         if (!this.validateMessage(message)) {
-            console.warn('[MessageRouter] Invalid message', message);
+            log.warn('Invalid message received', { messageId: message?.messageId });
             return false;
         }
 
@@ -61,32 +52,28 @@ export class MessageRouter {
             if (this.handlers.onUnknown) {
                 this.handlers.onUnknown(message);
             } else if (this.strictMode) {
-                console.error(`[MessageRouter] STRICT MODE: Rejecting unknown message type: ${message.type}`, message);
+                log.error(`STRICT MODE: Rejecting unknown message type: ${message.type}`);
                 throw new Error(`Unknown message type: ${message.type}`);
             } else {
-                console.warn(`[MessageRouter] No handler for message type: ${message.type}`, message);
+                log.warn(`No handler for message type: ${message.type}`);
             }
             return false;
         }
 
         try {
             const result = handler(message);
-            // Si le handler retourne une Promise, on la log en cas d'erreur
             if (result instanceof Promise) {
-                result.catch(error => {
-                    console.error(`[MessageRouter] Handler error for ${message.type}:`, error);
+                result.catch((error: unknown) => {
+                    log.error(`Handler error for ${message.type}`, error as Error);
                 });
             }
             return true;
-        } catch (error) {
-            console.error(`[MessageRouter] Handler error for ${message.type}:`, error);
+        } catch (error: unknown) {
+            log.error(`Handler error for ${message.type}`, error as Error);
             return false;
         }
     }
 
-    /**
-     * Retourne le handler approprié pour un message.
-     */
     private getHandlerForMessage(message: KenshoMessage): MessageHandler | undefined {
         switch (message.type) {
             case 'request':
@@ -108,9 +95,6 @@ export class MessageRouter {
         }
     }
 
-    /**
-     * Valide qu'un message a les champs requis.
-     */
     private validateMessage(message: KenshoMessage): boolean {
         if (!message || typeof message !== 'object') {
             return false;
@@ -123,10 +107,21 @@ export class MessageRouter {
         return true;
     }
 
-    /**
-     * Retourne les statistiques pour l'observabilité.
-     */
-    public getStats() {
+    public getStats(): {
+        handlersRegistered: {
+            request: boolean;
+            streamRequest: boolean;
+            response: boolean;
+            streamChunk: boolean;
+            streamEnd: boolean;
+            streamError: boolean;
+            streamCancel: boolean;
+            broadcast: boolean;
+            unknown: boolean;
+        };
+        strictMode: boolean;
+        unknownMessageCount: number;
+    } {
         return {
             handlersRegistered: {
                 request: !!this.handlers.onRequest,

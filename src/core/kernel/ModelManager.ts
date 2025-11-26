@@ -4,12 +4,15 @@
  * DistilGPT-2: ~150MB, téléchargement ultra rapide, réponses instantanées
  */
 
-import { AutoTokenizer, AutoModelForCausalLM, env } from '@xenova/transformers';
+import { AutoTokenizer, AutoModelForCausalLM, env, PreTrainedTokenizer, PreTrainedModel } from '@xenova/transformers';
 import { sseStreamer } from '../streaming/SSEStreamer';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('ModelManager');
 
 env.allowRemoteModels = true;
 
-console.log("🧠✨ Initialisation du ModelManager v5.1 (DistilGPT-2 Ultra-Léger)...");
+log.info("Initialisation du ModelManager v5.1 (DistilGPT-2 Ultra-Léger)...");
 
 export type ModelType = 'gpt2' | 'mock';
 
@@ -33,12 +36,17 @@ export interface DownloadProgress {
 
 export type DownloadCallback = (progress: DownloadProgress) => void;
 
+interface TransformersProgress {
+  progress?: number;
+  file?: string;
+}
+
 export class ModelManager {
-  private tokenizer: any | null = null;
-  private model: any | null = null;
+  private tokenizer: PreTrainedTokenizer | null = null;
+  private model: PreTrainedModel | null = null;
   private _ready!: Promise<void>;
   private _resolveReady!: () => void;
-  private _rejectReady!: (error: any) => void;
+  private _rejectReady!: (error: Error) => void;
   private isInitialized = false;
   private isInitializing = false;
   private currentModelKey: ModelType = 'mock';
@@ -50,7 +58,7 @@ export class ModelManager {
     this.resetReadyPromise();
   }
 
-  private resetReadyPromise() {
+  private resetReadyPromise(): void {
     this._ready = new Promise<void>((resolve, reject) => {
       this._resolveReady = resolve;
       this._rejectReady = reject;
@@ -86,40 +94,40 @@ export class ModelManager {
     return this.currentModelKey;
   }
 
-  public async initMockMode() {
+  public async initMockMode(): Promise<void> {
     this.currentModelKey = 'mock';
     this.downloadedModels.add('mock');
     this.isInitialized = true;
     this.isInitializing = false;
     this._resolveReady();
-    console.log("✅ [ModelManager] Mode Simulation activé");
+    log.info("Mode Simulation activé");
   }
 
-  public cancelDownload() {
+  public cancelDownload(): void {
     this.downloadCancelled = true;
-    console.log("[ModelManager] Téléchargement annulé");
+    log.info("Téléchargement annulé");
   }
 
-  public pauseDownload() {
-    console.log("[ModelManager] Pause non supportée");
+  public pauseDownload(): void {
+    log.debug("Pause non supportée pour ce modèle");
   }
 
-  public resumeDownload() {
-    console.log("[ModelManager] Reprise non supportée");
+  public resumeDownload(): void {
+    log.debug("Reprise non supportée pour ce modèle");
   }
 
   public isModelDownloaded(modelKey: ModelType): boolean {
     return this.downloadedModels.has(modelKey) || this.model !== null;
   }
 
-  public async downloadAndInitQwen3(onProgress?: DownloadCallback) {
+  public async downloadAndInitQwen3(onProgress?: DownloadCallback): Promise<void> {
     if (this.downloadedModels.has('gpt2')) {
-      console.log("[ModelManager] DistilGPT-2 déjà téléchargé");
+      log.debug("DistilGPT-2 déjà téléchargé");
       return;
     }
 
     if (this.isInitializing && this.currentModelKey === 'gpt2') {
-      console.warn("[ModelManager] En cours de téléchargement...");
+      log.warn("Téléchargement déjà en cours...");
       await this.ready;
       return;
     }
@@ -128,20 +136,19 @@ export class ModelManager {
     this.downloadStartTime = Date.now();
     this.downloadCancelled = false;
     const modelId = 'Xenova/distilgpt2';
-    const estimatedTotalBytes = 150 * 1024 * 1024; // 150MB
+    const estimatedTotalBytes = 150 * 1024 * 1024;
 
     try {
-      console.log(`[ModelManager] 🚀 Chargement de DistilGPT-2...`);
+      log.info(`Chargement de DistilGPT-2...`);
       sseStreamer.streamInfo(`Chargement du tokenizer...`);
 
       this.tokenizer = await AutoTokenizer.from_pretrained(modelId);
-      console.log(`[ModelManager] ✅ Tokenizer prêt. Chargement du modèle...`);
+      log.info(`Tokenizer prêt. Chargement du modèle...`);
       sseStreamer.streamInfo(`Chargement du modèle...`);
 
-      // Charger le modèle
       this.model = await AutoModelForCausalLM.from_pretrained(modelId, {
         quantized: true,
-        progress_callback: (progress: any) => {
+        progress_callback: (progress: TransformersProgress) => {
           if (this.downloadCancelled) {
             throw new Error('Download cancelled');
           }
@@ -174,7 +181,7 @@ export class ModelManager {
           };
           
           onProgress?.(progressData);
-          console.log(`[ModelManager] Progression: ${percent}%`);
+          log.debug(`Progression: ${percent}%`);
           sseStreamer.streamInfo(`Téléchargement: ${percent}%`);
         }
       });
@@ -190,21 +197,21 @@ export class ModelManager {
         timeRemaining: 0,
         loaded: estimatedTotalBytes,
         total: estimatedTotalBytes,
-        file: 'DistilGPT-2 - Prêt! ✅'
+        file: 'DistilGPT-2 - Prêt!'
       });
 
       this._resolveReady();
-      console.log(`✅ [ModelManager] DistilGPT-2 prêt pour générer du texte.`);
+      log.info(`DistilGPT-2 prêt pour générer du texte.`);
       sseStreamer.streamInfo(`Modèle prêt!`);
-    } catch (error) {
+    } catch (error: unknown) {
       const err = error instanceof Error ? error : new Error(String(error));
       if (err.message === 'Download cancelled') {
-        console.log("[ModelManager] Téléchargement annulé");
+        log.info("Téléchargement annulé par l'utilisateur");
         this.isInitializing = false;
         this.resetReadyPromise();
         return;
       }
-      console.error("[ModelManager] Erreur:", err.message);
+      log.error("Erreur lors du téléchargement", err);
       this.isInitializing = false;
       this._rejectReady(err);
       this.resetReadyPromise();
@@ -216,7 +223,7 @@ export class ModelManager {
   public async switchToModel(modelKey: ModelType): Promise<void> {
     if (modelKey === 'mock') {
       this.currentModelKey = 'mock';
-      console.log("[ModelManager] Mode Simulation");
+      log.debug("Basculé en Mode Simulation");
       return;
     }
 
@@ -249,9 +256,9 @@ export class ModelManager {
       });
 
       return this.tokenizer.decode(output[0]);
-    } catch (error) {
+    } catch (error: unknown) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error("[ModelManager] Erreur génération:", err.message);
+      log.error("Erreur lors de la génération", err);
       throw err;
     }
   }
