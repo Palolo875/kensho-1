@@ -41,7 +41,7 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
       }
 
       // Demander confirmation avant téléchargement
-      if (!confirm('Télécharger Llama-2-7b (~3.8GB)? Cela peut prendre 5-10 minutes selon votre connexion.\n\nVous pouvez arrêter à tout moment.')) {
+      if (!confirm('Télécharger DistilGPT-2 (~150MB)? Cela prendra 20-30 secondes.\n\nVous pouvez arrêter à tout moment.')) {
         return;
       }
 
