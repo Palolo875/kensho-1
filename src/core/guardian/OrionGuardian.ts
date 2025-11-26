@@ -6,6 +6,14 @@ import { createLogger } from '../../lib/logger';
 
 const log = createLogger('OrionGuardian');
 
+interface SystemMessagePayload {
+  systemType: 'ELECTION' | 'ALIVE' | 'NEW_LEADER' | 'HEARTBEAT' | 'I_AM_THE_NEW_LEADER';
+  candidateId?: WorkerName;
+  leaderId?: WorkerName;
+  responderId?: WorkerName;
+  epochId?: number;
+}
+
 export class OrionGuardian {
     private readonly selfName: WorkerName;
     private readonly messageBus: MessageBus;
@@ -14,8 +22,8 @@ export class OrionGuardian {
 
     private currentLeader: WorkerName | null = null;
     private currentEpoch = 0;
-    private heartbeatTimer: any = null;
-    private failureDetectorTimer: any = null;
+    private heartbeatTimer: NodeJS.Timeout | null = null;
+    private failureDetectorTimer: NodeJS.Timeout | null = null;
 
     private static readonly HEARTBEAT_INTERVAL = 2000;
     private static readonly FAILURE_THRESHOLD = 6000;
@@ -33,17 +41,21 @@ export class OrionGuardian {
         this.messageBus.notifyWorkerOnline(message.sourceWorker);
         this.workerRegistry.update(message.sourceWorker);
 
-        const payload = message.payload as any;
+        const payload = message.payload as SystemMessagePayload;
         if (payload && payload.systemType) {
             switch (payload.systemType) {
                 case 'ELECTION':
-                    this.leaderElection.handleElectionMessage(payload.candidateId);
+                    if (payload.candidateId) {
+                        this.leaderElection.handleElectionMessage(payload.candidateId);
+                    }
                     break;
                 case 'ALIVE':
                     this.leaderElection.handleAliveMessage();
                     break;
                 case 'NEW_LEADER':
-                    this.handleNewLeader(payload.leaderId);
+                    if (payload.leaderId) {
+                        this.handleNewLeader(payload.leaderId);
+                    }
                     break;
                 case 'HEARTBEAT':
                     if (message.sourceWorker === this.currentLeader) {
@@ -67,8 +79,8 @@ export class OrionGuardian {
         this.currentLeader = leaderId;
         this.currentEpoch++;
 
-        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer as any);
-        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer as any);
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer);
 
         if (this.isSelfLeader()) {
             this.startHeartbeat();
@@ -94,7 +106,7 @@ export class OrionGuardian {
     }
 
     private resetFailureDetector(): void {
-        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer as any);
+        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer);
         this.startFailureDetector();
     }
 
@@ -107,7 +119,7 @@ export class OrionGuardian {
     }
 
     public stop(): void {
-        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer as any);
-        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer as any);
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer);
     }
 }

@@ -6,9 +6,22 @@ const log = createLogger('MemoryManager');
 
 log.info('Initialisation du MemoryManager v1.0 (Elite)...');
 
+interface GPUAdapter {
+  requestDevice(): Promise<GPUDevice>;
+}
+
+interface GPUDevice {
+  limits?: { maxBufferSize?: number };
+  destroy(): void;
+}
+
+interface NavigatorWithGPU extends Navigator {
+  gpu?: { requestAdapter(): Promise<GPUAdapter | null> };
+}
+
 class MemoryManager {
   private loadedModels: Map<string, { size: number; lastUsed: number }> = new Map();
-  private gpuDevice: any | null = null;
+  private gpuDevice: GPUDevice | null = null;
   private estimatedVRAM: number = 2;
   private readonly VRAM_SAFETY_MARGIN = 0.15;
   private gpuInitPromise: Promise<void> | null = null;
@@ -27,7 +40,7 @@ class MemoryManager {
       return;
     }
 
-    const nav = navigator as any;
+    const nav = navigator as NavigatorWithGPU;
     if (!nav.gpu) {
       log.warn('WebGPU non disponible, mode dégradé 2GB');
       return;
@@ -59,7 +72,7 @@ class MemoryManager {
     try {
       const cached = localStorage.getItem(this.BUNDLE_CACHE_KEY);
       if (cached) {
-        const data = JSON.parse(cached);
+        const data = JSON.parse(cached) as Record<string, number>;
         this.realBundleSizes = new Map(Object.entries(data));
         log.info(`${this.realBundleSizes.size} tailles de bundles chargées depuis cache`);
       }

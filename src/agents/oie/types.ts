@@ -25,7 +25,7 @@ export interface PlanStep {
      * Arguments à passer à la méthode
      * Peut contenir des placeholders comme {{step1_result}} pour l'interpolation
      */
-    args: Record<string, any>;
+    args: Record<string, unknown>;
     
     /**
      * Prompt spécifique pour les agents LLM (optionnel)
@@ -76,6 +76,6 @@ export interface ThoughtStep {
     id: string;
     label: string;
     status: ThoughtStepStatus;
-    result?: any;
+    result?: unknown;
     error?: string;
 }
