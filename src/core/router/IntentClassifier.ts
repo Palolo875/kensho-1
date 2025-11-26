@@ -1,5 +1,8 @@
 import { IntentCategory, ClassificationResult, ClassificationError } from './RouterTypes';
 import { modelManager } from '../kernel/ModelManager';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('IntentClassifier');
 
 const KEYWORDS_MAP: Record<IntentCategory, string[]> = {
   CODE: [
@@ -118,13 +121,13 @@ Réponds UNIQUEMENT avec l'une de ces catégories : CODE, MATH, FACTCHECK, DIALO
     const keywordResult = this.classifyByKeywords(query);
     
     if (keywordResult && keywordResult.confidence >= 0.6) {
-      console.log(`[IntentClassifier] Classification par mots-clés : ${keywordResult.intent} (conf: ${keywordResult.confidence})`);
+      log.info(`Classification par mots-clés : ${keywordResult.intent} (conf: ${keywordResult.confidence})`);
       return keywordResult;
     }
 
-    console.log('[IntentClassifier] Fallback vers classification LLM...');
-    const llmResult = await this.classifyWithLLM(query);
-    console.log(`[IntentClassifier] Classification LLM : ${llmResult.intent} (conf: ${llmResult.confidence})`);
-    return llmResult;
+    log.info('Fallback vers classification LLM...');
+    return this.classifyWithLLM(query);
   }
 }
+
+export const intentClassifier = new IntentClassifier();

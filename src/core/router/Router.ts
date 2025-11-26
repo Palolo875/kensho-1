@@ -10,6 +10,9 @@ import {
   RouterError
 } from './RouterTypes';
 import { kernelCoordinator } from '../kernel';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('Router');
 
 export class Router {
   private intentClassifier: IntentClassifier;
@@ -23,11 +26,11 @@ export class Router {
   public async createPlan(userQuery: string): Promise<ExecutionPlan> {
     const classificationResult = await this.intentClassifier.classify(userQuery);
     
-    console.log(`[Router] Intent classifié: ${classificationResult.intent} (conf: ${classificationResult.confidence}, méthode: ${classificationResult.method})`);
+    log.info(`Intent classifié: ${classificationResult.intent} (conf: ${classificationResult.confidence}, méthode: ${classificationResult.method})`);
     
     const capacityMetrics = await this.capacityEvaluator.evaluate();
     
-    console.log(`[Router] Capacité système: ${capacityMetrics.overallScore}/10`);
+    log.info(`Capacité système: ${capacityMetrics.overallScore}/10`);
     
     const { primaryTask, fallbackTasks, downgradedFromIntent, downgradeReason } = await this.selectExperts(classificationResult.intent, capacityMetrics.overallScore);
     
@@ -49,10 +52,10 @@ export class Router {
     };
     
     if (downgradedFromIntent) {
-      console.warn(`[Router] ⚠️ Plan dégradé: ${downgradedFromIntent} → ${primaryTask.agentName}. Raison: ${downgradeReason}`);
+      log.warn(`Plan dégradé: ${downgradedFromIntent} → ${primaryTask.agentName}. Raison: ${downgradeReason}`);
     }
     
-    console.log(`[Router] Plan créé: stratégie ${strategy}, durée estimée ${estimatedDuration}ms`);
+    log.info(`Plan créé: stratégie ${strategy}, durée estimée ${estimatedDuration}ms`);
     
     return plan;
   }
@@ -63,8 +66,6 @@ export class Router {
     downgradedFromIntent?: IntentCategory;
     downgradeReason?: string;
   }> {
-    const currentModel = kernelCoordinator.getCurrentModel();
-    
     switch (intent) {
       case 'CODE': {
         const codeModel = getModelBySpecialization('code');
@@ -197,36 +198,12 @@ export class Router {
     
     const fallbackDuration = fallbackTasks.reduce((sum, task) => sum + (task.timeout * 0.5), 0);
     
-    // Stratégies parallèles (PARALLEL_LIMITED ou PARALLEL_FULL)
     if (strategy === 'PARALLEL_LIMITED' || strategy === 'PARALLEL_FULL') {
       return Math.max(primaryDuration, fallbackDuration);
     }
     
-    // Stratégie SERIAL
     return primaryDuration + fallbackDuration;
-  }
-  
-  public async validatePlan(plan: ExecutionPlan): Promise<boolean> {
-    const primaryModelExists = validateModelExists(plan.primaryTask.modelKey);
-    if (!primaryModelExists) {
-      throw new RouterError(
-        `Modèle primaire non disponible: ${plan.primaryTask.modelKey}`,
-        'Primary model not in catalog'
-      );
-    }
-    
-    for (const task of plan.fallbackTasks) {
-      if (!validateModelExists(task.modelKey)) {
-        throw new RouterError(
-          `Modèle fallback non disponible: ${task.modelKey}`,
-          'Fallback model not in catalog'
-        );
-      }
-    }
-    
-    return true;
   }
 }
 
-// Instance singleton exportée
 export const router = new Router();

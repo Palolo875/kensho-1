@@ -1,5 +1,8 @@
 import { resourceManager } from '../kernel/ResourceManager';
 import { CapacityMetrics, ExecutionStrategy } from './RouterTypes';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('CapacityEvaluator');
 
 export class CapacityEvaluator {
   
@@ -7,13 +10,13 @@ export class CapacityEvaluator {
     const status = await resourceManager.getStatus();
     
     if (!status.cpu) {
-      console.warn('[CapacityEvaluator] Télémétrie CPU manquante, utilisation de 4 cores par défaut');
+      log.warn('Télémétrie CPU manquante, utilisation de 4 cores par défaut');
     }
     const cpuScore = this.evaluateCPU(status.cpu?.hardwareConcurrency ?? 4);
     
     const usageRatio = status.memory?.usageRatio ?? 0.5;
     if (status.memory?.usageRatio === undefined) {
-      console.warn('[CapacityEvaluator] Télémétrie mémoire manquante, utilisation de 0.5 par défaut');
+      log.warn('Télémétrie mémoire manquante, utilisation de 0.5 par défaut');
     }
     const memoryScore = this.evaluateMemory(usageRatio);
     
@@ -25,7 +28,7 @@ export class CapacityEvaluator {
     
     const effectiveType = status.network?.effectiveType ?? '4g';
     if (status.network?.effectiveType === undefined) {
-      console.warn('[CapacityEvaluator] Télémétrie réseau manquante, utilisation de 4g par défaut');
+      log.warn('Télémétrie réseau manquante, utilisation de 4g par défaut');
     }
     const networkScore = this.evaluateNetwork(
       status.network?.isOnline ?? true,
@@ -81,21 +84,20 @@ export class CapacityEvaluator {
   }
   
   public determineStrategy(capacityScore: number, priority: 'HIGH' | 'MEDIUM' | 'LOW'): ExecutionStrategy {
-    // Priorité HIGH: parallélisation maximale si possible
     if (priority === 'HIGH') {
       if (capacityScore >= 8) return 'PARALLEL_FULL';
       if (capacityScore >= 6) return 'PARALLEL_LIMITED';
       return 'SERIAL';
     }
     
-    // Priorité MEDIUM: parallélisation limitée
     if (priority === 'MEDIUM') {
       if (capacityScore >= 7) return 'PARALLEL_LIMITED';
       return 'SERIAL';
     }
     
-    // Priorité LOW: seulement si ressources excellentes
     if (capacityScore >= 9) return 'PARALLEL_LIMITED';
     return 'SERIAL';
   }
 }
+
+export const capacityEvaluator = new CapacityEvaluator();
