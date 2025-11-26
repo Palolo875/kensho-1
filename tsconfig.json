@@ -19,6 +19,7 @@
     "allowJs": true,
     "strictNullChecks": true,
     "baseUrl": ".",
+    "typeRoots": ["./src/types", "./node_modules/@types"],
     "paths": {
       "@/*": ["./src/*"]
     }
