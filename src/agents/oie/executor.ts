@@ -4,7 +4,7 @@
  */
 
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
-import { Plan, PlanStep } from './types';
+import { Plan } from './types';
 import { JournalCognitif } from '../../core/oie/JournalCognitif';
 import { debateMetrics } from '../../core/oie/DebateMetrics';
 import { feedbackLearner } from '../../core/oie/FeedbackLearner';

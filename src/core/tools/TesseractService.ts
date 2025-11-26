@@ -38,7 +38,7 @@ export class TesseractService {
         }
     }
 
-    public async recognize(imageBuffer: ArrayBuffer, progressCallback: (p: number) => void): Promise<{ text: string; confidence: number }> {
+    public async recognize(imageBuffer: ArrayBuffer): Promise<{ text: string; confidence: number }> {
         if (!this.worker) {
             await this.initialize();
             if (!this.worker) throw new Error('Le service OCR n\'a pas pu être initialisé.');

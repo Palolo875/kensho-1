@@ -1,4 +1,4 @@
-import { IntentCategory, ClassificationResult, ClassificationError } from './RouterTypes';
+import { IntentCategory, ClassificationResult } from './RouterTypes';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('IntentClassifier');

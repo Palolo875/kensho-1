@@ -3,12 +3,9 @@ import { HNSWManager } from './HNSWManager';
 import {
   IMemoryNode,
   IMemoryEdge,
-  IProvenance,
-  IMemoryTransaction,
   ISearchResult,
   IGraphStats,
 } from './types';
-import type { VerificationResult } from '../../types/verification';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('GraphWorker');
@@ -349,7 +346,7 @@ export class GraphWorker {
       return [];
     }
     
-    return result[0].values.map(row => ({
+    return result[0].values.map((row: unknown[]) => ({
       id: row[0],
       name: row[1],
       goal: row[2],
@@ -434,7 +431,7 @@ export class GraphWorker {
       return [];
     }
     
-    return result[0].values.map(row => ({
+    return result[0].values.map((row: unknown[]) => ({
       id: row[0],
       projectId: row[1],
       text: row[2],

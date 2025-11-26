@@ -152,14 +152,6 @@ export class ExecutionTraceContext {
       warning: '⚠️'
     }[event.status];
 
-    const levelColor = {
-      ROUTER: '🔀',
-      KERNEL: '⚙️',
-      EXECUTOR: '👷',
-      STREAM: '📡',
-      ENGINE: '🧠'
-    }[event.level];
-
     log.info(`[${event.level}:${event.component}] ${statusEmoji} ${event.action}${event.duration ? ` (${event.duration.toFixed(0)}ms)` : ''}`, event.data || '');
   }
 

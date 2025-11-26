@@ -1,4 +1,3 @@
-import { resourceManager } from './ResourceManager';
 import { MODEL_CATALOG } from './ModelCatalog';
 import { createLogger } from '../../lib/logger';
 
@@ -24,13 +23,12 @@ class MemoryManager {
   private gpuDevice: GPUDevice | null = null;
   private estimatedVRAM: number = 2;
   private readonly VRAM_SAFETY_MARGIN = 0.15;
-  private gpuInitPromise: Promise<void> | null = null;
   
   private realBundleSizes: Map<string, number> = new Map();
   private readonly BUNDLE_CACHE_KEY = 'kensho_bundle_sizes_v1';
 
   constructor() {
-    this.gpuInitPromise = this.initGPU();
+    this.initGPU();
     this.loadBundleSizeCache();
   }
 

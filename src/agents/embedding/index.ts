@@ -114,10 +114,11 @@ runAgent({
 
     runtime.registerMethod(
       'embed',
-      (payload: EmbedRequest): Promise<number[]> => {
+      async (payload: unknown): Promise<number[]> => {
+        const req = payload as EmbedRequest;
         return new Promise((resolve, reject) => {
           embeddingQueue.push({
-            text: payload.text,
+            text: req.text,
             resolve,
             reject
           });

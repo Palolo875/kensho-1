@@ -189,7 +189,7 @@ export class MessageBus {
 
         const message: KenshoMessage = {
             messageId,
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'request',
@@ -229,7 +229,7 @@ export class MessageBus {
 
         const message: KenshoMessage = {
             messageId,
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'request',
@@ -245,7 +245,7 @@ export class MessageBus {
     public sendStreamChunk(streamId: string, payload: unknown, target: WorkerName): void {
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'stream_chunk',
@@ -258,7 +258,7 @@ export class MessageBus {
     public sendStreamEnd(streamId: string, payload: unknown, target: WorkerName): void {
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'stream_end',
@@ -272,7 +272,7 @@ export class MessageBus {
         const errorWithCode = error as ErrorWithCode;
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'stream_error',
@@ -290,7 +290,7 @@ export class MessageBus {
     public sendStreamCancel(streamId: string, reason: string, target: WorkerName): void {
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'stream_cancel',
@@ -321,7 +321,7 @@ export class MessageBus {
     public broadcastSystemMessage(type: string, payload: unknown): void {
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: '*',
             type: 'broadcast',
@@ -333,7 +333,7 @@ export class MessageBus {
     public sendSystemMessage(target: WorkerName, type: string, payload: unknown): void {
         const message: KenshoMessage = {
             messageId: this.generateMessageId(),
-            traceId: this.currentTraceId,
+            traceId: this.currentTraceId ?? undefined,
             sourceWorker: this.workerName,
             targetWorker: target,
             type: 'broadcast',
