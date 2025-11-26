@@ -74,10 +74,10 @@ export class ModelManager {
     return [
       {
         id: 'gpt2',
-        name: 'GPT-2 (Xenova)',
+        name: 'GPT-2 (Xenova Int4)',
         huggingFaceId: 'Xenova/gpt2',
-        size: '~500MB',
-        description: 'Modèle GPT-2 optimisé pour Transformers.js',
+        size: '~150MB',
+        description: 'GPT-2 quantisé en int4 - Ultra léger et rapide',
         isDownloaded: this.downloadedModels.has('gpt2')
       },
       {
@@ -159,7 +159,7 @@ export class ModelManager {
     this.downloadedBytes = 0;
     this.pausedProgress = 0;
     const modelKey = "Xenova/gpt2";
-    const estimatedTotalBytes = 500 * 1024 * 1024; // 500MB
+    const estimatedTotalBytes = 150 * 1024 * 1024; // 150MB (int4 quantized)
 
     try {
       console.log(`[ModelManager] Chargement de GPT-2 (Xenova)...`);

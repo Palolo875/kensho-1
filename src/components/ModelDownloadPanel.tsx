@@ -14,7 +14,7 @@ export function ModelDownloadPanel({ onComplete, onCancel }: ModelDownloadPanelP
     speed: 0,
     timeRemaining: 0,
     loaded: 0,
-    total: 500 * 1024 * 1024, // 500MB
+    total: 150 * 1024 * 1024, // 150MB (int4)
     file: 'Initialisation...'
   });
   const [isPaused, setIsPaused] = useState(false);
