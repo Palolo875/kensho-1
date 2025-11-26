@@ -41,7 +41,7 @@ export function ModelSelector({ onModelSelected, isOpen = true }: ModelSelectorP
       }
 
       // Demander confirmation avant téléchargement
-      if (!confirm('Télécharger GPT-2 (~500MB)? Cela peut prendre quelques minutes.\n\nVous pouvez mettre en pause, reprendre ou arrêter à tout moment.')) {
+      if (!confirm('Télécharger GPT-2 (~150MB)? Cela peut prendre quelques minutes.\n\nVous pouvez mettre en pause, reprendre ou arrêter à tout moment.')) {
         return;
       }
 
