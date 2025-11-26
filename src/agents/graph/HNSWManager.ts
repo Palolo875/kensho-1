@@ -1,13 +1,12 @@
 import { loadHnswlib, type HnswlibModule, type HierarchicalNSW } from 'hnswlib-wasm';
 import { SQLiteManager } from './SQLiteManager';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('HNSWManager');
 
 const EMBEDDING_DIMENSION = 384;
 const MAX_NODES_FOR_LINEAR_SEARCH = 300;
 
-/**
- * Gère l'index de recherche vectorielle HNSW.
- * Implémente le "Lazy Loading" pour un démarrage rapide de l'application.
- */
 export class HNSWManager {
   private hnswlib: HnswlibModule | null = null;
   private index: HierarchicalNSW | null = null;
@@ -22,26 +21,24 @@ export class HNSWManager {
   constructor(private readonly sqliteManager: SQLiteManager) {}
 
   public async initialize(): Promise<void> {
-    console.log('[HNSWManager] Chargement du module WASM...');
+    log.info('Chargement du module WASM...');
     this.hnswlib = await loadHnswlib();
     
     const db = await this.sqliteManager.getDb();
     const result = db.exec('SELECT COUNT(*) FROM nodes');
     const nodeCount = (result[0]?.values[0][0] as number) || 0;
 
-    console.log(`[HNSWManager] Nombre de nœuds: ${nodeCount}`);
+    log.info(`Nombre de nœuds: ${nodeCount}`);
 
     if (nodeCount > MAX_NODES_FOR_LINEAR_SEARCH) {
-      console.warn(
-        `[HNSWManager] ${nodeCount} nœuds détectés. La recherche linéaire sera désactivée.`
-      );
-      console.log('[HNSWManager] Reconstruction de l\'index en arrière-plan...');
+      log.warn(`${nodeCount} nœuds détectés. La recherche linéaire sera désactivée.`);
+      log.info('Reconstruction de l\'index en arrière-plan...');
       this.useLinearSearch = false;
       this.getReadyIndex().catch(err => {
-        console.error('[HNSWManager] Erreur lors de la construction de l\'index:', err);
+        log.error('Erreur lors de la construction de l\'index:', err as Error);
       });
     } else {
-      console.log(`[HNSWManager] Peu de nœuds (${nodeCount}), utilisation du fallback linéaire.`);
+      log.info(`Peu de nœuds (${nodeCount}), utilisation du fallback linéaire.`);
     }
   }
 
@@ -57,7 +54,7 @@ export class HNSWManager {
   }
 
   private async buildIndex(): Promise<void> {
-    console.log('[HNSWManager] 🔨 Début de la reconstruction de l\'index HNSW...');
+    log.info('Début de la reconstruction de l\'index HNSW...');
     const startTime = performance.now();
 
     if (!this.hnswlib) {
@@ -75,7 +72,7 @@ export class HNSWManager {
       this.index.initIndex(Math.max(1, pendingToAdd.size), 16, 200, 100);
       this.index.setEfSearch(50);
       this.isIndexReady = true;
-      console.log('[HNSWManager] Index vide initialisé.');
+      log.info('Index vide initialisé.');
 
       if (pendingToAdd.size > 0) {
         for (const [nodeId, embedding] of pendingToAdd.entries()) {
@@ -89,7 +86,7 @@ export class HNSWManager {
     }
 
     const rows = result[0].values as [string, string][];
-    console.log(`[HNSWManager] Chargement de ${rows.length} embeddings...`);
+    log.info(`Chargement de ${rows.length} embeddings...`);
 
     this.index = new this.hnswlib.HierarchicalNSW('l2', EMBEDDING_DIMENSION, '');
     this.index.initIndex(rows.length + pendingToAdd.size, 16, 200, 100);
@@ -113,14 +110,14 @@ export class HNSWManager {
         this.index.addPoint(embeddingArray, label, false);
         pendingToAdd.delete(nodeId);
       } catch (err) {
-        console.error(`[HNSWManager] Erreur lors du parsing de l'embedding pour ${nodeId}:`, err);
+        log.error(`Erreur lors du parsing de l'embedding pour ${nodeId}:`, err as Error);
       }
     }
 
     this.isIndexReady = true;
 
     if (pendingToAdd.size > 0) {
-      console.log(`[HNSWManager] 🔄 Ajout de ${pendingToAdd.size} points créés pendant le rebuild...`);
+      log.info(`Ajout de ${pendingToAdd.size} points créés pendant le rebuild...`);
       for (const [nodeId, embedding] of pendingToAdd.entries()) {
         const label = this.nodeIdToLabel.get(nodeId);
         if (label !== undefined) {
@@ -130,7 +127,7 @@ export class HNSWManager {
     }
 
     const duration = performance.now() - startTime;
-    console.log(`[HNSWManager] ✅ Index reconstruit avec ${rows.length} éléments en ${duration.toFixed(0)}ms.`);
+    log.info(`Index reconstruit avec ${rows.length} éléments en ${duration.toFixed(0)}ms.`);
   }
 
   public async search(
@@ -139,10 +136,10 @@ export class HNSWManager {
   ): Promise<{ id: string; distance: number }[]> {
     if (!this.isIndexReady) {
       if (this.useLinearSearch) {
-        console.warn('[HNSWManager] Index non prêt, utilisation du fallback de recherche linéaire.');
+        log.warn('Index non prêt, utilisation du fallback de recherche linéaire.');
         return this.linearSearch(queryVector, k);
       } else {
-        console.log('[HNSWManager] Index en cours de construction, attente de la fin...');
+        log.info('Index en cours de construction, attente de la fin...');
         await this.getReadyIndex();
       }
     }
@@ -185,7 +182,7 @@ export class HNSWManager {
         try {
           this.index.markDelete(label);
         } catch (err) {
-          console.warn(`[HNSWManager] Impossible de marquer le point ${label} comme supprimé:`, err);
+          log.warn(`Impossible de marquer le point ${label} comme supprimé:`, err as Error);
         }
       }
       this.nodeIdToLabel.delete(nodeId);
@@ -218,7 +215,7 @@ export class HNSWManager {
         const distance = this.euclideanDistance(queryVector, embeddingArray);
         distances.push({ id: nodeId, distance });
       } catch (err) {
-        console.error(`[HNSWManager] Erreur lors du parsing de l'embedding pour ${nodeId}:`, err);
+        log.error(`Erreur lors du parsing de l'embedding pour ${nodeId}:`, err as Error);
       }
     }
 
