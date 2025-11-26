@@ -121,7 +121,8 @@ export class GraphWorker {
 
       console.log(`[GraphWorker] ✅ Nœud ${node.id} ajouté avec succès`);
     } catch (error) {
-      console.error(`[GraphWorker] ❌ ATOMIC FAIL TX ${txId}:`, error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error(`[GraphWorker] ❌ ATOMIC FAIL TX ${txId}:`, err.message);
 
       try {
         db.run('ROLLBACK');
@@ -139,14 +140,14 @@ export class GraphWorker {
           JSON.stringify({
             txId,
             nodeId: node.id,
-            error: (error as Error).message,
+            error: err.message,
           })
         );
       } catch (lsError) {
         console.error('[GraphWorker] Impossible d\'écrire dans localStorage.', lsError);
       }
 
-      throw error;
+      throw err;
     }
   }
 
@@ -296,8 +297,9 @@ export class GraphWorker {
       console.log(`[GraphWorker] ✅ ${deletedCount} nœuds supprimés pour le sujet: ${topic}`);
       return deletedCount;
     } catch (error) {
-      console.error(`[GraphWorker] ❌ Erreur lors de la suppression:`, error);
-      throw error;
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error(`[GraphWorker] ❌ Erreur lors de la suppression:`, err.message);
+      throw err;
     }
   }
 
@@ -572,7 +574,8 @@ export class GraphWorker {
       console.log(`[GraphWorker] Evidence search: ${enrichedResults.length} candidates found`);
       return enrichedResults;
     } catch (error) {
-      console.error('[GraphWorker] Error in findEvidence:', error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error('[GraphWorker] Error in findEvidence:', err.message);
       return [];
     }
   }

@@ -118,7 +118,8 @@ runAgent({
                             stream.end();
                             return;
                         } catch (error) {
-                            console.error('[OIEAgent] Erreur lors de la mémorisation:', error);
+                            const err = error instanceof Error ? error : new Error(String(error));
+                            console.error('[OIEAgent] Erreur lors de la mémorisation:', err.message);
                             stream.chunk({ type: 'text', data: "Désolé, je n'ai pas pu enregistrer cette information." });
                             stream.end();
                             return;
@@ -137,7 +138,8 @@ runAgent({
                             stream.end();
                             return;
                         } catch (error) {
-                            console.error('[OIEAgent] Erreur lors de l\'oubli:', error);
+                            const err = error instanceof Error ? error : new Error(String(error));
+                            console.error('[OIEAgent] Erreur lors de l\'oubli:', err.message);
                             stream.chunk({ type: 'text', data: "Désolé, je n'ai pas pu oublier cette information." });
                             stream.end();
                             return;
