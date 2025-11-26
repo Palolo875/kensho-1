@@ -1,4 +1,7 @@
 import { createWorker, Worker } from 'tesseract.js';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('TesseractService');
 
 export class TesseractService {
     private worker: Worker | null = null;
@@ -16,19 +19,19 @@ export class TesseractService {
     }
 
     private async doInitialize(): Promise<void> {
-        console.log('[TesseractService] Initialisation du worker OCR...');
+        log.info('Initialisation du worker OCR...');
         try {
             this.worker = await createWorker('fra+eng', 1, {
                 logger: (m: any) => {
                     if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-                        console.log(`[TesseractService] Progression OCR: ${Math.round(m.progress * 100)}%`);
+                        log.info(`Progression OCR: ${Math.round(m.progress * 100)}%`);
                     }
                 }
             });
-            console.log('[TesseractService] Worker OCR prêt.');
+            log.info('Worker OCR prêt.');
             this.initPromise = null;
         } catch (error) {
-            console.error('[TesseractService] Échec de l\'initialisation du worker OCR', error);
+            log.error('Échec de l\'initialisation du worker OCR', error as Error);
             this.worker = null;
             this.initPromise = null;
             throw error;
@@ -50,7 +53,7 @@ export class TesseractService {
             await this.worker.terminate();
             this.worker = null;
             this.initPromise = null;
-            console.log('[TesseractService] Worker OCR terminé.');
+            log.info('Worker OCR terminé.');
         }
     }
 }

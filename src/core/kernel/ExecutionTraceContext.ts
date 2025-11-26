@@ -1,15 +1,6 @@
-/**
- * ExecutionTraceContext v1.0 - Debug Distribution Multi-Couche
- * 
- * Trace complète de l'exécution à travers les 5 couches :
- * 1. Router (classification + stratégie)
- * 2. KernelCoordinator (ressources + modèle)
- * 3. TaskExecutor (queue + scheduling)
- * 4. Streaming (chunks + callback)
- * 5. Engine (LLM inference)
- * 
- * Permet de déboguer facilement : "Où exactement c'est cassé ?"
- */
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('ExecutionTraceContext');
 
 export type TraceLevel = 'ROUTER' | 'KERNEL' | 'EXECUTOR' | 'STREAM' | 'ENGINE';
 
@@ -71,7 +62,6 @@ export class ExecutionTraceContext {
 
     ExecutionTraceContext.traces.set(this.requestId, this.trace);
     
-    // Cleanup si trop de traces (memory leak prevention)
     if (ExecutionTraceContext.traces.size > ExecutionTraceContext.MAX_TRACES) {
       const oldest = Array.from(ExecutionTraceContext.traces.entries())
         .sort((a, b) => a[1].startTime - b[1].startTime)[0];
@@ -100,8 +90,6 @@ export class ExecutionTraceContext {
     };
 
     this.trace.events.push(event);
-
-    // Log enrichi en console
     this.logEvent(event);
   }
 
@@ -125,7 +113,6 @@ export class ExecutionTraceContext {
 
     this.trace.events.push(event);
 
-    // Accumulate time by level
     switch (level) {
       case 'ROUTER':
         this.trace.summary.routerTime += duration;
@@ -153,9 +140,7 @@ export class ExecutionTraceContext {
     this.trace.totalDuration = this.trace.endTime - this.trace.startTime;
     this.trace.summary.totalTime = this.trace.totalDuration;
 
-    console.log(
-      `[ExecutionTrace] ✅ Requête #${this.requestId} ${finalStatus} en ${this.trace.totalDuration.toFixed(0)}ms`
-    );
+    log.info(`Requête #${this.requestId} ${finalStatus} en ${this.trace.totalDuration.toFixed(0)}ms`);
   }
 
   private logEvent(event: TraceEvent): void {
@@ -175,10 +160,7 @@ export class ExecutionTraceContext {
       ENGINE: '🧠'
     }[event.level];
 
-    console.log(
-      `[${event.level}:${event.component}] ${statusEmoji} ${event.action}${event.duration ? ` (${event.duration.toFixed(0)}ms)` : ''}`,
-      event.data || ''
-    );
+    log.info(`[${event.level}:${event.component}] ${statusEmoji} ${event.action}${event.duration ? ` (${event.duration.toFixed(0)}ms)` : ''}`, event.data || '');
   }
 
   public getTrace(): ExecutionTrace {
@@ -201,7 +183,7 @@ export class ExecutionTraceContext {
     if (requestId) {
       const trace = this.traces.get(requestId);
       if (trace) {
-        console.table({
+        log.info('ExecutionTrace Summary', {
           'Request ID': trace.requestId,
           'Status': trace.status,
           'Total Duration (ms)': trace.totalDuration?.toFixed(2),
@@ -213,9 +195,9 @@ export class ExecutionTraceContext {
         });
       }
     } else {
-      console.log('\n📊 === ExecutionTrace Summary ===');
+      log.info('ExecutionTrace Summary');
       for (const [id, trace] of this.traces) {
-        console.log(`[${id}] ${trace.status} - ${trace.totalDuration?.toFixed(0)}ms`);
+        log.info(`[${id}] ${trace.status} - ${trace.totalDuration?.toFixed(0)}ms`);
       }
     }
   }
@@ -224,6 +206,3 @@ export class ExecutionTraceContext {
     return `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   }
 }
-
-// Singleton global
-export const executionTraceContext = new ExecutionTraceContext();

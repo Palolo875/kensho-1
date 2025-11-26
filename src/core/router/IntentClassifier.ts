@@ -1,5 +1,4 @@
 import { IntentCategory, ClassificationResult, ClassificationError } from './RouterTypes';
-import { modelManager } from '../kernel/ModelManager';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('IntentClassifier');
@@ -63,60 +62,6 @@ export class IntentClassifier {
     return null;
   }
 
-  private async classifyWithLLM(query: string): Promise<ClassificationResult> {
-    try {
-      const engine = await modelManager.getEngine();
-      
-      const CLASSIFICATION_PROMPT = `Classifie cette requête utilisateur dans UNE SEULE catégorie :
-
-CODE : Questions sur la programmation, le code, les bugs, les algorithmes
-MATH : Questions sur les mathématiques, calculs, équations
-FACTCHECK : Demandes de vérification de faits ou d'informations
-DIALOGUE : Conversations générales, questions ouvertes, discussions
-
-Requête : "${query}"
-
-Réponds UNIQUEMENT avec l'une de ces catégories : CODE, MATH, FACTCHECK, DIALOGUE`;
-
-      const response = await engine.chat.completions.create({
-        messages: [
-          { role: 'system', content: 'Tu es un classificateur d\'intentions. Réponds avec un seul mot : CODE, MATH, FACTCHECK, ou DIALOGUE.' },
-          { role: 'user', content: CLASSIFICATION_PROMPT }
-        ],
-        stream: false,
-        temperature: 0.1,
-        max_tokens: 10
-      });
-
-      const rawText = (response as any).choices?.[0]?.message?.content?.trim().toUpperCase() || '';
-      
-      const validCategories: IntentCategory[] = ['CODE', 'MATH', 'FACTCHECK', 'DIALOGUE'];
-      const intent = validCategories.find(cat => rawText.includes(cat));
-      
-      if (!intent) {
-        throw new ClassificationError(
-          `Réponse LLM invalide : "${rawText}". Attendu : CODE, MATH, FACTCHECK, ou DIALOGUE.`,
-          rawText
-        );
-      }
-
-      return {
-        intent,
-        confidence: 0.85,
-        method: 'llm'
-      };
-
-    } catch (error) {
-      if (error instanceof ClassificationError) {
-        throw error;
-      }
-      throw new ClassificationError(
-        `Échec de la classification LLM : ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
-        undefined
-      );
-    }
-  }
-
   public async classify(query: string): Promise<ClassificationResult> {
     const keywordResult = this.classifyByKeywords(query);
     
@@ -125,8 +70,12 @@ Réponds UNIQUEMENT avec l'une de ces catégories : CODE, MATH, FACTCHECK, DIALO
       return keywordResult;
     }
 
-    log.info('Fallback vers classification LLM...');
-    return this.classifyWithLLM(query);
+    log.info('Fallback vers classification DIALOGUE (mode simulation)');
+    return {
+      intent: 'DIALOGUE',
+      confidence: 0.5,
+      method: 'fallback'
+    };
   }
 }
 

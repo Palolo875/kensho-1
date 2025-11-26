@@ -14,8 +14,8 @@ export class OrionGuardian {
 
     private currentLeader: WorkerName | null = null;
     private currentEpoch = 0;
-    private heartbeatTimer: any;
-    private failureDetectorTimer: any;
+    private heartbeatTimer: any = null;
+    private failureDetectorTimer: any = null;
 
     private static readonly HEARTBEAT_INTERVAL = 2000;
     private static readonly FAILURE_THRESHOLD = 6000;
@@ -67,8 +67,8 @@ export class OrionGuardian {
         this.currentLeader = leaderId;
         this.currentEpoch++;
 
-        clearInterval(this.heartbeatTimer);
-        clearTimeout(this.failureDetectorTimer);
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer as any);
+        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer as any);
 
         if (this.isSelfLeader()) {
             this.startHeartbeat();
@@ -94,7 +94,7 @@ export class OrionGuardian {
     }
 
     private resetFailureDetector(): void {
-        clearTimeout(this.failureDetectorTimer);
+        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer as any);
         this.startFailureDetector();
     }
 
@@ -107,9 +107,7 @@ export class OrionGuardian {
     }
 
     public stop(): void {
-        clearInterval(this.heartbeatTimer);
-        clearTimeout(this.failureDetectorTimer);
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer as any);
+        if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer as any);
     }
 }
-
-export const orionGuardian = new OrionGuardian('primary', new MessageBus());
