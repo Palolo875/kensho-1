@@ -32,19 +32,19 @@ export class GraphWorker {
 
   private async initialize(): Promise<void> {
     try {
-      console.log('[GraphWorker] 🚀 Initialisation du système de graphe de connaissances...');
+      log.info('Initialisation du système de graphe de connaissances...');
       
       await this.sqliteManager.getDb();
-      console.log('[GraphWorker] ✅ SQLite initialisé');
+      log.info('SQLite initialisé');
       
       await this.hnswManager.initialize();
-      console.log('[GraphWorker] ✅ HNSW initialisé');
+      log.info('HNSW initialisé');
       
       this.isReady = true;
-      console.log('[GraphWorker] ✅ Système de graphe prêt');
+      log.info('Système de graphe prêt');
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error('[GraphWorker] ❌ Échec de l\'initialisation:', err.message);
+      log.error('Échec de l\'initialisation:', err);
       throw err;
     }
   }
@@ -58,9 +58,6 @@ export class GraphWorker {
     }
   }
 
-  /**
-   * Ajoute un nœud de manière atomique avec validation croisée SQLite/HNSW.
-   */
   public async atomicAddNode(node: IMemoryNode): Promise<void> {
     await this.ensureReady();
     
@@ -122,15 +119,15 @@ export class GraphWorker {
       db.run('COMMIT');
       this.sqliteManager.markAsDirty();
 
-      console.log(`[GraphWorker] ✅ Nœud ${node.id} ajouté avec succès`);
+      log.info(`Nœud ${node.id} ajouté avec succès`);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error(`[GraphWorker] ❌ ATOMIC FAIL TX ${txId}:`, err.message);
+      log.error(`ATOMIC FAIL TX ${txId}:`, err);
 
       try {
         db.run('ROLLBACK');
       } catch (rollbackError) {
-        console.error('[GraphWorker] Échec du ROLLBACK:', rollbackError);
+        log.error('Échec du ROLLBACK:', rollbackError as Error);
       }
 
       await this.hnswManager.removePoint(node.id);
@@ -147,16 +144,13 @@ export class GraphWorker {
           })
         );
       } catch (lsError) {
-        console.error('[GraphWorker] Impossible d\'écrire dans localStorage.', lsError);
+        log.error('Impossible d\'écrire dans localStorage', lsError as Error);
       }
 
       throw err;
     }
   }
 
-  /**
-   * Recherche sémantique par similarité vectorielle.
-   */
   public async search(queryVector: number[], k: number): Promise<ISearchResult[]> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -188,9 +182,6 @@ export class GraphWorker {
     return results;
   }
 
-  /**
-   * Ajoute une arête entre deux nœuds.
-   */
   public async addEdge(edge: IMemoryEdge): Promise<void> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -202,9 +193,6 @@ export class GraphWorker {
     this.sqliteManager.markAsDirty();
   }
 
-  /**
-   * Récupère un nœud par son ID.
-   */
   public async getNode(nodeId: string): Promise<IMemoryNode | null> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -229,9 +217,6 @@ export class GraphWorker {
     };
   }
 
-  /**
-   * Récupère les statistiques du système.
-   */
   public async getStats(): Promise<IGraphStats> {
     await this.ensureReady();
     const stats = await this.sqliteManager.getStats();
@@ -243,32 +228,21 @@ export class GraphWorker {
     };
   }
 
-  /**
-   * Force un checkpoint manuel.
-   */
   public async checkpoint(): Promise<void> {
     await this.sqliteManager.checkpoint(true);
   }
 
-  /**
-   * Reconstruction manuelle de l'index HNSW.
-   */
   public async rebuildIndex(): Promise<void> {
     await this.ensureReady();
     await this.hnswManager.rebuild();
   }
 
-  /**
-   * Supprime tous les nœuds sémantiquement liés à un sujet.
-   * Utilisé par l'intention FORGET pour oublier des informations.
-   */
   public async deleteNodesByTopic(topic: string): Promise<number> {
     await this.ensureReady();
 
     try {
       const db = await this.sqliteManager.getDb();
       
-      // Récupérer l'embedding du sujet
       const topicEmbedding = await this.hnswManager.search(Array.from(new Float32Array(384).fill(0.1)), 1);
       const candidates = await this.hnswManager.search(Array.from(new Float32Array(384).fill(0.1)), 50);
 
@@ -285,7 +259,7 @@ export class GraphWorker {
           db.run('DELETE FROM edges WHERE source_node_id = ? OR target_node_id = ?', [candidate.id, candidate.id]);
           await this.hnswManager.removePoint(candidate.id);
           deletedCount++;
-          console.log(`[GraphWorker] 🗑️ Nœud supprimé: ${candidate.id}`);
+          log.debug(`Nœud supprimé: ${candidate.id}`);
         }
       }
 
@@ -297,18 +271,15 @@ export class GraphWorker {
       db.run('COMMIT');
       this.sqliteManager.markAsDirty();
 
-      console.log(`[GraphWorker] ✅ ${deletedCount} nœuds supprimés pour le sujet: ${topic}`);
+      log.info(`${deletedCount} nœuds supprimés pour le sujet: ${topic}`);
       return deletedCount;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error(`[GraphWorker] ❌ Erreur lors de la suppression:`, err.message);
+      log.error('Erreur lors de la suppression:', err);
       throw err;
     }
   }
 
-  /**
-   * Nettoyage et fermeture propre du système.
-   */
   public async cleanup(): Promise<void> {
     await this.sqliteManager.cleanup();
     this.isReady = false;
@@ -322,9 +293,6 @@ export class GraphWorker {
     return this.hnswManager;
   }
 
-  /**
-   * Crée un nouveau projet
-   */
   public async createProject(name: string, goal: string = ''): Promise<string> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -338,14 +306,11 @@ export class GraphWorker {
     `, [id, name, goal, now, now]);
     
     this.sqliteManager.markAsDirty();
-    console.log(`[GraphWorker] ✅ Projet créé: ${name} (${id})`);
+    log.info(`Projet créé: ${name} (${id})`);
     
     return id;
   }
 
-  /**
-   * Récupère un projet par son ID
-   */
   public async getProject(id: string): Promise<any | null> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -370,9 +335,6 @@ export class GraphWorker {
     };
   }
 
-  /**
-   * Récupère tous les projets actifs (non archivés)
-   */
   public async getActiveProjects(): Promise<any[]> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -397,9 +359,6 @@ export class GraphWorker {
     }));
   }
 
-  /**
-   * Met à jour un projet
-   */
   public async updateProject(id: string, updates: { name?: string; goal?: string; isArchived?: number }): Promise<void> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -430,9 +389,6 @@ export class GraphWorker {
     this.sqliteManager.markAsDirty();
   }
 
-  /**
-   * Supprime un projet et toutes ses tâches
-   */
   public async deleteProject(id: string): Promise<void> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -441,12 +397,9 @@ export class GraphWorker {
     db.run('DELETE FROM projects WHERE id = ?', [id]);
     
     this.sqliteManager.markAsDirty();
-    console.log(`[GraphWorker] 🗑️ Projet supprimé: ${id}`);
+    log.debug(`Projet supprimé: ${id}`);
   }
 
-  /**
-   * Crée une nouvelle tâche pour un projet
-   */
   public async createTask(projectId: string, text: string): Promise<string> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -462,14 +415,11 @@ export class GraphWorker {
     db.run(`UPDATE projects SET lastActivityAt = ? WHERE id = ?`, [now, projectId]);
     
     this.sqliteManager.markAsDirty();
-    console.log(`[GraphWorker] ✅ Tâche créée pour projet ${projectId}: ${text}`);
+    log.debug(`Tâche créée pour projet ${projectId}: ${text}`);
     
     return id;
   }
 
-  /**
-   * Récupère toutes les tâches d'un projet
-   */
   public async getProjectTasks(projectId: string): Promise<any[]> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -493,9 +443,6 @@ export class GraphWorker {
     }));
   }
 
-  /**
-   * Bascule l'état d'une tâche (complétée/non complétée)
-   */
   public async toggleTask(taskId: string): Promise<void> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -515,9 +462,6 @@ export class GraphWorker {
     this.sqliteManager.markAsDirty();
   }
 
-  /**
-   * Supprime une tâche
-   */
   public async deleteTask(taskId: string): Promise<void> {
     await this.ensureReady();
     const db = await this.sqliteManager.getDb();
@@ -532,28 +476,20 @@ export class GraphWorker {
     }
     
     this.sqliteManager.markAsDirty();
-    console.log(`[GraphWorker] 🗑️ Tâche supprimée: ${taskId}`);
+    log.debug(`Tâche supprimée: ${taskId}`);
   }
 
-  /**
-   * Recherche des preuves pour un claim via recherche sémantique
-   * Étape 1: Recherche HNSW dans les embeddings
-   * Étape 2: Extraction de contenu des candidats
-   * Note: La vérification LLM sera effectuée dans FactCheckerAgent
-   */
   public async findEvidence(claimEmbedding: number[], k: number = 3): Promise<ISearchResult[]> {
     await this.ensureReady();
     
     if (!Array.isArray(claimEmbedding) || claimEmbedding.length !== 384) {
-      console.warn(`[GraphWorker] Invalid embedding dimension: ${claimEmbedding.length}`);
+      log.warn(`Invalid embedding dimension: ${claimEmbedding.length}`);
       return [];
     }
 
     try {
-      // Recherche sémantique large pour trouver k candidats
       const candidates = await this.hnswManager.search(claimEmbedding, k);
       
-      // Enrichir les résultats avec le contenu complet du nœud
       const enrichedResults: ISearchResult[] = [];
       
       for (const candidate of candidates) {
@@ -574,11 +510,11 @@ export class GraphWorker {
         }
       }
 
-      console.log(`[GraphWorker] Evidence search: ${enrichedResults.length} candidates found`);
+      log.debug(`Evidence search: ${enrichedResults.length} candidates found`);
       return enrichedResults;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      console.error('[GraphWorker] Error in findEvidence:', err.message);
+      log.error('Error in findEvidence:', err);
       return [];
     }
   }
