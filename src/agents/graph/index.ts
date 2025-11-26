@@ -40,8 +40,9 @@ export class GraphWorker {
       this.isReady = true;
       console.log('[GraphWorker] ✅ Système de graphe prêt');
     } catch (error) {
-      console.error('[GraphWorker] ❌ Échec de l\'initialisation:', error);
-      throw error;
+      const err = error instanceof Error ? error : new Error(String(error));
+      console.error('[GraphWorker] ❌ Échec de l\'initialisation:', err.message);
+      throw err;
     }
   }
 

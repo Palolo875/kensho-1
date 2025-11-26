@@ -55,7 +55,9 @@ runAgent({
         } catch (error) {
           isLoadingModel = false;
           dm.unregister(DOWNLOAD_ID);
-          throw error;
+          const err = error instanceof Error ? error : new Error(String(error));
+          console.error('[EmbeddingAgent] ❌ Erreur modèle:', err.message);
+          throw err;
         }
       }
       return extractor;
@@ -84,7 +86,8 @@ runAgent({
         });
 
       } catch (error) {
-        itemsToProcess.forEach(item => item.reject(error));
+        const err = error instanceof Error ? error : new Error(String(error));
+        itemsToProcess.forEach(item => item.reject(err));
       } finally {
         isProcessing = false;
         if (embeddingQueue.length > 0) {

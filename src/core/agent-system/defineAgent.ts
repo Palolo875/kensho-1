@@ -41,10 +41,15 @@ export function runAgent(definition: Omit<AgentDefinition, 'name'> & { name?: st
         // Signaler que l'initialisation est terminée
         self.postMessage({ type: 'READY' });
     } catch (error) {
-        console.error(`[${definition.name}] Erreur critique lors de l'initialisation:`, error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        console.error(`[${definition.name}] Erreur critique lors de l'initialisation:`, err.message);
         self.postMessage({ 
             type: 'INIT_ERROR',
-            error: error instanceof Error ? error.message : String(error)
+            error: {
+              message: err.message,
+              stack: err.stack,
+              name: err.name
+            }
         });
     }
 }
