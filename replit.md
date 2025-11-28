@@ -7,9 +7,11 @@ Kensho is an advanced AI debate orchestration system designed for reliable, tran
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
 
 ## Recent Changes (Nov 28, 2025)
+- **Custom Icon System:** Created personalized handmade-style icons (JournalIcon, LightbulbIcon, WarningIcon, CustomCrownIcon) replacing AI-generated emojis for authentic visual identity
+- **Observatory Modal Complete Mobile Responsive:** Centered header with flexbox, w-full max-w-2xl sm:max-w-4xl lg:max-w-6xl, tabs responsive (Journal, Agents, Logs), all content px-3 sm:px-6, text-xs sm:text-sm
+- **Observatory Tabs Optimized:** Journal tab with custom icons, Agents grid 1 col mobile → 2 sm → 3 lg, Logs tab scrollable height-[300px] sm:height-[400px]
 - **Analytics Dashboard Mobile Responsive:** Headers reduced from text-5xl to text-2xl sm:text-3xl md:text-4xl, cards grid 2 cols on mobile / 4 cols on desktop, padding optimized (px-3 sm:px-6)
 - **PerformanceDashboard Responsive:** All metric cards (Total, Success, Avg Response, Active) now have responsive text sizes (text-2xl sm:text-3xl), reduced padding, mobile-first layout with 2-column grid
-- **ObservatoryModal Responsive:** Dialog max-w reduced from max-w-6xl to w-full max-w-2xl sm:max-w-4xl lg:max-w-6xl, tabs shortened (Journal Cognitif → Journal, Constellation → Agents), header and content responsive with text-xs sm:text-sm
 - **Chart Heights Reduced:** All charts reduced from height={300} to height={200} for better mobile viewing
 - **Responsive Utilities:** Consistent use of px-3 sm:px-6 spacing, text-[10px] sm:text-xs for small labels, gap-2 sm:gap-4 for grid spacing
 
