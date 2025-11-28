@@ -74,14 +74,14 @@ const Analytics = () => {
             </Button>
           </div>
 
-          {/* Page Title - MASTERPROMPT Header */}
-          <div className="px-6 py-8 border-b border-border/40">
-            <h1 className="text-5xl font-bold text-foreground mb-2">Analytics & Metrics</h1>
-            <p className="text-base text-muted-foreground">Monitor multi-agent system performance and execution traces</p>
+          {/* Page Title - MASTERPROMPT Header - Responsive */}
+          <div className="px-3 sm:px-6 py-4 sm:py-6 border-b border-border/40">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-1 sm:mb-2">Analytics & Metrics</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">Monitor multi-agent system performance and execution traces</p>
           </div>
 
-          {/* Content - MASTERPROMPT spacing */}
-          <div className="px-6 lg:px-8 py-8 space-y-8">
+          {/* Content - MASTERPROMPT spacing - Responsive */}
+          <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
             {/* Performance Dashboard */}
             <section className="space-y-4">
               <PerformanceDashboard />

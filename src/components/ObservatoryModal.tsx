@@ -75,54 +75,54 @@ export function ObservatoryModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-6xl max-h-[90vh] bg-background/95 border border-border/40 backdrop-blur-md">
-                <DialogHeader className="pb-4 border-b border-border/30">
-                    <DialogTitle className="flex items-center gap-2 text-2xl font-semibold">
-                        <Activity className="h-6 w-6 text-primary" />
-                        Orion Observatory
-                        <Badge variant="outline" className="ml-auto text-xs">
+            <DialogContent className="w-full max-w-2xl sm:max-w-4xl lg:max-w-6xl max-h-[85vh] sm:max-h-[90vh] bg-background/95 border border-border/40 backdrop-blur-md p-3 sm:p-6">
+                <DialogHeader className="pb-3 sm:pb-4 border-b border-border/30">
+                    <DialogTitle className="flex items-center gap-2 text-lg sm:text-2xl font-semibold">
+                        <Activity className="h-4 sm:h-6 w-4 sm:w-6 text-primary" />
+                        <span className="text-base sm:text-2xl">Orion Observatory</span>
+                        <Badge variant="outline" className="ml-auto text-[10px] sm:text-xs">
                             Epoch {epoch}
                         </Badge>
                     </DialogTitle>
-                    <p className="text-sm text-muted-foreground mt-1">Surveillance en temps réel des agents et du journal cognitif</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mt-1">Surveillance en temps réel des agents et du journal cognitif</p>
                 </DialogHeader>
 
-                <Tabs defaultValue="journal" className="w-full mt-6">
-                    <TabsList className="grid w-full grid-cols-3 bg-background border border-border/40">
-                        <TabsTrigger value="journal" className="text-sm font-light">Journal Cognitif</TabsTrigger>
-                        <TabsTrigger value="constellation" className="text-sm font-light">Constellation</TabsTrigger>
-                        <TabsTrigger value="logs" className="text-sm font-light">Logs</TabsTrigger>
+                <Tabs defaultValue="journal" className="w-full mt-3 sm:mt-6">
+                    <TabsList className="grid w-full grid-cols-3 bg-background border border-border/40 h-auto">
+                        <TabsTrigger value="journal" className="text-xs sm:text-sm font-light py-2 sm:py-3">Journal</TabsTrigger>
+                        <TabsTrigger value="constellation" className="text-xs sm:text-sm font-light py-2 sm:py-3">Agents</TabsTrigger>
+                        <TabsTrigger value="logs" className="text-xs sm:text-sm font-light py-2 sm:py-3">Logs</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="journal" className="space-y-4 mt-4">
+                    <TabsContent value="journal" className="space-y-2 sm:space-y-4 mt-3 sm:mt-4">
                         {journal || SAMPLE_JOURNAL ? (
-                            <div className="space-y-4">
+                            <div className="space-y-2 sm:space-y-4">
                                 <Card className="bg-card border border-border/40 shadow-sm">
-                                    <CardHeader className="pb-4 border-b border-border/30">
-                                        <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+                                    <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                        <CardTitle className="flex items-center gap-2 text-sm sm:text-lg font-semibold flex-wrap">
                                             📊 Journal Cognitif
                                             {(journal || SAMPLE_JOURNAL)?.degradationApplied && (
-                                                <Badge variant="destructive" className="text-xs">Graceful Degradation</Badge>
+                                                <Badge variant="destructive" className="text-[8px] sm:text-xs">Graceful Degradation</Badge>
                                             )}
                                             {!journal && (
-                                                <Badge variant="outline" className="ml-auto text-xs">Exemple</Badge>
+                                                <Badge variant="outline" className="ml-auto text-[8px] sm:text-xs">Exemple</Badge>
                                             )}
                                         </CardTitle>
                                     </CardHeader>
-                                    <CardContent className="space-y-4">
+                                    <CardContent className="space-y-2 sm:space-y-4 px-3 sm:px-6 py-3 sm:py-4">
                                         {!journal && (
-                                            <div className="bg-blue-500/10 border border-blue-500 rounded p-3 mb-4">
-                                                <p className="text-xs text-blue-600"><strong>💡 Exemple:</strong> Voici à quoi ressemble un débat complet. Posez une question pour voir votre propre journal.</p>
+                                            <div className="bg-blue-500/10 border border-blue-500 rounded p-2 sm:p-3 mb-2 sm:mb-4">
+                                                <p className="text-[9px] sm:text-xs text-blue-600"><strong>💡 Exemple:</strong> Voici à quoi ressemble un débat complet.</p>
                                             </div>
                                         )}
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                                             <div>
-                                                <p className="text-xs text-muted-foreground">Requête</p>
-                                                <p className="font-mono text-sm">{(journal || SAMPLE_JOURNAL)?.userQuery}</p>
+                                                <p className="text-[9px] sm:text-xs text-muted-foreground">Requête</p>
+                                                <p className="font-mono text-xs sm:text-sm truncate">{(journal || SAMPLE_JOURNAL)?.userQuery}</p>
                                             </div>
                                             <div>
-                                                <p className="text-xs text-muted-foreground">Durée</p>
-                                                <p className="font-mono text-sm">{(journal || SAMPLE_JOURNAL)?.totalDuration?.toFixed(0)}ms</p>
+                                                <p className="text-[9px] sm:text-xs text-muted-foreground">Durée</p>
+                                                <p className="font-mono text-xs sm:text-sm">{(journal || SAMPLE_JOURNAL)?.totalDuration?.toFixed(0)}ms</p>
                                             </div>
                                         </div>
                                         

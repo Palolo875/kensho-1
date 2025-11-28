@@ -4,7 +4,14 @@
 Kensho is an advanced AI debate orchestration system designed for reliable, transparent, and high-performance AI-driven factual inference and debate. It features robust fact-checking, a production-ready asynchronous kernel, intelligent routing, multi-queue task execution, and a modern chat UI with an analytics dashboard. The system integrates meta-critique validation, cognitive traceability, performance monitoring, and feedback-driven learning.
 
 ## User Preferences
-I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones.
+I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
+
+## Recent Changes (Nov 28, 2025)
+- **Analytics Dashboard Mobile Responsive:** Headers reduced from text-5xl to text-2xl sm:text-3xl md:text-4xl, cards grid 2 cols on mobile / 4 cols on desktop, padding optimized (px-3 sm:px-6)
+- **PerformanceDashboard Responsive:** All metric cards (Total, Success, Avg Response, Active) now have responsive text sizes (text-2xl sm:text-3xl), reduced padding, mobile-first layout with 2-column grid
+- **ObservatoryModal Responsive:** Dialog max-w reduced from max-w-6xl to w-full max-w-2xl sm:max-w-4xl lg:max-w-6xl, tabs shortened (Journal Cognitif → Journal, Constellation → Agents), header and content responsive with text-xs sm:text-sm
+- **Chart Heights Reduced:** All charts reduced from height={300} to height={200} for better mobile viewing
+- **Responsive Utilities:** Consistent use of px-3 sm:px-6 spacing, text-[10px] sm:text-xs for small labels, gap-2 sm:gap-4 for grid spacing
 
 ## System Architecture
 Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) orchestrated in a 4-step flow with graceful degradation and cognitive traceability via a `JournalCognitif` system. The architecture emphasizes memory-aware orchestration, cache-aware execution, and real-time streaming for high performance and transparency.
