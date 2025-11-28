@@ -1,11 +1,22 @@
 export { kernelCoordinator } from './KernelCoordinator';
 export { modelManager } from './ModelManager';
 export { resourceManager } from './ResourceManager';
+export { storageManager } from './StorageManager';
+export { runtimeManager } from './RuntimeManager';
 export { taskExecutor, TaskExecutor } from './TaskExecutor';
 export { fusioner } from './Fusioner';
-export { executionTraceContext, ExecutionTraceContext } from './ExecutionTraceContext';
+export { ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
 export type { ModelMeta } from './ModelCatalog';
+export type { StorageQuota, FileMetadata } from './StorageManager';
+export type { 
+  RuntimeBackend, 
+  RuntimeConfig, 
+  RuntimeStatus, 
+  InferenceResult,
+  ProgressCallback,
+  IInferenceEngine 
+} from './RuntimeManager';
 export type { 
   DeviceStatus, 
   ResourceEvent, 
