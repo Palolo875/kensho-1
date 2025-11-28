@@ -12,6 +12,7 @@ import { ModelSelector } from "@/components/ModelSelector";
 import { PlanView } from "@/components/PlanView";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
 import { useObservatory } from "@/contexts/ObservatoryContext";
+import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -22,6 +23,7 @@ import { Toaster } from "sonner";
 
 const Index = () => {
   const isMobile = useIsMobile();
+  const { firstName } = useUserPreferences();
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showObservatory, setShowObservatory] = useState(false);
@@ -101,7 +103,7 @@ const Index = () => {
               {/* Welcome text */}
               <div className="text-center mb-4">
                 <h2 className="text-foreground/80 text-xl md:text-2xl lg:text-3xl font-light mb-2 md:mb-3">
-                  Hello Rehan
+                  Hello {firstName || "there"}
                 </h2>
                 <h1 className="text-foreground text-2xl md:text-3xl lg:text-4xl font-normal leading-tight">
                   How can I help you today?
