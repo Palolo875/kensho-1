@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Sidebar, { SidebarTrigger } from "@/components/Sidebar";
-import ChatInput from "@/components/ChatInput";
+import InputBar from "@/components/InputBar";
 import WelcomeScreen from "@/components/WelcomeScreen";
 import MessageBubble from "@/components/MessageBubble";
 import AIResponse from "@/components/AIResponse";
@@ -102,11 +102,7 @@ const Index = () => {
           <ProjectDashboard />
 
           {messages.length === 0 ? (
-            <WelcomeScreen 
-              userName="Rehan"
-              onSettingsClick={() => setShowSettings(true)}
-              onRefreshClick={handleNewConversation}
-            />
+            <WelcomeScreen userName="Rehan" />
           ) : (
             <div className="space-y-1">
               {messages.map((msg) =>
@@ -139,7 +135,18 @@ const Index = () => {
         </div>
       </main>
 
-      <ChatInput showSuggestions={messages.length === 0} />
+      <div className={cn(
+        "fixed bottom-0 left-0 right-0",
+        "px-3 sm:px-6 md:px-8 lg:px-12 py-4 sm:py-5 md:py-6",
+        !isMobile && "md:left-16 lg:left-64"
+      )}>
+        <div className={cn(
+          "mx-auto",
+          isMobile ? "max-w-2xl" : "max-w-3xl lg:max-w-4xl"
+        )}>
+          <InputBar />
+        </div>
+      </div>
 
 
       <SettingsModal 
