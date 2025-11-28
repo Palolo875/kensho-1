@@ -60,90 +60,88 @@ export const PerformanceDashboard = () => {
   ];
 
   return (
-    <div className="w-full space-y-6 p-4">
-      {/* Header */}
+    <div className="w-full space-y-6">
+      {/* Header - MASTERPROMPT Style */}
       <div className="space-y-2">
-        <h2 className="text-3xl font-bold flex items-center gap-2">
-          <Activity className="h-8 w-8" />
-          Performance Dashboard
-        </h2>
-        <p className="text-muted-foreground">Real-time multi-agent execution metrics</p>
+        <div className="flex items-center gap-3">
+          <Activity className="h-6 w-6 text-primary" />
+          <h2 className="text-3xl font-semibold text-foreground">Performance Dashboard</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">Real-time multi-agent execution metrics</p>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Requests</CardTitle>
+      {/* Key Metrics - MASTERPROMPT Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="bg-card border border-border/40 shadow-sm hover:shadow-md transition-shadow">
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-xs font-light text-muted-foreground uppercase tracking-wider">Total Requests</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{successCount + failureCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">Last 24 hours</p>
+          <CardContent className="pt-4">
+            <div className="text-3xl font-bold text-foreground">{successCount + failureCount}</div>
+            <p className="text-xs text-muted-foreground mt-2">Last 24 hours</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Success Rate</CardTitle>
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-xs font-light text-muted-foreground uppercase tracking-wider">Success Rate</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+          <CardContent className="pt-4">
+            <div className="text-3xl font-bold text-foreground">
               {((successCount / (successCount + failureCount)) * 100).toFixed(1)}%
             </div>
-            <Badge variant="outline" className="mt-2 bg-green-50">
-              ✓ Excellent
-            </Badge>
+            <Badge variant="outline" className="mt-3 text-xs">✓ Excellent</Badge>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Response</CardTitle>
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-xs font-light text-muted-foreground uppercase tracking-wider">Avg Response</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+          <CardContent className="pt-4">
+            <div className="text-3xl font-bold text-foreground">
               {metrics.responseTime.length > 0
                 ? Math.round(metrics.responseTime.reduce((sum, d) => sum + d.duration, 0) / metrics.responseTime.length)
                 : 0
               }ms
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Last 12 requests</p>
+            <p className="text-xs text-muted-foreground mt-2">Last 12 requests</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Tasks</CardTitle>
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-xs font-light text-muted-foreground uppercase tracking-wider">Active Tasks</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+          <CardContent className="pt-4">
+            <div className="text-3xl font-bold text-foreground">
               {queueStats.reduce((sum, q) => sum + q.active, 0)}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Across all queues</p>
+            <p className="text-xs text-muted-foreground mt-2">Across all queues</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Detailed Tabs */}
+      {/* Detailed Tabs - MASTERPROMPT Style */}
       <Tabs defaultValue="response-time" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="response-time" className="flex items-center gap-2">
+        <TabsList className="grid w-full grid-cols-3 bg-background border border-border/40">
+          <TabsTrigger value="response-time" className="flex items-center gap-2 text-sm font-light">
             <Clock className="h-4 w-4" />
             Response Time
           </TabsTrigger>
-          <TabsTrigger value="queue-stats" className="flex items-center gap-2">
+          <TabsTrigger value="queue-stats" className="flex items-center gap-2 text-sm font-light">
             <BarChart3 className="h-4 w-4" />
             Queue Stats
           </TabsTrigger>
-          <TabsTrigger value="success-rate" className="flex items-center gap-2">
+          <TabsTrigger value="success-rate" className="flex items-center gap-2 text-sm font-light">
             <TrendingUp className="h-4 w-4" />
             Success Rate
           </TabsTrigger>
         </TabsList>
 
         {/* Response Time Chart */}
-        <TabsContent value="response-time" className="space-y-4">
-          <Card>
+        <TabsContent value="response-time" className="space-y-4 mt-4">
+          <Card className="bg-card border border-border/40 shadow-sm">
             <CardHeader>
               <CardTitle>Response Time Trend</CardTitle>
               <CardDescription>Last 12 requests milliseconds</CardDescription>
@@ -169,8 +167,8 @@ export const PerformanceDashboard = () => {
         </TabsContent>
 
         {/* Queue Stats */}
-        <TabsContent value="queue-stats" className="space-y-4">
-          <Card>
+        <TabsContent value="queue-stats" className="space-y-4 mt-4">
+          <Card className="bg-card border border-border/40 shadow-sm">
             <CardHeader>
               <CardTitle>Queue Performance</CardTitle>
               <CardDescription>Status by execution strategy</CardDescription>
@@ -194,8 +192,8 @@ export const PerformanceDashboard = () => {
         </TabsContent>
 
         {/* Success Rate */}
-        <TabsContent value="success-rate" className="space-y-4">
-          <Card>
+        <TabsContent value="success-rate" className="space-y-4 mt-4">
+          <Card className="bg-card border border-border/40 shadow-sm">
             <CardHeader>
               <CardTitle>Success vs Failure</CardTitle>
               <CardDescription>{successCount + failureCount} total requests</CardDescription>
@@ -226,7 +224,7 @@ export const PerformanceDashboard = () => {
       </Tabs>
 
       {/* Queue Details */}
-      <Card>
+      <Card className="bg-card border border-border/40 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5" />

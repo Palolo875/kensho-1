@@ -74,23 +74,26 @@ const Analytics = () => {
             </Button>
           </div>
 
-          {/* Page Title */}
-          <div className="p-6 border-b border-border">
-            <h1 className="text-4xl font-bold">Analytics & Metrics</h1>
-            <p className="text-muted-foreground mt-2">Monitor multi-agent system performance and execution traces</p>
+          {/* Page Title - MASTERPROMPT Header */}
+          <div className="px-6 py-8 border-b border-border/40">
+            <h1 className="text-5xl font-bold text-foreground mb-2">Analytics & Metrics</h1>
+            <p className="text-base text-muted-foreground">Monitor multi-agent system performance and execution traces</p>
           </div>
 
-          {/* Content */}
-          <div className="p-6 space-y-8">
+          {/* Content - MASTERPROMPT spacing */}
+          <div className="px-6 lg:px-8 py-8 space-y-8">
             {/* Performance Dashboard */}
-            <section>
+            <section className="space-y-4">
               <PerformanceDashboard />
             </section>
 
             {/* Execution Trace (if available) */}
             {mockTrace && (
-              <section>
-                <h2 className="text-2xl font-bold mb-4">Last Execution Trace</h2>
+              <section className="space-y-4">
+                <div>
+                  <h2 className="text-2xl font-semibold text-foreground mb-2">Dernière exécution</h2>
+                  <p className="text-sm text-muted-foreground">Trace de l'exécution complète du système</p>
+                </div>
                 <ExecutionTraceVisualization trace={mockTrace} expanded={false} />
               </section>
             )}

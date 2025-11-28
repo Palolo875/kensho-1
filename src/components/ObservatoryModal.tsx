@@ -75,36 +75,37 @@ export function ObservatoryModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-6xl max-h-[90vh]">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Activity className="h-5 w-5" />
+            <DialogContent className="max-w-6xl max-h-[90vh] bg-background/95 border border-border/40 backdrop-blur-md">
+                <DialogHeader className="pb-4 border-b border-border/30">
+                    <DialogTitle className="flex items-center gap-2 text-2xl font-semibold">
+                        <Activity className="h-6 w-6 text-primary" />
                         Orion Observatory
-                        <Badge variant="outline" className="ml-auto">
+                        <Badge variant="outline" className="ml-auto text-xs">
                             Epoch {epoch}
                         </Badge>
                     </DialogTitle>
+                    <p className="text-sm text-muted-foreground mt-1">Surveillance en temps réel des agents et du journal cognitif</p>
                 </DialogHeader>
 
-                <Tabs defaultValue="journal" className="w-full">
-                    <TabsList className="grid w-full grid-cols-3">
-                        <TabsTrigger value="journal">Journal</TabsTrigger>
-                        <TabsTrigger value="constellation">Constellation</TabsTrigger>
-                        <TabsTrigger value="logs">Logs</TabsTrigger>
+                <Tabs defaultValue="journal" className="w-full mt-6">
+                    <TabsList className="grid w-full grid-cols-3 bg-background border border-border/40">
+                        <TabsTrigger value="journal" className="text-sm font-light">Journal Cognitif</TabsTrigger>
+                        <TabsTrigger value="constellation" className="text-sm font-light">Constellation</TabsTrigger>
+                        <TabsTrigger value="logs" className="text-sm font-light">Logs</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="journal" className="space-y-4">
+                    <TabsContent value="journal" className="space-y-4 mt-4">
                         {journal || SAMPLE_JOURNAL ? (
                             <div className="space-y-4">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle className="flex items-center gap-2">
+                                <Card className="bg-card border border-border/40 shadow-sm">
+                                    <CardHeader className="pb-4 border-b border-border/30">
+                                        <CardTitle className="flex items-center gap-2 text-lg font-semibold">
                                             📊 Journal Cognitif
                                             {(journal || SAMPLE_JOURNAL)?.degradationApplied && (
-                                                <Badge variant="destructive">Graceful Degradation</Badge>
+                                                <Badge variant="destructive" className="text-xs">Graceful Degradation</Badge>
                                             )}
                                             {!journal && (
-                                                <Badge variant="outline" className="ml-auto">Exemple</Badge>
+                                                <Badge variant="outline" className="ml-auto text-xs">Exemple</Badge>
                                             )}
                                         </CardTitle>
                                     </CardHeader>

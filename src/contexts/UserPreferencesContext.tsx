@@ -3,8 +3,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 interface UserPreferences {
   firstName: string;
   lastName: string;
+  welcomeMessage: string;
   setFirstName: (name: string) => void;
   setLastName: (name: string) => void;
+  setWelcomeMessage: (message: string) => void;
 }
 
 const UserPreferencesContext = createContext<UserPreferences | undefined>(undefined);
@@ -15,6 +17,9 @@ export const UserPreferencesProvider = ({ children }: { children: ReactNode }) =
   });
   const [lastName, setLastNameState] = useState(() => {
     return localStorage.getItem("userLastName") || "";
+  });
+  const [welcomeMessage, setWelcomeMessageState] = useState(() => {
+    return localStorage.getItem("userWelcomeMessage") || "";
   });
 
   const setFirstName = (name: string) => {
@@ -27,8 +32,13 @@ export const UserPreferencesProvider = ({ children }: { children: ReactNode }) =
     localStorage.setItem("userLastName", name);
   };
 
+  const setWelcomeMessage = (message: string) => {
+    setWelcomeMessageState(message);
+    localStorage.setItem("userWelcomeMessage", message);
+  };
+
   return (
-    <UserPreferencesContext.Provider value={{ firstName, lastName, setFirstName, setLastName }}>
+    <UserPreferencesContext.Provider value={{ firstName, lastName, welcomeMessage, setFirstName, setLastName, setWelcomeMessage }}>
       {children}
     </UserPreferencesContext.Provider>
   );

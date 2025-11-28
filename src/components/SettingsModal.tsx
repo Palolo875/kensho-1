@@ -7,10 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import ThemeToggle from "./ThemeToggle";
+import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { useNavigate } from "react-router-dom";
-import { Download, X } from "lucide-react";
+import { Download, X, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SettingsModalProps {
@@ -24,6 +26,7 @@ type TabType = "settings" | "usage" | "tasks";
 
 const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelector }: SettingsModalProps) => {
   const navigate = useNavigate();
+  const { firstName, setFirstName, welcomeMessage, setWelcomeMessage } = useUserPreferences();
   const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
   const setDebateModeEnabled = useKenshoStore(state => state.setDebateModeEnabled);
   const sendMessage = useKenshoStore(state => state.sendMessage);
@@ -34,6 +37,8 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
   const [saveHistory, setSaveHistory] = useState(true);
   const [showThinking, setShowThinking] = useState(true);
   const [exclusiveContent, setExclusiveContent] = useState(false);
+  const [tempFirstName, setTempFirstName] = useState(firstName);
+  const [tempWelcomeMessage, setTempWelcomeMessage] = useState(welcomeMessage || "");
 
   const tabs = [
     { id: "settings" as TabType, label: "Paramètres" },
@@ -104,6 +109,42 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
             <div>
               <h4 className="text-base font-light mb-4 text-foreground">Personnalisation</h4>
               <div className="space-y-4">
+                <div>
+                  <Label htmlFor="firstName" className="text-sm font-light mb-2 block text-foreground">
+                    Votre prénom
+                  </Label>
+                  <Input
+                    id="firstName"
+                    value={tempFirstName}
+                    onChange={(e) => setTempFirstName(e.target.value)}
+                    placeholder="Ex: Jean"
+                    className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground placeholder-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all duration-200"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="welcomeMessage" className="text-sm font-light mb-2 block text-foreground">
+                    Message d'accueil personnalisé
+                  </Label>
+                  <textarea
+                    id="welcomeMessage"
+                    value={tempWelcomeMessage}
+                    onChange={(e) => setTempWelcomeMessage(e.target.value)}
+                    placeholder="Ex: Bonjour, comment puis-je vous aider aujourd'hui ?"
+                    rows={3}
+                    className="w-full px-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground placeholder-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all duration-200 resize-none"
+                  />
+                </div>
+                <Button
+                  onClick={() => {
+                    setFirstName(tempFirstName);
+                    setWelcomeMessage(tempWelcomeMessage);
+                  }}
+                  className="w-full bg-primary/80 hover:bg-primary text-primary-foreground"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Enregistrer les modifications
+                </Button>
+                <Separator className="bg-border/30" />
                 <div className="flex items-center justify-between p-3 rounded-lg bg-card border border-border/30">
                   <div>
                     <p className="text-sm font-light text-foreground">Contenu exclusif</p>
@@ -277,31 +318,6 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
               </div>
             </div>
 
-            <Separator className="bg-border/30" />
-
-            {/* Quick Fact-Checking Examples */}
-            <div>
-              <h4 className="text-base font-light mb-4 text-foreground">Fact-Checking Rapide</h4>
-              <div className="space-y-2">
-                {[
-                  'Paris est la capitale de la France',
-                  'La Terre est plate',
-                  'L\'eau bout à 100°C',
-                  'La gravité attire les objets',
-                ].map((example, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      sendMessage(`Vérifie: ${example}`);
-                      onOpenChange(false);
-                    }}
-                    className="w-full text-left px-3 py-2 text-xs rounded-lg bg-card border border-border/30 hover:border-border/60 hover:bg-card/60 transition-all duration-200 text-foreground/80 truncate"
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         );
 
