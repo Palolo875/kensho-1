@@ -186,37 +186,37 @@ const InputBar = ({ className }: InputBarProps) => {
             />
 
             <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center gap-3 md:gap-4">
+              <div className="flex items-center gap-2 md:gap-3">
                 <button
                   type="button"
                   onClick={handlePlusClick}
                   className={cn(
-                    "w-11 h-11 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full",
+                    "w-9 h-9 md:w-10 md:h-10 rounded-full",
                     "bg-[#E8E8E8] flex items-center justify-center",
                     "transition-all duration-200",
-                    "hover:opacity-100 hover:scale-105 opacity-80",
-                    "focus:outline-none focus:ring-2 focus:ring-[#888888]/50",
-                    "active:scale-95"
+                    "hover:bg-[#D8D8D8] opacity-80 hover:opacity-100",
+                    "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
+                    "active:scale-95 cursor-pointer"
                   )}
                   aria-label="Plus d'options"
                 >
-                  <Plus className="w-5 h-5 md:w-6 md:h-6 text-[#888888]" />
+                  <Plus className="w-4 h-4 md:w-5 md:h-5 text-[#666666]" />
                 </button>
 
                 <button
                   type="button"
                   onClick={handleAttachmentClick}
                   className={cn(
-                    "w-11 h-11 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full",
+                    "w-9 h-9 md:w-10 md:h-10 rounded-full",
                     "bg-[#E8E8E8] flex items-center justify-center",
                     "transition-all duration-200",
-                    "hover:opacity-100 hover:scale-105 opacity-80",
-                    "focus:outline-none focus:ring-2 focus:ring-[#888888]/50",
-                    "active:scale-95"
+                    "hover:bg-[#D8D8D8] opacity-80 hover:opacity-100",
+                    "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
+                    "active:scale-95 cursor-pointer"
                   )}
                   aria-label="Joindre un fichier"
                 >
-                  <Paperclip className="w-5 h-5 md:w-6 md:h-6 text-[#888888]" />
+                  <Paperclip className="w-4 h-4 md:w-5 md:h-5 text-[#666666]" />
                 </button>
                 <input
                   type="file"
@@ -227,23 +227,23 @@ const InputBar = ({ className }: InputBarProps) => {
                 />
               </div>
 
-              <div className="flex items-center gap-3 md:gap-4">
+              <div className="flex items-center gap-2 md:gap-3">
                 <button
                   type="button"
                   onClick={handleMicClick}
                   disabled={!modelReady}
                   className={cn(
-                    "w-11 h-11 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full",
+                    "w-9 h-9 md:w-10 md:h-10 rounded-full",
                     "bg-[#E8E8E8] flex items-center justify-center",
                     "transition-all duration-200",
-                    "hover:opacity-100 hover:scale-105 opacity-80",
-                    "focus:outline-none focus:ring-2 focus:ring-[#888888]/50",
+                    "hover:bg-[#D8D8D8] opacity-80 hover:opacity-100",
+                    "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
                     "active:scale-95",
-                    "disabled:opacity-50 disabled:cursor-not-allowed"
+                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#E8E8E8]"
                   )}
                   aria-label="Enregistrement vocal"
                 >
-                  <Mic className="w-5 h-5 md:w-6 md:h-6 text-[#888888]" />
+                  <Mic className="w-4 h-4 md:w-5 md:h-5 text-[#666666]" />
                 </button>
 
                 <button
@@ -251,17 +251,17 @@ const InputBar = ({ className }: InputBarProps) => {
                   onClick={() => handleSubmit()}
                   disabled={!canSend}
                   className={cn(
-                    "w-11 h-11 md:w-12 md:h-12 lg:w-14 lg:h-14 rounded-full",
-                    "bg-[#000000] flex items-center justify-center",
+                    "w-9 h-9 md:w-10 md:h-10 rounded-full",
+                    "bg-[#2A2A2A] flex items-center justify-center",
                     "transition-all duration-200",
-                    "focus:outline-none focus:ring-2 focus:ring-[#000000]/50",
+                    "focus:outline-none focus:ring-1 focus:ring-[#000000]/40",
                     canSend 
-                      ? "opacity-100 cursor-pointer hover:bg-[#222222] hover:scale-108 active:scale-95" 
+                      ? "opacity-100 cursor-pointer hover:bg-[#1A1A1A] active:scale-95" 
                       : "opacity-50 cursor-not-allowed"
                   )}
                   aria-label="Envoyer le message"
                 >
-                  <ArrowUp className="w-5 h-5 md:w-6 md:h-6 text-white" />
+                  <ArrowUp className="w-4 h-4 md:w-5 md:h-5 text-white" />
                 </button>
               </div>
             </div>
