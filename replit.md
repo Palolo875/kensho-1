@@ -5,6 +5,13 @@ Kensho is an advanced AI debate orchestration system with meta-critique validati
 
 ## Recent Updates (Sprint 14 Elite Phase 3 - GEMMA 3 270M CONFIGURED)
 
+### UI Refactoring Complete
+- **WelcomeScreen Component** (`src/components/WelcomeScreen.tsx`): Modern welcome screen with personalized greeting, CTA cards styled as "Read me a book" / "Personal therapy" card design
+- **InputBar Component** (`src/components/InputBar.tsx`): New beige/cream (#F5F0E8) input bar with circular control buttons (plus, attachment, microphone, send)
+- **File Attachment Handling**: Proper file-only submission with automatic detachment after send
+- **CTA Card Buttons**: 4 action cards - Posez une question, Ecrivez un brouillon, Thérapie personnelle, Lisez-moi un livre
+- **Clean Integration**: Replaced ChatInput with InputBar in Index.tsx, no visual conflicts
+
 ### Core Integration Complete
 - **ModelManager v3.1**: Memory-aware + SSEStreamer integration for transparent model switching
 - **TaskExecutor v3.1**: Cache-aware + streaming for optimized task execution
