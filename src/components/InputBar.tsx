@@ -153,8 +153,10 @@ const InputBar = ({ className }: InputBarProps) => {
         )}
 
         {isRecording ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 py-8">
-            <WaveformVisualizer audioLevel={audioLevel} intensity={1} />
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-12">
+            <div className="w-full px-4">
+              <WaveformVisualizer audioLevel={audioLevel} intensity={1} />
+            </div>
             <VoiceRecorderInline
               onTranscript={(text) => {
                 setMessage(text);
@@ -190,7 +192,11 @@ const InputBar = ({ className }: InputBarProps) => {
               <div className="flex items-center gap-2 md:gap-3">
                 <button
                   type="button"
-                  onClick={handlePlusClick}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                   className={cn(
                     "w-9 h-9 md:w-10 md:h-10 rounded-full",
                     "bg-muted flex items-center justify-center",
@@ -199,14 +205,18 @@ const InputBar = ({ className }: InputBarProps) => {
                     "focus:outline-none focus:ring-1 focus:ring-ring/30",
                     "active:scale-95 cursor-pointer"
                   )}
-                  aria-label="Plus d'options"
+                  aria-label="Importer un fichier"
                 >
                   <Plus className="w-4 h-4 md:w-5 md:h-5 text-muted-foreground" />
                 </button>
 
                 <button
                   type="button"
-                  onClick={handleAttachmentClick}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                   className={cn(
                     "w-9 h-9 md:w-10 md:h-10 rounded-full",
                     "bg-muted flex items-center justify-center",
@@ -224,7 +234,8 @@ const InputBar = ({ className }: InputBarProps) => {
                   ref={fileInputRef}
                   className="hidden"
                   onChange={handleFileChange}
-                  accept="application/pdf,image/png,image/jpeg,image/jpg"
+                  accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.txt"
+                  aria-hidden="true"
                 />
               </div>
 
