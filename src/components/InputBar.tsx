@@ -118,11 +118,12 @@ const InputBar = ({ className }: InputBarProps) => {
     <div className={cn("w-full", className)}>
       <div 
         className={cn(
-          "bg-secondary/60 rounded-3xl",
+          "bg-secondary/80 rounded-3xl",
           "px-4 md:px-5 lg:px-6 py-4 md:py-5",
           "min-h-[120px] flex flex-col justify-between",
-          "shadow-sm transition-shadow duration-200",
-          "focus-within:shadow-md border border-border/40"
+          "shadow-lg transition-all duration-300",
+          "focus-within:shadow-xl border border-border/50",
+          "backdrop-blur-sm"
         )}
       >
         {attachedFile && (
