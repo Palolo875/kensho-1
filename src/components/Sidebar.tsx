@@ -119,18 +119,6 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
 
           <Button
             variant="ghost"
-            onClick={() => navigate('/gemma')}
-            className={cn(
-              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
-              isCollapsed ? "w-11 px-0" : "w-full justify-start"
-            )}
-          >
-            <MessageSquare className="h-5 w-5" />
-            {!isCollapsed && <span className="ml-3">💬 Gemma Chat</span>}
-          </Button>
-
-          <Button
-            variant="ghost"
             className={cn(
               "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
               isCollapsed ? "w-11 px-0" : "w-full justify-start"
@@ -259,20 +247,6 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
 
         {/* Navigation Items */}
         <div className="flex flex-col gap-2 px-2">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              navigate('/gemma');
-              onToggle ? onToggle() : setInternalIsOpen(false);
-            }}
-            className={cn(
-              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light w-full justify-start"
-            )}
-          >
-            <MessageSquare className="h-5 w-5" />
-            <span className="ml-3">💬 Gemma Chat</span>
-          </Button>
-
           <Button
             variant="ghost"
             onClick={() => {
