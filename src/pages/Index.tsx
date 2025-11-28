@@ -96,18 +96,8 @@ const Index = () => {
         !isMobile && "ml-16 lg:ml-64",
       )}>
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center py-8 px-4">
-            <div className="w-full max-w-2xl space-y-6">
-              {/* Welcome text */}
-              <div className="text-center mb-12">
-                <h2 className="text-foreground/80 text-xl md:text-2xl lg:text-3xl font-light mb-2 md:mb-3">
-                  Hello Rehan
-                </h2>
-                <h1 className="text-foreground text-2xl md:text-3xl lg:text-4xl font-normal leading-tight mb-3 md:mb-4">
-                  How can I help you today?
-                </h1>
-              </div>
-
+          <div className="h-screen flex flex-col items-center justify-center px-4">
+            <div className="w-full max-w-2xl space-y-3">
               {/* Input Bar Centered */}
               <div className="flex justify-center">
                 <div className="w-full">
