@@ -7,16 +7,38 @@ import Sidebar from '@/components/Sidebar';
 import { PerformanceDashboard } from '@/components/PerformanceDashboard';
 import { ExecutionTraceVisualization } from '@/components/ExecutionTraceVisualization';
 import { useObservatory } from '@/contexts/ObservatoryContext';
+import { useKenshoStore } from '@/stores/useKenshoStore';
+import SettingsModal from '@/components/SettingsModal';
+import SearchModal from '@/components/SearchModal';
+import { ObservatoryModal } from '@/components/ObservatoryModal';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const Analytics = () => {
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { journal } = useObservatory();
+  const [showSettings, setShowSettings] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showObservatory, setShowObservatory] = useState(false);
+  const { journal, workers, leader, epoch, logs, isEnabled, startObservatory, killWorker } = useObservatory();
+  const clearMessages = useKenshoStore(state => state.clearMessages);
+
+  const handleOpenObservatory = () => {
+    if (!isEnabled) {
+      startObservatory();
+    }
+    setShowObservatory(true);
+  };
+
+  const handleNewConversation = () => {
+    clearMessages();
+    navigate('/');
+  };
 
   // Convert journal to mock ExecutionTrace for visualization
   const mockTrace = journal ? {
@@ -49,10 +71,24 @@ const Analytics = () => {
       <Sidebar
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
-        onOpenSettings={() => {}}
-        onOpenSearch={() => {}}
-        onOpenObservatory={() => {}}
-        onNewConversation={() => {}}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenSearch={() => setShowSearch(true)}
+        onOpenObservatory={handleOpenObservatory}
+        onNewConversation={handleNewConversation}
+      />
+
+      {/* Modals */}
+      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
+      <SearchModal open={showSearch} onOpenChange={setShowSearch} />
+      <ObservatoryModal
+        open={showObservatory}
+        onOpenChange={setShowObservatory}
+        workers={workers}
+        leader={leader}
+        epoch={epoch}
+        logs={logs}
+        onKillWorker={killWorker}
+        journal={journal}
       />
 
       {/* Main Content */}

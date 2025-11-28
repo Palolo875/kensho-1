@@ -7,6 +7,7 @@ Kensho is an advanced AI debate orchestration system designed for reliable, tran
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
 
 ## Recent Changes (Nov 28, 2025)
+- **Sidebar Interactions Fixed:** Analytics.tsx now has proper callback implementations for onOpenSettings, onOpenSearch, onOpenObservatory, onNewConversation matching Index.tsx pattern, includes SettingsModal, SearchModal, ObservatoryModal
 - **Custom Icon System:** Created personalized handmade-style icons (JournalIcon, LightbulbIcon, WarningIcon, CustomCrownIcon) replacing AI-generated emojis for authentic visual identity
 - **Observatory Modal Complete Mobile Responsive:** Centered header with flexbox, w-full max-w-2xl sm:max-w-4xl lg:max-w-6xl, tabs responsive (Journal, Agents, Logs), all content px-3 sm:px-6, text-xs sm:text-sm
 - **Observatory Tabs Optimized:** Journal tab with custom icons, Agents grid 1 col mobile → 2 sm → 3 lg, Logs tab scrollable height-[300px] sm:height-[400px]
