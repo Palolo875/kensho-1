@@ -8,128 +8,128 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Light mode - Pastel soft & organic palette */
-    /* Crème/Beige très clair */
-    --background: 35 40% 96%;
-    --foreground: 30 15% 28%;
+    /* Light mode - Linen, old paper, rice & soft black palette */
+    /* Riz blanc crème très clair */
+    --background: 40 25% 97%;
+    --foreground: 30 8% 22%;
 
-    /* Crème avec touche rose */
-    --card: 35 35% 98%;
-    --card-foreground: 30 15% 28%;
+    /* Vieux papier crème */
+    --card: 38 20% 96%;
+    --card-foreground: 30 8% 22%;
 
-    --popover: 35 35% 98%;
-    --popover-foreground: 30 15% 28%;
+    --popover: 38 20% 96%;
+    --popover-foreground: 30 8% 22%;
 
-    /* Bleu ciel pastel doux */
-    --primary: 210 45% 68%;
-    --primary-foreground: 35 35% 98%;
+    /* Lin naturel */
+    --primary: 35 15% 68%;
+    --primary-foreground: 40 25% 97%;
 
-    /* Rose blush pastel */
-    --secondary: 350 60% 88%;
-    --secondary-foreground: 30 15% 28%;
+    /* Vieux papier beige */
+    --secondary: 38 18% 88%;
+    --secondary-foreground: 30 8% 22%;
 
-    /* Gris très clair & doux */
-    --muted: 30 20% 92%;
-    --muted-foreground: 30 10% 52%;
+    /* Lin très clair */
+    --muted: 38 15% 92%;
+    --muted-foreground: 30 8% 48%;
 
-    /* Peach/Corail pastel doux */
-    --accent: 15 85% 75%;
-    --accent-foreground: 35 35% 98%;
+    /* Riz légèrement teinté */
+    --accent: 35 12% 85%;
+    --accent-foreground: 30 8% 22%;
 
-    /* Rose pale pour destructive */
-    --destructive: 0 70% 70%;
-    --destructive-foreground: 35 35% 98%;
+    /* Vieux papier brûlé pour destructive */
+    --destructive: 20 60% 65%;
+    --destructive-foreground: 40 25% 97%;
 
-    /* Bordures très subtiles */
-    --border: 30 25% 90%;
-    --input: 35 30% 94%;
-    --ring: 210 45% 68%;
+    /* Bordures très subtiles lin */
+    --border: 38 15% 90%;
+    --input: 40 20% 94%;
+    --ring: 35 15% 68%;
 
     --radius: 0.75rem;
     
     /* Smooth transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    /* Sidebar - pastel doux */
-    --sidebar-background: 35 40% 96%;
-    --sidebar-foreground: 30 15% 28%;
-    --sidebar-primary: 210 45% 68%;
-    --sidebar-primary-foreground: 35 35% 98%;
-    --sidebar-accent: 350 60% 88%;
-    --sidebar-accent-foreground: 30 15% 28%;
-    --sidebar-border: 30 25% 90%;
-    --sidebar-ring: 210 45% 68%;
+    /* Sidebar - lin naturel */
+    --sidebar-background: 40 25% 97%;
+    --sidebar-foreground: 30 8% 22%;
+    --sidebar-primary: 35 15% 68%;
+    --sidebar-primary-foreground: 40 25% 97%;
+    --sidebar-accent: 38 18% 88%;
+    --sidebar-accent-foreground: 30 8% 22%;
+    --sidebar-border: 38 15% 90%;
+    --sidebar-ring: 35 15% 68%;
 
-    /* User bubble - Bleu ciel pastel */
-    --user-bubble: 210 50% 72%;
-    --user-bubble-foreground: 35 35% 98%;
+    /* User bubble - Lin */
+    --user-bubble: 35 15% 72%;
+    --user-bubble-foreground: 40 25% 97%;
 
-    /* Thinking text - gris doux */
-    --thinking-text: 30 10% 58%;
+    /* Thinking text - noir doux */
+    --thinking-text: 30 8% 52%;
 
-    /* Voice recording - rose pastel */
-    --recording-active: 350 80% 75%;
-    --recording-wave: 350 70% 68%;
+    /* Voice recording - vieux papier */
+    --recording-active: 35 20% 72%;
+    --recording-wave: 35 15% 65%;
   }
 
   .dark {
-    /* Dark mode - Pastel soft & organic (darker version) */
-    /* Fond très foncé avec teinte chaude */
-    --background: 35 15% 18%;
-    --foreground: 35 30% 92%;
+    /* Dark mode - Linen, old paper, rice & soft black */
+    /* Fond très foncé noir doux */
+    --background: 30 12% 16%;
+    --foreground: 40 25% 92%;
 
-    /* Carte - gris très foncé avec teinte chaude */
-    --card: 35 20% 22%;
-    --card-foreground: 35 30% 92%;
+    /* Carte - gris très foncé lin */
+    --card: 35 15% 20%;
+    --card-foreground: 40 25% 92%;
 
-    --popover: 35 20% 22%;
-    --popover-foreground: 35 30% 92%;
+    --popover: 35 15% 20%;
+    --popover-foreground: 40 25% 92%;
 
-    /* Bleu ciel pastel pour primary */
-    --primary: 210 45% 70%;
-    --primary-foreground: 35 20% 22%;
+    /* Lin pour primary */
+    --primary: 35 15% 70%;
+    --primary-foreground: 35 15% 20%;
 
-    /* Rose blush pastel */
-    --secondary: 350 60% 85%;
-    --secondary-foreground: 35 20% 22%;
+    /* Vieux papier */
+    --secondary: 38 18% 85%;
+    --secondary-foreground: 35 15% 20%;
 
-    /* Gris doux */
-    --muted: 30 15% 28%;
-    --muted-foreground: 35 15% 65%;
+    /* Lin clair */
+    --muted: 35 10% 28%;
+    --muted-foreground: 40 15% 65%;
 
-    /* Peach pastel */
-    --accent: 15 85% 72%;
-    --accent-foreground: 35 20% 22%;
+    /* Riz teinté */
+    --accent: 35 12% 80%;
+    --accent-foreground: 35 15% 20%;
 
-    /* Rose pale */
-    --destructive: 0 70% 65%;
-    --destructive-foreground: 35 30% 92%;
+    /* Vieux papier brûlé */
+    --destructive: 20 60% 62%;
+    --destructive-foreground: 40 25% 92%;
 
     /* Bordures très subtiles */
-    --border: 35 15% 28%;
-    --input: 35 15% 25%;
-    --ring: 210 45% 70%;
+    --border: 35 10% 28%;
+    --input: 35 10% 24%;
+    --ring: 35 15% 70%;
 
-    /* Sidebar dark - pastel */
-    --sidebar-background: 35 15% 18%;
-    --sidebar-foreground: 35 30% 92%;
-    --sidebar-primary: 210 45% 70%;
-    --sidebar-primary-foreground: 35 20% 22%;
-    --sidebar-accent: 350 60% 85%;
-    --sidebar-accent-foreground: 35 20% 22%;
-    --sidebar-border: 35 15% 28%;
-    --sidebar-ring: 210 45% 70%;
+    /* Sidebar dark - lin */
+    --sidebar-background: 30 12% 16%;
+    --sidebar-foreground: 40 25% 92%;
+    --sidebar-primary: 35 15% 70%;
+    --sidebar-primary-foreground: 35 15% 20%;
+    --sidebar-accent: 38 18% 85%;
+    --sidebar-accent-foreground: 35 15% 20%;
+    --sidebar-border: 35 10% 28%;
+    --sidebar-ring: 35 15% 70%;
 
-    /* User bubble dark - Bleu ciel pastel */
-    --user-bubble: 210 50% 65%;
-    --user-bubble-foreground: 35 30% 92%;
+    /* User bubble dark - Lin */
+    --user-bubble: 35 15% 65%;
+    --user-bubble-foreground: 40 25% 92%;
 
-    /* Thinking text dark */
-    --thinking-text: 35 15% 62%;
+    /* Thinking text dark - noir doux */
+    --thinking-text: 30 8% 60%;
 
-    /* Voice recording dark - rose */
-    --recording-active: 350 80% 70%;
-    --recording-wave: 350 70% 65%;
+    /* Voice recording dark - vieux papier */
+    --recording-active: 35 20% 68%;
+    --recording-wave: 35 15% 62%;
   }
 }
 
