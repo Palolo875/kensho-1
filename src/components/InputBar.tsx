@@ -121,9 +121,9 @@ const InputBar = ({ className }: InputBarProps) => {
           "bg-secondary/80 rounded-3xl",
           "px-4 md:px-5 lg:px-6 py-4 md:py-5",
           "min-h-[120px] flex flex-col justify-between",
-          "shadow-lg transition-all duration-300",
-          "focus-within:shadow-xl border border-border/50",
-          "backdrop-blur-sm"
+          "shadow-xl transition-all duration-300 hover:shadow-2xl",
+          "focus-within:shadow-2xl border border-border/50 hover:border-border/60",
+          "backdrop-blur-md"
         )}
       >
         {attachedFile && (

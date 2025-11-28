@@ -47,7 +47,7 @@ const AIResponse = ({
 
         {/* Status Message with OCR Progress */}
         {statusMessage && (
-          <div className="mb-4 p-3 bg-secondary/50 rounded-lg border border-border/50 flex items-center gap-3">
+          <div className="mb-4 p-3 bg-secondary/50 rounded-lg border border-border/50 flex items-center gap-3 shadow-md">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             <div className="flex-1">
               <p className="text-sm text-foreground">{statusMessage}</p>

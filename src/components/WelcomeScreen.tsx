@@ -76,10 +76,11 @@ const WelcomeScreen = () => {
               "flex flex-col items-center gap-1",
               "bg-card/60 hover:bg-card rounded-md",
               "px-1.5 md:px-2 py-1.5 md:py-2",
-              "transition-all duration-200 cursor-pointer",
+              "transition-all duration-300 cursor-pointer",
               "focus:outline-none focus:ring-0.5 focus:ring-ring/30",
               "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card/60",
               "border border-border/30 hover:border-border/50",
+              "shadow-sm hover:shadow-md",
               "active:scale-95",
               pressedButton === button.id && "scale-[0.98]"
             )}
