@@ -93,60 +93,90 @@ const Index = () => {
 
       <main className={cn(
         "transition-all duration-300 min-h-screen",
-        "pb-32 sm:pb-36 md:pb-40",
         !isMobile && "ml-16 lg:ml-64",
-        "pt-16 md:pt-4"
       )}>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6">
-          {/* Sprint 7: Project Dashboard */}
-          <ProjectDashboard />
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center py-8 px-4">
+            <div className="w-full max-w-2xl space-y-6">
+              {/* Welcome text */}
+              <div className="text-center mb-12">
+                <h2 className="text-foreground/80 text-xl md:text-2xl lg:text-3xl font-light mb-2 md:mb-3">
+                  Hello Rehan
+                </h2>
+                <h1 className="text-foreground text-2xl md:text-3xl lg:text-4xl font-normal leading-tight mb-3 md:mb-4">
+                  How can I help you today?
+                </h1>
+              </div>
 
-          {messages.length === 0 ? (
-            <WelcomeScreen userName="Rehan" />
-          ) : (
-            <div className="space-y-1">
-              {messages.map((msg) =>
-                msg.author === 'user' ? (
-                  <MessageBubble
-                    key={msg.id}
-                    content={msg.text}
-                    isUser={true}
-                  />
-                ) : (
-                  <div key={msg.id}>
-                    {/* Afficher le plan de réflexion s'il existe */}
-                    {msg.plan && <PlanView plan={msg.plan} />}
-                    <AIResponse
-                      content={msg.text}
-                      thinking={msg.thinking || (isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : "")}
-                      statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
-                      ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
-                      thoughtProcess={msg.thoughtProcess}
-                      factCheckingClaims={msg.factCheckingClaims}
-                      semanticSearchResults={msg.semanticSearchResults}
-                    />
-                  </div>
-                )
-              )}
-              {/* Élément invisible pour auto-scroll */}
-              <div ref={messagesEndRef} />
+              {/* Input Bar Centered */}
+              <div className="flex justify-center">
+                <div className="w-full">
+                  <InputBar />
+                </div>
+              </div>
+
+              {/* CTA Cards - Very Small Below */}
+              <div className="flex justify-center">
+                <WelcomeScreen />
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className={cn(
+            "pb-32 sm:pb-36 md:pb-40",
+            "pt-16 md:pt-4"
+          )}>
+            <div className="max-w-4xl mx-auto px-4 sm:px-6">
+              {/* Sprint 7: Project Dashboard */}
+              <ProjectDashboard />
+
+              <div className="space-y-1">
+                {messages.map((msg) =>
+                  msg.author === 'user' ? (
+                    <MessageBubble
+                      key={msg.id}
+                      content={msg.text}
+                      isUser={true}
+                    />
+                  ) : (
+                    <div key={msg.id}>
+                      {/* Afficher le plan de réflexion s'il existe */}
+                      {msg.plan && <PlanView plan={msg.plan} />}
+                      <AIResponse
+                        content={msg.text}
+                        thinking={msg.thinking || (isKenshoWriting && msg.text === '' ? "Kensho réfléchit..." : "")}
+                        statusMessage={isKenshoWriting && msg.text === '' ? statusMessage || undefined : undefined}
+                        ocrProgress={isKenshoWriting && msg.text === '' && ocrProgress >= 0 ? ocrProgress : undefined}
+                        thoughtProcess={msg.thoughtProcess}
+                        factCheckingClaims={msg.factCheckingClaims}
+                        semanticSearchResults={msg.semanticSearchResults}
+                      />
+                    </div>
+                  )
+                )}
+                {/* Élément invisible pour auto-scroll */}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
-      <div className={cn(
-        "fixed bottom-0 left-0 right-0",
-        "px-3 sm:px-6 md:px-8 lg:px-12 py-4 sm:py-5 md:py-6",
-        !isMobile && "md:left-16 lg:left-64"
-      )}>
+      {/* Input Bar - Fixed at bottom only during conversation */}
+      {messages.length > 0 && (
         <div className={cn(
-          "mx-auto",
-          isMobile ? "max-w-2xl" : "max-w-3xl lg:max-w-4xl"
+          "fixed bottom-0 left-0 right-0",
+          "px-3 sm:px-6 md:px-8 lg:px-12 py-4 sm:py-5 md:py-6",
+          !isMobile && "md:left-16 lg:left-64"
         )}>
-          <InputBar />
+          <div className={cn(
+            "mx-auto",
+            isMobile ? "max-w-2xl" : "max-w-3xl lg:max-w-4xl"
+          )}>
+            <InputBar />
+          </div>
         </div>
-      </div>
+      )}
 
 
       <SettingsModal 
