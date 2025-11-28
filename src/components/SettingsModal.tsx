@@ -1,9 +1,7 @@
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -14,7 +12,8 @@ import ThemeToggle from "./ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { useNavigate } from "react-router-dom";
-import { Download } from "lucide-react";
+import { Download, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SettingsModalProps {
   open: boolean;
@@ -23,201 +22,391 @@ interface SettingsModalProps {
   onOpenModelSelector?: () => void;
 }
 
+type TabType = "account" | "settings" | "usage" | "tasks";
+
 const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelector }: SettingsModalProps) => {
   const navigate = useNavigate();
   const { firstName, lastName, setFirstName, setLastName } = useUserPreferences();
   const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
   const setDebateModeEnabled = useKenshoStore(state => state.setDebateModeEnabled);
   const sendMessage = useKenshoStore(state => state.sendMessage);
+  const [activeTab, setActiveTab] = useState<TabType>("settings");
+  const [language, setLanguage] = useState("fr");
+  const [theme, setTheme] = useState("system");
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(false);
+  const [saveHistory, setSaveHistory] = useState(true);
+  const [showThinking, setShowThinking] = useState(true);
+  const [exclusiveContent, setExclusiveContent] = useState(false);
+
+  const tabs = [
+    { id: "account" as TabType, label: "Compte" },
+    { id: "settings" as TabType, label: "Paramètres" },
+    { id: "usage" as TabType, label: "Utilisation" },
+    { id: "tasks" as TabType, label: "Tâches" },
+  ];
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case "account":
+        return (
+          <div className="space-y-6">
+            {/* Profile Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Profil</h4>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="firstName" className="text-sm font-medium mb-2 block">
+                    Prénom
+                  </Label>
+                  <Input
+                    id="firstName"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Votre prénom"
+                    className="bg-secondary/40 border-border/60 focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName" className="text-sm font-medium mb-2 block">
+                    Nom
+                  </Label>
+                  <Input
+                    id="lastName"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Votre nom"
+                    className="bg-secondary/40 border-border/60 focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Account Info Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Informations du compte</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <span className="text-sm text-foreground">Email</span>
+                  <span className="text-sm text-muted-foreground">utilisateur@example.com</span>
+                </div>
+                <div className="flex justify-between items-center p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <span className="text-sm text-foreground">Membre depuis</span>
+                  <span className="text-sm text-muted-foreground">Nov 2024</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case "settings":
+        return (
+          <div className="space-y-6">
+            {/* General Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Général</h4>
+              <div>
+                <Label htmlFor="language" className="text-sm font-medium mb-2 block">
+                  Langue
+                </Label>
+                <select
+                  id="language"
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full px-3 py-2 bg-secondary/40 border border-border/60 rounded-lg text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                >
+                  <option value="fr">Français</option>
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                  <option value="de">Deutsch</option>
+                </select>
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Appearance Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Apparence</h4>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: "light", label: "Clair" },
+                  { id: "dark", label: "Sombre" },
+                  { id: "system", label: "Système" },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => setTheme(option.id)}
+                    className={cn(
+                      "p-3 rounded-lg border-2 transition-all duration-200",
+                      theme === option.id
+                        ? "border-primary bg-primary/10"
+                        : "border-border/40 bg-secondary/20 hover:border-border/60"
+                    )}
+                  >
+                    <span className="text-xs font-medium text-foreground">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border/30">
+                <span className="text-sm text-foreground">Thème automatique</span>
+                <ThemeToggle />
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Customization Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Personnalisation</h4>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Contenu exclusif</p>
+                    <p className="text-xs text-muted-foreground mt-1">Recevoir du contenu premium</p>
+                  </div>
+                  <Switch
+                    checked={exclusiveContent}
+                    onCheckedChange={setExclusiveContent}
+                  />
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Historique</p>
+                    <p className="text-xs text-muted-foreground mt-1">Sauvegarder l'historique</p>
+                  </div>
+                  <Switch
+                    checked={saveHistory}
+                    onCheckedChange={setSaveHistory}
+                  />
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Réflexion</p>
+                    <p className="text-xs text-muted-foreground mt-1">Afficher le processus de pensée</p>
+                  </div>
+                  <Switch
+                    checked={showThinking}
+                    onCheckedChange={setShowThinking}
+                  />
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Mode Débat</p>
+                    <p className="text-xs text-muted-foreground mt-1">Débat Léo vs Athéna (meilleure qualité)</p>
+                  </div>
+                  <Switch
+                    checked={isDebateModeEnabled}
+                    onCheckedChange={setDebateModeEnabled}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Audio Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Audio</h4>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Lecture automatique</p>
+                    <p className="text-xs text-muted-foreground mt-1">Lire les réponses à haute voix</p>
+                  </div>
+                  <Switch
+                    checked={autoPlayEnabled}
+                    onCheckedChange={setAutoPlayEnabled}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="voice" className="text-sm font-medium mb-2 block">
+                    Voix
+                  </Label>
+                  <select
+                    id="voice"
+                    className="w-full px-3 py-2 bg-secondary/40 border border-border/60 rounded-lg text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+                  >
+                    <option value="fr-female">Française (Femme)</option>
+                    <option value="fr-male">Française (Homme)</option>
+                    <option value="en-female">English (Female)</option>
+                    <option value="en-male">English (Male)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Model Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Modèle</h4>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  onOpenModelSelector?.();
+                  onOpenChange(false);
+                }}
+                className="w-full justify-center"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Changer de modèle
+              </Button>
+            </div>
+          </div>
+        );
+
+      case "usage":
+        return (
+          <div className="space-y-6">
+            {/* Usage Stats */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Utilisation</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <span className="text-sm text-foreground">Conversations ce mois</span>
+                  <span className="text-sm font-semibold text-foreground">42</span>
+                </div>
+                <div className="flex justify-between items-center p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <span className="text-sm text-foreground">Tokens utilisés</span>
+                  <span className="text-sm font-semibold text-foreground">125,430</span>
+                </div>
+                <div className="flex justify-between items-center p-3 rounded-lg bg-secondary/20 border border-border/30">
+                  <span className="text-sm text-foreground">Temps moyen de réponse</span>
+                  <span className="text-sm font-semibold text-foreground">1.2s</span>
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Storage */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Stockage</h4>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-sm text-foreground">Espace utilisé</span>
+                    <span className="text-sm text-muted-foreground">245 MB / 2 GB</span>
+                  </div>
+                  <div className="w-full h-2 bg-secondary/40 rounded-full overflow-hidden border border-border/30">
+                    <div className="h-full w-1/4 bg-primary/60 rounded-full"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case "tasks":
+        return (
+          <div className="space-y-6">
+            {/* Tools Section */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Outils</h4>
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    onOpenObservatory?.();
+                    onOpenChange(false);
+                  }}
+                  className="w-full flex items-center justify-between p-4 rounded-lg bg-secondary/20 border border-border/30 hover:border-border/60 hover:bg-secondary/30 transition-all"
+                >
+                  <div className="text-left">
+                    <div className="font-medium text-sm text-foreground">Observatory</div>
+                    <div className="text-xs text-muted-foreground mt-1">Surveillance des agents en temps réel</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    navigate('/analytics');
+                    onOpenChange(false);
+                  }}
+                  className="w-full flex items-center justify-between p-4 rounded-lg bg-secondary/20 border border-border/30 hover:border-border/60 hover:bg-secondary/30 transition-all"
+                >
+                  <div className="text-left">
+                    <div className="font-medium text-sm text-foreground">Analytics</div>
+                    <div className="text-xs text-muted-foreground mt-1">Métriques de performance détaillées</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <Separator className="bg-border/40" />
+
+            {/* Quick Fact-Checking Examples */}
+            <div>
+              <h4 className="text-base font-semibold mb-4 text-foreground">Fact-Checking Rapide</h4>
+              <div className="space-y-2">
+                {[
+                  'Paris est la capitale de la France',
+                  'La Terre est plate',
+                  'L\'eau bout à 100°C',
+                  'La gravité attire les objets',
+                ].map((example, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      sendMessage(`Vérifie: ${example}`);
+                      onOpenChange(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs rounded-lg bg-secondary/20 border border-border/30 hover:border-border/60 hover:bg-secondary/30 transition-all text-foreground/80 truncate"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md backdrop-blur-2xl bg-background/95 border-border/50 shadow-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-light">Paramètres</DialogTitle>
-          <DialogDescription className="text-muted-foreground/80">
-            Personnalisez votre expérience
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-6 py-4">
-          {/* Profil */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-light">Profil</h3>
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="firstName" className="text-sm">
-                  Prénom
-                </Label>
-                <Input
-                  id="firstName"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Votre prénom"
-                  className="bg-background/40 backdrop-blur-md border-border/50"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName" className="text-sm">
-                  Nom
-                </Label>
-                <Input
-                  id="lastName"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Votre nom"
-                  className="bg-background/40 backdrop-blur-md border-border/50"
-                />
-              </div>
-            </div>
+      <DialogContent className="sm:max-w-2xl backdrop-blur-2xl bg-background/98 border-border/50 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-border/40">
+          <div>
+            <h2 className="text-2xl font-semibold text-foreground">Paramètres</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Personnalisez votre expérience Kensho
+            </p>
           </div>
+          <button
+            onClick={() => onOpenChange(false)}
+            className="rounded-lg p-2 hover:bg-secondary/60 transition-colors"
+          >
+            <X className="h-5 w-5 text-foreground" />
+          </button>
+        </div>
 
-          <Separator />
-          {/* Apparence */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-light">Apparence</h3>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="dark-mode" className="flex flex-col space-y-1">
-                <span>Mode sombre</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  Basculer entre les thèmes clair et sombre
-                </span>
-              </Label>
-              <ThemeToggle />
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Conversation */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-light">Conversation</h3>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="save-history" className="flex flex-col space-y-1">
-                <span>Sauvegarder l'historique</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  Enregistrer vos conversations
-                </span>
-              </Label>
-              <Switch id="save-history" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="show-thinking" className="flex flex-col space-y-1">
-                <span>Afficher la réflexion</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  Voir le processus de pensée de l'IA
-                </span>
-              </Label>
-              <Switch id="show-thinking" defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="debate-mode" className="flex flex-col space-y-1">
-                <span>Activer le mode Débat</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  Débat interne entre Léo et Athéna (plus lent, meilleure qualité)
-                </span>
-              </Label>
-              <Switch 
-                id="debate-mode" 
-                checked={isDebateModeEnabled}
-                onCheckedChange={setDebateModeEnabled}
-              />
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Audio */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-light">Audio</h3>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="auto-play" className="flex flex-col space-y-1">
-                <span>Lecture automatique</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  Lire les réponses à haute voix
-                </span>
-              </Label>
-              <Switch id="auto-play" />
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Modèle */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-light">Modèle</h3>
-            <Button
-              variant="outline"
-              onClick={() => {
-                onOpenModelSelector?.();
-                onOpenChange(false);
-              }}
-              className="w-full justify-start"
+        {/* Tabs Navigation */}
+        <div className="flex gap-0 px-6 pt-4 border-b border-border/40">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "px-4 py-3 text-sm font-medium border-b-2 transition-all duration-200",
+                activeTab === tab.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
             >
-              <Download className="h-4 w-4 mr-2" />
-              Changer de modèle
-            </Button>
-          </div>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          <Separator />
-
-          {/* Outils */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-light">Outils</h3>
-            <div className="space-y-3">
-              {/* Observatory */}
-              <button
-                onClick={() => {
-                  onOpenObservatory?.();
-                  onOpenChange(false);
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-sidebar-accent/60 transition-colors border border-border/30"
-              >
-                <div className="text-left">
-                  <div className="font-medium text-sm">Observatory</div>
-                  <div className="text-xs text-muted-foreground">Surveillance des agents</div>
-                </div>
-              </button>
-
-              {/* Analytics */}
-              <button
-                onClick={() => {
-                  navigate('/analytics');
-                  onOpenChange(false);
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-sidebar-accent/60 transition-colors border border-border/30"
-              >
-                <div className="text-left">
-                  <div className="font-medium text-sm">Analytics</div>
-                  <div className="text-xs text-muted-foreground">Métriques de performance</div>
-                </div>
-              </button>
-
-              {/* Fact-Checking Examples */}
-              <div className="space-y-2">
-                <div className="font-medium text-sm">Fact-Checking Rapide</div>
-                <div className="space-y-1">
-                  {[
-                    'Paris est la capitale de la France',
-                    'La Terre est plate',
-                    'L\'eau bout à 100°C',
-                    'La gravité attire les objets',
-                  ].map((example, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        sendMessage(`Vérifie: ${example}`);
-                        onOpenChange(false);
-                      }}
-                      className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-primary/10 transition-colors truncate"
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Content Area */}
+        <div className="overflow-y-auto flex-1 px-6 py-6">
+          {renderTabContent()}
         </div>
       </DialogContent>
     </Dialog>
