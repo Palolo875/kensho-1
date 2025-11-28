@@ -91,21 +91,21 @@ const WelcomeScreen = ({ userName = "there" }: WelcomeScreenProps) => {
               disabled={!modelReady}
               className={cn(
                 "flex flex-col items-center gap-2 md:gap-2.5",
-                "bg-white/50 hover:bg-white rounded-lg md:rounded-xl",
+                "bg-card/70 hover:bg-card rounded-lg md:rounded-xl",
                 "px-3 md:px-4 py-3 md:py-3.5",
                 "transition-all duration-200 cursor-pointer",
-                "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
-                "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/50",
-                "border border-[#E0E0E0]/60 hover:border-[#D0D0D0]",
+                "focus:outline-none focus:ring-1 focus:ring-ring/30",
+                "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card/70",
+                "border border-border/40 hover:border-border/60",
                 "active:scale-95",
                 pressedButton === button.id && "scale-[0.98]"
               )}
               aria-label={button.label}
             >
-              <span className="text-[#666666] flex-shrink-0">
+              <span className="text-muted-foreground flex-shrink-0">
                 {button.icon}
               </span>
-              <span className="text-[#1A1A1A] text-xs md:text-sm font-normal text-center leading-tight">
+              <span className="text-foreground text-xs md:text-sm font-normal text-center leading-tight">
                 {button.label}
               </span>
             </button>

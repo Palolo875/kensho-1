@@ -118,25 +118,25 @@ const InputBar = ({ className }: InputBarProps) => {
     <div className={cn("w-full", className)}>
       <div 
         className={cn(
-          "bg-[#F5F0E8] rounded-3xl",
+          "bg-secondary/60 rounded-3xl",
           "px-4 md:px-5 lg:px-6 py-4 md:py-5",
           "min-h-[120px] flex flex-col justify-between",
-          "shadow-lg transition-shadow duration-200",
-          "focus-within:shadow-xl"
+          "shadow-sm transition-shadow duration-200",
+          "focus-within:shadow-md border border-border/40"
         )}
       >
         {attachedFile && (
-          <div className="flex items-center gap-2 mb-3 px-2 py-2 bg-white/50 rounded-xl">
-            <Paperclip className="h-4 w-4 text-[#888888]" />
-            <span className="text-sm text-[#1A1A1A] truncate flex-1 max-w-[200px]">
+          <div className="flex items-center gap-2 mb-3 px-2 py-2 bg-card/50 rounded-xl border border-border/30">
+            <Paperclip className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-foreground truncate flex-1 max-w-[200px]">
               {attachedFile.file.name}
             </span>
             <button
               type="button"
               onClick={detachFile}
-              className="h-6 w-6 rounded-full bg-[#E8E8E8] flex items-center justify-center hover:bg-[#D0D0D0] transition-colors"
+              className="h-6 w-6 rounded-full bg-muted flex items-center justify-center hover:bg-muted/70 transition-colors"
             >
-              <X className="h-3 w-3 text-[#888888]" />
+              <X className="h-3 w-3 text-muted-foreground" />
             </button>
           </div>
         )}
@@ -144,9 +144,9 @@ const InputBar = ({ className }: InputBarProps) => {
         {uploadProgress > 0 && uploadProgress < 100 && (
           <div className="mb-3">
             <div className="flex items-center gap-2 mb-1">
-              <Paperclip className="h-4 w-4 text-[#888888]" />
-              <span className="text-sm text-[#1A1A1A]">Chargement...</span>
-              <span className="text-xs text-[#888888] ml-auto">{uploadProgress.toFixed(0)}%</span>
+              <Paperclip className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-foreground">Chargement...</span>
+              <span className="text-xs text-muted-foreground ml-auto">{uploadProgress.toFixed(0)}%</span>
             </div>
             <Progress value={uploadProgress} className="h-1" />
           </div>
@@ -175,8 +175,8 @@ const InputBar = ({ className }: InputBarProps) => {
               rows={1}
               className={cn(
                 "w-full bg-transparent border-0 resize-none",
-                "text-[#1A1A1A] text-base md:text-lg",
-                "placeholder:text-[#1A1A1A]/70",
+                "text-foreground text-base md:text-lg",
+                "placeholder:text-foreground/60",
                 "focus:outline-none focus:ring-0",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
                 "font-normal leading-relaxed",
@@ -192,15 +192,15 @@ const InputBar = ({ className }: InputBarProps) => {
                   onClick={handlePlusClick}
                   className={cn(
                     "w-9 h-9 md:w-10 md:h-10 rounded-full",
-                    "bg-[#E8E8E8] flex items-center justify-center",
+                    "bg-muted flex items-center justify-center",
                     "transition-all duration-200",
-                    "hover:bg-[#D8D8D8] opacity-80 hover:opacity-100",
-                    "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
+                    "hover:bg-muted/70 opacity-80 hover:opacity-100",
+                    "focus:outline-none focus:ring-1 focus:ring-ring/30",
                     "active:scale-95 cursor-pointer"
                   )}
                   aria-label="Plus d'options"
                 >
-                  <Plus className="w-4 h-4 md:w-5 md:h-5 text-[#666666]" />
+                  <Plus className="w-4 h-4 md:w-5 md:h-5 text-muted-foreground" />
                 </button>
 
                 <button
@@ -208,15 +208,15 @@ const InputBar = ({ className }: InputBarProps) => {
                   onClick={handleAttachmentClick}
                   className={cn(
                     "w-9 h-9 md:w-10 md:h-10 rounded-full",
-                    "bg-[#E8E8E8] flex items-center justify-center",
+                    "bg-muted flex items-center justify-center",
                     "transition-all duration-200",
-                    "hover:bg-[#D8D8D8] opacity-80 hover:opacity-100",
-                    "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
+                    "hover:bg-muted/70 opacity-80 hover:opacity-100",
+                    "focus:outline-none focus:ring-1 focus:ring-ring/30",
                     "active:scale-95 cursor-pointer"
                   )}
                   aria-label="Joindre un fichier"
                 >
-                  <Paperclip className="w-4 h-4 md:w-5 md:h-5 text-[#666666]" />
+                  <Paperclip className="w-4 h-4 md:w-5 md:h-5 text-muted-foreground" />
                 </button>
                 <input
                   type="file"
@@ -234,16 +234,16 @@ const InputBar = ({ className }: InputBarProps) => {
                   disabled={!modelReady}
                   className={cn(
                     "w-9 h-9 md:w-10 md:h-10 rounded-full",
-                    "bg-[#E8E8E8] flex items-center justify-center",
+                    "bg-muted flex items-center justify-center",
                     "transition-all duration-200",
-                    "hover:bg-[#D8D8D8] opacity-80 hover:opacity-100",
-                    "focus:outline-none focus:ring-1 focus:ring-[#888888]/40",
+                    "hover:bg-muted/70 opacity-80 hover:opacity-100",
+                    "focus:outline-none focus:ring-1 focus:ring-ring/30",
                     "active:scale-95",
-                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#E8E8E8]"
+                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-muted"
                   )}
                   aria-label="Enregistrement vocal"
                 >
-                  <Mic className="w-4 h-4 md:w-5 md:h-5 text-[#666666]" />
+                  <Mic className="w-4 h-4 md:w-5 md:h-5 text-muted-foreground" />
                 </button>
 
                 <button
@@ -252,16 +252,16 @@ const InputBar = ({ className }: InputBarProps) => {
                   disabled={!canSend}
                   className={cn(
                     "w-9 h-9 md:w-10 md:h-10 rounded-full",
-                    "bg-[#2A2A2A] flex items-center justify-center",
+                    "bg-accent flex items-center justify-center",
                     "transition-all duration-200",
-                    "focus:outline-none focus:ring-1 focus:ring-[#000000]/40",
+                    "focus:outline-none focus:ring-1 focus:ring-ring/30",
                     canSend 
-                      ? "opacity-100 cursor-pointer hover:bg-[#1A1A1A] active:scale-95" 
+                      ? "opacity-100 cursor-pointer hover:bg-accent/90 active:scale-95" 
                       : "opacity-50 cursor-not-allowed"
                   )}
                   aria-label="Envoyer le message"
                 >
-                  <ArrowUp className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                  <ArrowUp className="w-4 h-4 md:w-5 md:h-5 text-accent-foreground" />
                 </button>
               </div>
             </div>
