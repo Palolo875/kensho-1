@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WaveformVisualizer } from "@/components/WaveformVisualizer";
 import { cn } from "@/lib/utils";
 
 interface VoiceRecorderInlineProps {

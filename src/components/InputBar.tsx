@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import VoiceRecorderInline from "./VoiceRecorderInline";
+import { WaveformVisualizer } from "./WaveformVisualizer";
 import { Progress } from "./ui/progress";
 
 interface InputBarProps {
@@ -15,6 +16,7 @@ const MAX_MESSAGE_LENGTH = 2000;
 const InputBar = ({ className }: InputBarProps) => {
   const [message, setMessage] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
@@ -87,10 +89,7 @@ const InputBar = ({ className }: InputBarProps) => {
   };
 
   const handlePlusClick = () => {
-    toast({
-      title: "Fonctionnalité à venir",
-      description: "Cette fonctionnalité sera bientôt disponible",
-    });
+    fileInputRef.current?.click();
   };
 
   const handleAttachmentClick = () => {
@@ -154,14 +153,15 @@ const InputBar = ({ className }: InputBarProps) => {
         )}
 
         {isRecording ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 py-8">
+            <WaveformVisualizer audioLevel={audioLevel} intensity={1} />
             <VoiceRecorderInline
               onTranscript={(text) => {
                 setMessage(text);
                 setIsRecording(false);
               }}
               onStop={() => setIsRecording(false)}
-              onLevel={() => {}}
+              onLevel={setAudioLevel}
             />
           </div>
         ) : (
