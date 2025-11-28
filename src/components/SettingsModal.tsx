@@ -29,7 +29,6 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
   const { firstName, setFirstName, welcomeMessage, setWelcomeMessage } = useUserPreferences();
   const isDebateModeEnabled = useKenshoStore(state => state.isDebateModeEnabled);
   const setDebateModeEnabled = useKenshoStore(state => state.setDebateModeEnabled);
-  const sendMessage = useKenshoStore(state => state.sendMessage);
   const [activeTab, setActiveTab] = useState<TabType>("settings");
   const [language, setLanguage] = useState("fr");
   const [theme, setTheme] = useState("system");

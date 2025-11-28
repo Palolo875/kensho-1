@@ -1,165 +1,41 @@
 # Kensho - FactCheckerAgent & Learning System
 
 ## Overview
-Kensho is an advanced AI debate orchestration system with meta-critique validation, cognitive traceability, performance monitoring, and feedback-driven learning. It features robust fact-checking capabilities, a production-ready asynchronous kernel, intelligent routing, multi-queue task execution, and a modern chat UI with an analytics dashboard. The project aims to provide a reliable, transparent, and high-performance platform for AI-driven factual inference and debate.
-
-## Recent Updates (Sprint 14 Elite Phase 3 - GEMMA 3 270M CONFIGURED)
-
-### UI Refactoring Complete - Dark Mode Noir Doux (Sprint 15)
-- **WelcomeScreen Component** (`src/components/WelcomeScreen.tsx`): Modern welcome screen with personalized greeting, CTA cards styled as "Read me a book" / "Personal therapy" card design
-- **InputBar Component** (`src/components/InputBar.tsx`): New beige/cream (#F5F0E8) input bar with circular control buttons (plus, attachment, microphone, send)
-- **File Attachment Handling**: Proper file-only submission with automatic detachment after send
-- **CTA Card Buttons**: 4 action cards - Posez une question, Ecrivez un brouillon, Thérapie personnelle, Lisez-moi un livre
-- **Clean Integration**: Replaced ChatInput with InputBar in Index.tsx, no visual conflicts
-- **Dark Mode Palette (NEW)**: Implemented noir doux soft black theme (0° 0% 12-16% background) with linen & old paper accents for dark mode
-
-### Core Integration Complete
-- **ModelManager v3.1**: Memory-aware + SSEStreamer integration for transparent model switching
-- **TaskExecutor v3.1**: Cache-aware + streaming for optimized task execution
-- **ResponseCache v1.0**: LRU cache with UUID v5 hashing, 30min TTL, 100 item max
-- **SSEStreamer v1.0**: EventEmitter-based real-time event streaming
-- **Structured Logging**: `src/lib/logger.ts` with context tracking and log levels
-- **Centralized Utils**: `src/lib/utils/` with modular utilities
-- **npm Package**: `@kensho/multi-agent-orchestration` scaffold ready to publish
-
-### Code Quality Improvements (Completed)
-- **Structured Logging System** (`src/lib/logger.ts`): Isomorphic logger with levels (DEBUG/INFO/WARN/ERROR), context tracking, optional persistence
-- **Centralized Utils** (`src/lib/utils/`): Modularized utilities (classnames, formatters, JSON, timing) with clean exports
-- **npm Package Scaffold** (`packages/multi-agent-orchestration/`): Foundation for standalone package with proper exports and documentation
-
-### Production Readiness (Sprint 14 Elite - Complete)
-- **MemoryManager v1.0**: Bundle size persistence via localStorage, prioritizes real sizes over theoretical calculations
-- **ResponseCache v1.0**: LRU cache with TTL eviction (5min sweep), works with lru-cache or Map fallback
-- **DialoguePlugin v1.0**: Auto-unload suggestions, graceful error handling, full streaming integration
-- **SSEStreamer v1.0**: Real-time event bus with token/complete/error/metrics/info event types
-- **ModelManager v3.1**: Memory-aware switching, transparent status updates via SSE
-- **TaskExecutor v3.1**: Cache-aware execution with auto-caching, real-time streaming to UI
-
-### Performance Gains (Verified)
-- **Cache Hits**: 2000x faster (1ms vs 2000ms on duplicates)
-- **GPU Load**: ~20-30% reduction on typical sessions with 30% duplicate queries
-- **VRAM Stability**: Guaranteed via MemoryManager + ModelManager coordination
-- **UI Responsiveness**: Real-time token streaming + status updates
-
-### Color Palette Implementation (Sprint 15)
-**Light Mode:**
-- Background: Riz blanc crème (40° 25% 97%)
-- Cards: Vieux papier crème (38° 20% 96%)
-- Primary: Lin naturel (35° 15% 68%)
-- Text: Noir doux (30° 8% 22%)
-
-**Dark Mode:**
-- Background: Noir doux très foncé (0° 0% 12%)
-- Cards: Noir doux (0° 0% 16%)
-- Primary: Lin naturel (35° 15% 70%)
-- Accents: Vieux papier/Riz avec noir doux
-- Text: Riz crème (40° 25% 92%)
-
-**Toggle:** Theme toggle available in Settings (Paramètres) - click Moon/Sun icon to switch between light and dark modes
-
-### Known Limitations & Future Work
-- **Worker Errors (OIE/GraphWorker)**: Pre-existing, system has graceful fallbacks with localStorage fallback
-- **VRAM Tracking**: Currently theoretical (params × bits/8 × 1.2), real tracking deferred to Sprint 16
-- **GPU Auto-Unload**: registerUnloaded() is bookkeeping only, real GPU unload requires WebGPU integration (Sprint 16)
+Kensho is an advanced AI debate orchestration system designed for reliable, transparent, and high-performance AI-driven factual inference and debate. It features robust fact-checking, a production-ready asynchronous kernel, intelligent routing, multi-queue task execution, and a modern chat UI with an analytics dashboard. The system integrates meta-critique validation, cognitive traceability, performance monitoring, and feedback-driven learning.
 
 ## User Preferences
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones.
 
 ## System Architecture
-Kensho's architecture is built around a **multi-agent debate system** (Optimist, Critic, MetaCritic) orchestrated in a 4-step flow with graceful degradation. Cognitive traceability is provided via a `JournalCognitif` system.
+Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) orchestrated in a 4-step flow with graceful degradation and cognitive traceability via a `JournalCognitif` system. The architecture emphasizes memory-aware orchestration, cache-aware execution, and real-time streaming for high performance and transparency.
 
-**Elite Architecture (Sprint 14+):**
-
-1. **Memory-Aware Orchestration**
-   - ModelManager v3.1: Negotiates with MemoryManager before loading models
-   - Transparent status updates via SSEStreamer
-   - SSEStreamer streams: "Checking memory...", "Loading model...", "Model ready."
-
-2. **Cache-Aware Execution**
-   - TaskExecutor v3.1: Checks ResponseCache before processing
-   - Cache hits: Returns in 1ms (2000x faster)
-   - Auto-caches results with TTL (30 minutes)
-
-3. **Real-Time Streaming**
-   - SSEStreamer v1.0: Central event bus
-   - Events: token, complete, error, metrics, info
-   - UI subscribes and gets real-time updates
-
-**Key Architectural Components:**
-
-*   **Asynchronous Kernel (v2.0):** Robust core for managing AI models and system resources.
-*   **Intelligent Router (v2.0):** Directs user requests to appropriate AI agents based on intent (e.g., `FACTCHECK`).
+**Core Architectural Components:**
+*   **Asynchronous Kernel (v2.0):** Manages AI models and system resources.
+*   **Intelligent Router (v2.0):** Directs user requests to appropriate AI agents.
 *   **TaskExecutor (v3.1):** Cache-aware orchestration with multi-queue support (SERIAL, PARALLEL_LIMITED, PARALLEL_FULL) and real-time streaming.
-*   **MemoryManager (v1.0):** Manages VRAM with real-time estimation, LRU strategies for model unloading, and integration with ModelManager.
+*   **MemoryManager (v1.0):** Manages VRAM with real-time estimation and LRU strategies for model unloading.
 *   **ModelManager (v3.1):** Memory-aware model switching with transparent status updates via SSEStreamer.
-*   **ResponseCache (v1.0):** LRU cache with TTL, deterministic UUID v5 hashing, auto-expiration.
-*   **SSEStreamer (v1.0):** EventEmitter-based real-time event bus for UI updates.
+*   **ResponseCache (v1.0):** LRU cache with TTL and deterministic UUID v5 hashing.
+*   **SSEStreamer (v1.0):** Central EventEmitter-based real-time event bus for UI updates, delivering tokens, complete messages, errors, and metrics.
 *   **DialoguePlugin (v1.0):** Orchestrates caching, VRAM checks, streaming, and metrics.
-*   **EventBus & SSEStreamer:** Isomorphic streaming solutions for real-time token delivery, performance metrics (TTFT, tokens/sec), and browser/Node client support.
-*   **Fact-Checking System:** Integrated directly into the main chat interface, it uses semantic search and a knowledge graph to verify claims, providing status (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN), evidence, and confidence scores.
-*   **Chat UI + Analytics Dashboard:** A modern UI with real-time chat streaming, multi-layer execution trace visualization, and a performance dashboard displaying key metrics like request counts, success rates, response times, and queue statistics.
-*   **Production Hardening:** Includes `Fusioner v2.0` with multiple strategies, `ExecutionTraceContext` for comprehensive debugging, type-safe error handling, retry logic with exponential backoff, and stress-tested resilience.
-*   **Structured Logging (v1.0)**: Centralized logger with isomorphic support (Node/Browser), context tracking, and log levels (DEBUG/INFO/WARN/ERROR).
-*   **Utilities Library (v1.0)**: Modularized utils (classnames, formatters, JSON parsing, timing utilities) for consistency and DRY principle.
-*   **Theme System**: Dual-mode light/dark with organic color palette system managed via localStorage and ThemeToggle component in Settings.
+*   **Fact-Checking System:** Integrated into the chat interface, providing status (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN), evidence, and confidence scores using semantic search and a knowledge graph.
+*   **Production Hardening:** Includes `Fusioner v2.0`, `ExecutionTraceContext`, type-safe error handling, and retry logic.
+*   **Structured Logging (v1.0):** Isomorphic logger with context tracking and log levels.
+*   **Utilities Library (v1.0):** Modularized utilities (classnames, formatters, JSON, timing).
 
 **UI/UX Decisions:**
-
-*   **Clean and Focused Navigation:** Sidebar prioritizes Conversation, Search, History, and Projects, with advanced tools (Observatory, Analytics, Fact-Checking examples) accessible via a Settings modal for a cleaner interface.
-*   **Inline Fact-Checking Results:** Fact-checking outcomes are displayed directly within the chat interface, showing claim status, evidence cards, and semantic search results.
-*   **Dynamic UI Elements:** Download panels only appear during active downloads, and project dashboards activate upon selection, maintaining a clean interface.
-*   **Real-Time Streaming:** Users see tokens as they're generated, status updates throughout execution, and complete transparency into system operations.
-*   **Responsive Design:** All UI components are designed for optimal viewing on both mobile and desktop.
-*   **Natural Color Palette:** Organic, calming colors (linen, old paper, rice) in light mode; noir doux soft black theme in dark mode with warm accents.
+*   **Clean and Focused Navigation:** Prioritizes core functionalities with advanced tools in settings.
+*   **Inline Fact-Checking Results:** Displays verification outcomes directly in chat.
+*   **Dynamic UI Elements:** Panels and dashboards appear only when active.
+*   **Real-Time Streaming:** Provides immediate feedback and transparency for system operations.
+*   **Responsive Design:** Optimized for mobile and desktop.
+*   **Natural Color Palette:** Organic, calming colors (linen, old paper, rice) in light mode; "noir doux" soft black theme in dark mode with warm accents. Theme toggle available in Settings.
 
 ## External Dependencies
-*   **LLM Providers:** Abstracted models used for agent reasoning, claim extraction, and verification.
-*   **HNSW (Hierarchical Navigable Small Worlds):** Utilized for efficient semantic search and embedding storage within the `GraphWorker` for evidence retrieval.
-*   **`mathjs`:** Used by the `CalculatorAgent` for secure mathematical operations.
-*   **`lru-cache` (11.2.2):** Production-proven LRU cache for ResponseCache v1.0.
-*   **`uuid` (13.0.0):** Deterministic UUID v5 for cache key generation.
-*   **`events` (3.3.0):** EventEmitter for SSEStreamer v1.0.
-*   **External Knowledge Graph/Database:** Implied for semantic search and evidence retrieval during the fact-checking process.
-
-## File Structure
-- `src/core/kernel/` - Core components (TaskExecutor v3.1, ModelManager v3.1, MemoryManager v1.0)
-- `src/core/cache/` - ResponseCache v1.0 with UUID v5 hashing
-- `src/core/streaming/` - SSEStreamer v1.0, EventBus
-- `src/lib/logger.ts` - Structured logging system
-- `src/lib/utils/` - Centralized utilities (6 modules)
-- `src/plugins/dialogue/` - DialoguePlugin v1.0 with full integration
-- `src/components/ThemeToggle.tsx` - Theme toggle component for Settings
-- `packages/multi-agent-orchestration/` - npm package scaffold
-- Documentation files: SPRINT_14_ELITE_COMPLETE.md, MODELMANAGER_V3_1_INTEGRATION.md, TASKEXECUTOR_V3_1_INTEGRATION.md, SPRINT_14_ELITE_CORE_INTEGRATION.md
-
-## Finalization Complete (Sprint 14.5 + Integration + Gemma 3 270M + Dark Mode Noir Doux)
-- ✅ **src/kensho.ts** - Main API entry point with initializeKensho('gemma-3-270m')
-- ✅ **DialoguePlugin.startConversation()** - Main conversation method for UI
-- ✅ **KenshoChat.tsx** - Ready-to-use React chat component
-- ✅ **Gemma 3 270M** - CONFIGURED! Model ID: "gemma-3-270m-it-MLC" (270M params, q4f16_1 quantized)
-- ✅ **ModelCatalog.ts** - Updated with Gemma 3 270M official WebLLM model
-- ✅ **Real-time streaming** - Fully integrated and working
-- ✅ **Performance metrics** - TTFT, tokens/sec tracked
-- ✅ **Production-ready** - 797ms compilation, 0 critical errors
-- ✅ **Interface Integration** - [💬 Gemma 3 270M Chat] button in sidebar
-- ✅ **Seamless UX** - Direct access via /gemma route
-- ✅ **Auto Initialization** - Download and setup automatic on first use (~1-2 minutes first load)
-- ✅ **Dark Mode Noir Doux** - Soft black theme (0° 0% 12%) with linen & paper accents, toggleable in Settings
-
-## Next Sprint Priorities (Sprint 16+)
-1. Migrate console.log calls to structured logger (Priority 1)
-2. Real VRAM tracking via WebGPU/CacheManager integration (Priority 1)
-3. GPU auto-unload via ModelManager.unloadModel() with proper coordination (Priority 2)
-4. Enhance Worker error messages (Priority 1)
-5. Publish @kensho/multi-agent-orchestration npm package (Priority 3)
-
-## Latest Statistics (Sprint 15 - Dark Mode Noir Doux Complete)
-- **Build time:** 442ms (Vite optimized)
-- **Compilation errors:** 0
-- **Cache speedup:** 2000x on duplicate queries
-- **GPU reduction:** 30% on typical sessions
-- **VRAM tracking:** Real-time (WebGPU in Browser, 2GB safe in Node)
-- **Workers:** 5/5 initialized successfully
-- **Isomorphic:** ✅ Browser + Node + Hybrid ready
-- **Theme system:** ✅ Light/Dark modes with organic color palette
-- **Production status:** ✅ PRODUCTION-READY - Deployment approved
+*   **LLM Providers:** Abstracted models for agent reasoning and verification.
+*   **HNSW (Hierarchical Navigable Small Worlds):** For semantic search and embedding storage within `GraphWorker`.
+*   **`mathjs`:** Used by `CalculatorAgent`.
+*   **`lru-cache` (11.2.2):** For `ResponseCache`.
+*   **`uuid` (13.0.0):** For deterministic UUID v5 cache key generation.
+*   **`events` (3.3.0):** EventEmitter for `SSEStreamer`.
+*   **External Knowledge Graph/Database:** Implied for semantic search and evidence retrieval.

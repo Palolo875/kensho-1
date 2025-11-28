@@ -37,7 +37,7 @@ export const PerformanceDashboard = () => {
     totalRequests: 0
   });
 
-  const [queueStats, setQueueStats] = useState<QueueStats[]>([
+  const [queueStats] = useState<QueueStats[]>([
     { queueName: 'SERIAL', pending: 2, active: 1, completed: 45, failed: 1 },
     { queueName: 'PARALLEL_LIMITED', pending: 1, active: 2, completed: 32, failed: 0 },
     { queueName: 'PARALLEL_FULL', pending: 0, active: 3, completed: 28, failed: 2 }
@@ -211,7 +211,7 @@ export const PerformanceDashboard = () => {
                     fill="#8884d8"
                     dataKey="value"
                   >
-                    {successRateData.map((entry, index) => (
+                    {successRateData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
