@@ -8,112 +8,128 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Light mode - Papier clair neutre et noir doux pastel */
-    --background: 0 0% 98%;
-    --foreground: 0 0% 25%;
+    /* Light mode - Pastel soft & organic palette */
+    /* Crème/Beige très clair */
+    --background: 35 40% 96%;
+    --foreground: 30 15% 28%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 25%;
+    /* Crème avec touche rose */
+    --card: 35 35% 98%;
+    --card-foreground: 30 15% 28%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 25%;
+    --popover: 35 35% 98%;
+    --popover-foreground: 30 15% 28%;
 
-    --primary: 0 0% 25%;
-    --primary-foreground: 0 0% 98%;
+    /* Bleu ciel pastel doux */
+    --primary: 210 45% 68%;
+    --primary-foreground: 35 35% 98%;
 
-    --secondary: 0 0% 92%;
-    --secondary-foreground: 0 0% 25%;
+    /* Rose blush pastel */
+    --secondary: 350 60% 88%;
+    --secondary-foreground: 30 15% 28%;
 
-    --muted: 0 0% 94%;
-    --muted-foreground: 0 0% 45%;
+    /* Gris très clair & doux */
+    --muted: 30 20% 92%;
+    --muted-foreground: 30 10% 52%;
 
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 98%;
+    /* Peach/Corail pastel doux */
+    --accent: 15 85% 75%;
+    --accent-foreground: 35 35% 98%;
 
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 98%;
+    /* Rose pale pour destructive */
+    --destructive: 0 70% 70%;
+    --destructive-foreground: 35 35% 98%;
 
-    --border: 0 0% 88%;
-    --input: 0 0% 92%;
-    --ring: 0 0% 25%;
+    /* Bordures très subtiles */
+    --border: 30 25% 90%;
+    --input: 35 30% 94%;
+    --ring: 210 45% 68%;
 
     --radius: 0.75rem;
     
     /* Smooth transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    /* Sidebar */
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 0 0% 25%;
-    --sidebar-primary: 0 0% 25%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 0 0% 92%;
-    --sidebar-accent-foreground: 0 0% 25%;
-    --sidebar-border: 0 0% 88%;
-    --sidebar-ring: 0 0% 25%;
+    /* Sidebar - pastel doux */
+    --sidebar-background: 35 40% 96%;
+    --sidebar-foreground: 30 15% 28%;
+    --sidebar-primary: 210 45% 68%;
+    --sidebar-primary-foreground: 35 35% 98%;
+    --sidebar-accent: 350 60% 88%;
+    --sidebar-accent-foreground: 30 15% 28%;
+    --sidebar-border: 30 25% 90%;
+    --sidebar-ring: 210 45% 68%;
 
-    /* User bubble - noir doux pastel */
-    --user-bubble: 0 0% 25%;
-    --user-bubble-foreground: 0 0% 98%;
+    /* User bubble - Bleu ciel pastel */
+    --user-bubble: 210 50% 72%;
+    --user-bubble-foreground: 35 35% 98%;
 
-    /* Thinking text - plus clair et fin */
-    --thinking-text: 0 0% 55%;
+    /* Thinking text - gris doux */
+    --thinking-text: 30 10% 58%;
 
-    /* Voice recording */
-    --recording-active: 0 70% 60%;
-    --recording-wave: 0 70% 50%;
+    /* Voice recording - rose pastel */
+    --recording-active: 350 80% 75%;
+    --recording-wave: 350 70% 68%;
   }
 
   .dark {
-    /* Dark mode - Noir doux et papier clair neutre */
-    --background: 0 0% 12%;
-    --foreground: 0 0% 98%;
+    /* Dark mode - Pastel soft & organic (darker version) */
+    /* Fond très foncé avec teinte chaude */
+    --background: 35 15% 18%;
+    --foreground: 35 30% 92%;
 
-    --card: 0 0% 15%;
-    --card-foreground: 0 0% 98%;
+    /* Carte - gris très foncé avec teinte chaude */
+    --card: 35 20% 22%;
+    --card-foreground: 35 30% 92%;
 
-    --popover: 0 0% 15%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 35 20% 22%;
+    --popover-foreground: 35 30% 92%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 25%;
+    /* Bleu ciel pastel pour primary */
+    --primary: 210 45% 70%;
+    --primary-foreground: 35 20% 22%;
 
-    --secondary: 0 0% 20%;
-    --secondary-foreground: 0 0% 98%;
+    /* Rose blush pastel */
+    --secondary: 350 60% 85%;
+    --secondary-foreground: 35 20% 22%;
 
-    --muted: 0 0% 18%;
-    --muted-foreground: 0 0% 60%;
+    /* Gris doux */
+    --muted: 30 15% 28%;
+    --muted-foreground: 35 15% 65%;
 
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 98%;
+    /* Peach pastel */
+    --accent: 15 85% 72%;
+    --accent-foreground: 35 20% 22%;
 
-    --destructive: 0 70% 50%;
-    --destructive-foreground: 0 0% 98%;
+    /* Rose pale */
+    --destructive: 0 70% 65%;
+    --destructive-foreground: 35 30% 92%;
 
-    --border: 0 0% 22%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 85%;
+    /* Bordures très subtiles */
+    --border: 35 15% 28%;
+    --input: 35 15% 25%;
+    --ring: 210 45% 70%;
 
-    /* Sidebar dark */
-    --sidebar-background: 0 0% 12%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 0 0% 98%;
-    --sidebar-primary-foreground: 0 0% 12%;
-    --sidebar-accent: 0 0% 20%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 22%;
-    --sidebar-ring: 0 0% 85%;
+    /* Sidebar dark - pastel */
+    --sidebar-background: 35 15% 18%;
+    --sidebar-foreground: 35 30% 92%;
+    --sidebar-primary: 210 45% 70%;
+    --sidebar-primary-foreground: 35 20% 22%;
+    --sidebar-accent: 350 60% 85%;
+    --sidebar-accent-foreground: 35 20% 22%;
+    --sidebar-border: 35 15% 28%;
+    --sidebar-ring: 210 45% 70%;
 
-    /* User bubble dark - noir doux pastel */
-    --user-bubble: 0 0% 22%;
-    --user-bubble-foreground: 0 0% 98%;
+    /* User bubble dark - Bleu ciel pastel */
+    --user-bubble: 210 50% 65%;
+    --user-bubble-foreground: 35 30% 92%;
 
     /* Thinking text dark */
-    --thinking-text: 0 0% 55%;
+    --thinking-text: 35 15% 62%;
 
-    /* Voice recording dark */
-    --recording-active: 0 70% 60%;
-    --recording-wave: 0 70% 55%;
+    /* Voice recording dark - rose */
+    --recording-active: 350 80% 70%;
+    --recording-wave: 350 70% 65%;
   }
 }
 
