@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import Sidebar, { SidebarTrigger } from "@/components/Sidebar";
 import ChatInput from "@/components/ChatInput";
-import TimeBasedGreeting from "@/components/TimeBasedGreeting";
+import WelcomeScreen from "@/components/WelcomeScreen";
 import MessageBubble from "@/components/MessageBubble";
 import AIResponse from "@/components/AIResponse";
 import SettingsModal from "@/components/SettingsModal";
@@ -9,7 +9,6 @@ import SearchModal from "@/components/SearchModal";
 import { ObservatoryModal } from "@/components/ObservatoryModal";
 import { ModelLoadingView } from "@/components/ModelLoadingView";
 import { ModelSelector } from "@/components/ModelSelector";
-import { WorkerStatusIndicator } from "@/components/WorkerStatusIndicator";
 import { PlanView } from "@/components/PlanView";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
 import { useObservatory } from "@/contexts/ObservatoryContext";
@@ -103,7 +102,11 @@ const Index = () => {
           <ProjectDashboard />
 
           {messages.length === 0 ? (
-            <TimeBasedGreeting />
+            <WelcomeScreen 
+              userName="Rehan"
+              onSettingsClick={() => setShowSettings(true)}
+              onRefreshClick={handleNewConversation}
+            />
           ) : (
             <div className="space-y-1">
               {messages.map((msg) =>
