@@ -73,63 +73,63 @@ All colors MUST be HSL.
   }
 
   .dark {
-    /* Dark mode - Noix doux palette */
-    /* Fond très foncé noix doux */
-    --background: 25 18% 16%;
+    /* Dark mode - Noir doux palette */
+    /* Fond noir doux très foncé */
+    --background: 0 0% 12%;
     --foreground: 40 25% 92%;
 
-    /* Carte - brun noix */
-    --card: 25 15% 22%;
+    /* Carte - noir doux */
+    --card: 0 0% 16%;
     --card-foreground: 40 25% 92%;
 
-    --popover: 25 15% 22%;
+    --popover: 0 0% 16%;
     --popover-foreground: 40 25% 92%;
 
-    /* Noix naturelle pour primary */
-    --primary: 25 18% 68%;
-    --primary-foreground: 25 15% 22%;
+    /* Lin pour primary */
+    --primary: 35 15% 70%;
+    --primary-foreground: 0 0% 16%;
 
-    /* Vieux papier noix */
-    --secondary: 28 20% 82%;
-    --secondary-foreground: 25 15% 22%;
+    /* Vieux papier */
+    --secondary: 38 18% 85%;
+    --secondary-foreground: 0 0% 16%;
 
-    /* Noix clair */
-    --muted: 25 12% 32%;
+    /* Noir clair doux */
+    --muted: 0 0% 24%;
     --muted-foreground: 40 15% 68%;
 
-    /* Riz teinté noix */
-    --accent: 25 15% 78%;
-    --accent-foreground: 25 15% 22%;
+    /* Riz teinté */
+    --accent: 35 12% 80%;
+    --accent-foreground: 0 0% 16%;
 
     /* Vieux papier brûlé */
     --destructive: 20 60% 62%;
     --destructive-foreground: 40 25% 92%;
 
-    /* Bordures très subtiles noix */
-    --border: 25 12% 30%;
-    --input: 25 12% 26%;
-    --ring: 25 18% 68%;
+    /* Bordures très subtiles noir doux */
+    --border: 0 0% 22%;
+    --input: 0 0% 18%;
+    --ring: 35 15% 70%;
 
-    /* Sidebar dark - noix */
-    --sidebar-background: 25 18% 16%;
+    /* Sidebar dark - noir doux */
+    --sidebar-background: 0 0% 12%;
     --sidebar-foreground: 40 25% 92%;
-    --sidebar-primary: 25 18% 68%;
-    --sidebar-primary-foreground: 25 15% 22%;
-    --sidebar-accent: 28 20% 82%;
-    --sidebar-accent-foreground: 25 15% 22%;
-    --sidebar-border: 25 12% 30%;
-    --sidebar-ring: 25 18% 68%;
+    --sidebar-primary: 35 15% 70%;
+    --sidebar-primary-foreground: 0 0% 16%;
+    --sidebar-accent: 38 18% 85%;
+    --sidebar-accent-foreground: 0 0% 16%;
+    --sidebar-border: 0 0% 22%;
+    --sidebar-ring: 35 15% 70%;
 
-    /* User bubble dark - Noix */
-    --user-bubble: 25 18% 62%;
+    /* User bubble dark - Lin */
+    --user-bubble: 35 15% 65%;
     --user-bubble-foreground: 40 25% 92%;
 
-    /* Thinking text dark - noix doux */
-    --thinking-text: 25 10% 58%;
+    /* Thinking text dark - noir doux */
+    --thinking-text: 0 0% 60%;
 
-    /* Voice recording dark - noix */
-    --recording-active: 25 20% 66%;
-    --recording-wave: 25 15% 60%;
+    /* Voice recording dark - vieux papier */
+    --recording-active: 35 20% 68%;
+    --recording-wave: 35 15% 62%;
   }
 }
 

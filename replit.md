@@ -5,12 +5,13 @@ Kensho is an advanced AI debate orchestration system with meta-critique validati
 
 ## Recent Updates (Sprint 14 Elite Phase 3 - GEMMA 3 270M CONFIGURED)
 
-### UI Refactoring Complete
+### UI Refactoring Complete - Dark Mode Noir Doux (Sprint 15)
 - **WelcomeScreen Component** (`src/components/WelcomeScreen.tsx`): Modern welcome screen with personalized greeting, CTA cards styled as "Read me a book" / "Personal therapy" card design
 - **InputBar Component** (`src/components/InputBar.tsx`): New beige/cream (#F5F0E8) input bar with circular control buttons (plus, attachment, microphone, send)
 - **File Attachment Handling**: Proper file-only submission with automatic detachment after send
 - **CTA Card Buttons**: 4 action cards - Posez une question, Ecrivez un brouillon, Thérapie personnelle, Lisez-moi un livre
 - **Clean Integration**: Replaced ChatInput with InputBar in Index.tsx, no visual conflicts
+- **Dark Mode Palette (NEW)**: Implemented noir doux soft black theme (0° 0% 12-16% background) with linen & old paper accents for dark mode
 
 ### Core Integration Complete
 - **ModelManager v3.1**: Memory-aware + SSEStreamer integration for transparent model switching
@@ -40,13 +41,29 @@ Kensho is an advanced AI debate orchestration system with meta-critique validati
 - **VRAM Stability**: Guaranteed via MemoryManager + ModelManager coordination
 - **UI Responsiveness**: Real-time token streaming + status updates
 
+### Color Palette Implementation (Sprint 15)
+**Light Mode:**
+- Background: Riz blanc crème (40° 25% 97%)
+- Cards: Vieux papier crème (38° 20% 96%)
+- Primary: Lin naturel (35° 15% 68%)
+- Text: Noir doux (30° 8% 22%)
+
+**Dark Mode:**
+- Background: Noir doux très foncé (0° 0% 12%)
+- Cards: Noir doux (0° 0% 16%)
+- Primary: Lin naturel (35° 15% 70%)
+- Accents: Vieux papier/Riz avec noir doux
+- Text: Riz crème (40° 25% 92%)
+
+**Toggle:** Theme toggle available in Settings (Paramètres) - click Moon/Sun icon to switch between light and dark modes
+
 ### Known Limitations & Future Work
 - **Worker Errors (OIE/GraphWorker)**: Pre-existing, system has graceful fallbacks with localStorage fallback
 - **VRAM Tracking**: Currently theoretical (params × bits/8 × 1.2), real tracking deferred to Sprint 16
 - **GPU Auto-Unload**: registerUnloaded() is bookkeeping only, real GPU unload requires WebGPU integration (Sprint 16)
 
 ## User Preferences
-I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist.
+I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones.
 
 ## System Architecture
 Kensho's architecture is built around a **multi-agent debate system** (Optimist, Critic, MetaCritic) orchestrated in a 4-step flow with graceful degradation. Cognitive traceability is provided via a `JournalCognitif` system.
@@ -84,6 +101,7 @@ Kensho's architecture is built around a **multi-agent debate system** (Optimist,
 *   **Production Hardening:** Includes `Fusioner v2.0` with multiple strategies, `ExecutionTraceContext` for comprehensive debugging, type-safe error handling, retry logic with exponential backoff, and stress-tested resilience.
 *   **Structured Logging (v1.0)**: Centralized logger with isomorphic support (Node/Browser), context tracking, and log levels (DEBUG/INFO/WARN/ERROR).
 *   **Utilities Library (v1.0)**: Modularized utils (classnames, formatters, JSON parsing, timing utilities) for consistency and DRY principle.
+*   **Theme System**: Dual-mode light/dark with organic color palette system managed via localStorage and ThemeToggle component in Settings.
 
 **UI/UX Decisions:**
 
@@ -92,6 +110,7 @@ Kensho's architecture is built around a **multi-agent debate system** (Optimist,
 *   **Dynamic UI Elements:** Download panels only appear during active downloads, and project dashboards activate upon selection, maintaining a clean interface.
 *   **Real-Time Streaming:** Users see tokens as they're generated, status updates throughout execution, and complete transparency into system operations.
 *   **Responsive Design:** All UI components are designed for optimal viewing on both mobile and desktop.
+*   **Natural Color Palette:** Organic, calming colors (linen, old paper, rice) in light mode; noir doux soft black theme in dark mode with warm accents.
 
 ## External Dependencies
 *   **LLM Providers:** Abstracted models used for agent reasoning, claim extraction, and verification.
@@ -109,10 +128,11 @@ Kensho's architecture is built around a **multi-agent debate system** (Optimist,
 - `src/lib/logger.ts` - Structured logging system
 - `src/lib/utils/` - Centralized utilities (6 modules)
 - `src/plugins/dialogue/` - DialoguePlugin v1.0 with full integration
+- `src/components/ThemeToggle.tsx` - Theme toggle component for Settings
 - `packages/multi-agent-orchestration/` - npm package scaffold
 - Documentation files: SPRINT_14_ELITE_COMPLETE.md, MODELMANAGER_V3_1_INTEGRATION.md, TASKEXECUTOR_V3_1_INTEGRATION.md, SPRINT_14_ELITE_CORE_INTEGRATION.md
 
-## Finalization Complete (Sprint 14.5 + Integration + Gemma 3 270M)
+## Finalization Complete (Sprint 14.5 + Integration + Gemma 3 270M + Dark Mode Noir Doux)
 - ✅ **src/kensho.ts** - Main API entry point with initializeKensho('gemma-3-270m')
 - ✅ **DialoguePlugin.startConversation()** - Main conversation method for UI
 - ✅ **KenshoChat.tsx** - Ready-to-use React chat component
@@ -124,6 +144,7 @@ Kensho's architecture is built around a **multi-agent debate system** (Optimist,
 - ✅ **Interface Integration** - [💬 Gemma 3 270M Chat] button in sidebar
 - ✅ **Seamless UX** - Direct access via /gemma route
 - ✅ **Auto Initialization** - Download and setup automatic on first use (~1-2 minutes first load)
+- ✅ **Dark Mode Noir Doux** - Soft black theme (0° 0% 12%) with linen & paper accents, toggleable in Settings
 
 ## Next Sprint Priorities (Sprint 16+)
 1. Migrate console.log calls to structured logger (Priority 1)
@@ -132,7 +153,7 @@ Kensho's architecture is built around a **multi-agent debate system** (Optimist,
 4. Enhance Worker error messages (Priority 1)
 5. Publish @kensho/multi-agent-orchestration npm package (Priority 3)
 
-## Latest Statistics (Sprint 14 Elite - Complete)
+## Latest Statistics (Sprint 15 - Dark Mode Noir Doux Complete)
 - **Build time:** 442ms (Vite optimized)
 - **Compilation errors:** 0
 - **Cache speedup:** 2000x on duplicate queries
@@ -140,5 +161,5 @@ Kensho's architecture is built around a **multi-agent debate system** (Optimist,
 - **VRAM tracking:** Real-time (WebGPU in Browser, 2GB safe in Node)
 - **Workers:** 5/5 initialized successfully
 - **Isomorphic:** ✅ Browser + Node + Hybrid ready
+- **Theme system:** ✅ Light/Dark modes with organic color palette
 - **Production status:** ✅ PRODUCTION-READY - Deployment approved
-
