@@ -1,5 +1,6 @@
 // src/core/kernel/StorageManager.ts
 // VRAIE Implémentation de production utilisant l'Origin Private File System (OPFS)
+// Avec cache LRU, streaming de gros fichiers, et métriques d'utilisation
 
 import { createLogger } from '../../lib/logger';
 
@@ -41,6 +42,163 @@ export interface StorageStats {
 export type StorageQuota = StorageStats;
 
 /**
+ * Interface pour les entrées du cache LRU
+ */
+interface LRUCacheEntry<T> {
+  key: string;
+  value: T;
+  size: number;
+  lastAccessed: number;
+}
+
+/**
+ * Interface pour les métriques d'utilisation
+ */
+export interface StorageMetrics {
+  totalReads: number;
+  totalWrites: number;
+  totalDeletes: number;
+  cacheHits: number;
+  cacheMisses: number;
+  cacheHitRate: number;
+  bytesRead: number;
+  bytesWritten: number;
+  averageReadTime: number;
+  averageWriteTime: number;
+  operationHistory: OperationRecord[];
+}
+
+/**
+ * Interface pour l'historique des opérations
+ */
+interface OperationRecord {
+  type: 'read' | 'write' | 'delete' | 'stream';
+  path: string;
+  size: number;
+  duration: number;
+  timestamp: number;
+  success: boolean;
+}
+
+/**
+ * Options pour le streaming
+ */
+export interface StreamOptions {
+  chunkSize?: number;
+  onProgress?: (loaded: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Callback pour les chunks de streaming
+ */
+export type StreamChunkCallback = (chunk: Uint8Array, loaded: number, total: number) => void;
+
+/**
+ * Cache LRU générique pour le StorageManager
+ */
+class LRUCache<T> {
+  private cache: Map<string, LRUCacheEntry<T>> = new Map();
+  private maxSize: number;
+  private currentSize: number = 0;
+
+  constructor(maxSizeBytes: number = 50 * 1024 * 1024) { // 50MB par défaut
+    this.maxSize = maxSizeBytes;
+  }
+
+  get(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    // Mettre à jour le timestamp d'accès
+    entry.lastAccessed = Date.now();
+    return entry.value;
+  }
+
+  set(key: string, value: T, size: number): void {
+    // Supprimer l'ancienne entrée si elle existe
+    if (this.cache.has(key)) {
+      const oldEntry = this.cache.get(key)!;
+      this.currentSize -= oldEntry.size;
+      this.cache.delete(key);
+    }
+
+    // Éviction si nécessaire
+    while (this.currentSize + size > this.maxSize && this.cache.size > 0) {
+      this.evictLRU();
+    }
+
+    // Ne pas mettre en cache si la taille dépasse le max
+    if (size > this.maxSize) {
+      log.debug(`Fichier trop gros pour le cache: ${size} bytes`);
+      return;
+    }
+
+    this.cache.set(key, {
+      key,
+      value,
+      size,
+      lastAccessed: Date.now(),
+    });
+    this.currentSize += size;
+  }
+
+  delete(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (entry) {
+      this.currentSize -= entry.size;
+      this.cache.delete(key);
+      return true;
+    }
+    return false;
+  }
+
+  has(key: string): boolean {
+    return this.cache.has(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.currentSize = 0;
+  }
+
+  private evictLRU(): void {
+    let oldest: LRUCacheEntry<T> | null = null;
+    let oldestKey: string | null = null;
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (!oldest || entry.lastAccessed < oldest.lastAccessed) {
+        oldest = entry;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey && oldest) {
+      this.currentSize -= oldest.size;
+      this.cache.delete(oldestKey);
+      log.debug(`Cache LRU: éviction de ${oldestKey}`);
+    }
+  }
+
+  getStats(): { entries: number; size: number; maxSize: number; usagePercent: number } {
+    return {
+      entries: this.cache.size,
+      size: this.currentSize,
+      maxSize: this.maxSize,
+      usagePercent: (this.currentSize / this.maxSize) * 100,
+    };
+  }
+
+  setMaxSize(maxSizeBytes: number): void {
+    this.maxSize = maxSizeBytes;
+    // Éviction si nécessaire après changement de taille
+    while (this.currentSize > this.maxSize && this.cache.size > 0) {
+      this.evictLRU();
+    }
+  }
+}
+
+/**
  * StorageManager - Gestionnaire de stockage utilisant l'Origin Private File System (OPFS)
  *
  * L'OPFS est une API moderne qui permet un accès rapide et synchrone aux fichiers
@@ -56,7 +214,44 @@ class StorageManager {
   private isInitialized = false;
   private isPersistent = false;
 
-  constructor() {
+  // Cache LRU pour les fichiers fréquemment accédés
+  private fileCache: LRUCache<ArrayBuffer>;
+  private textCache: LRUCache<string>;
+
+  // Métriques d'utilisation
+  private metrics: {
+    totalReads: number;
+    totalWrites: number;
+    totalDeletes: number;
+    cacheHits: number;
+    cacheMisses: number;
+    bytesRead: number;
+    bytesWritten: number;
+    readTimes: number[];
+    writeTimes: number[];
+    operationHistory: OperationRecord[];
+  };
+
+  private readonly MAX_HISTORY_SIZE = 100;
+  private readonly DEFAULT_CHUNK_SIZE = 1024 * 1024; // 1MB chunks pour streaming
+
+  constructor(cacheMaxSize: number = 50 * 1024 * 1024) {
+    this.fileCache = new LRUCache<ArrayBuffer>(cacheMaxSize);
+    this.textCache = new LRUCache<string>(cacheMaxSize / 10); // 10% pour le texte
+
+    this.metrics = {
+      totalReads: 0,
+      totalWrites: 0,
+      totalDeletes: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      bytesRead: 0,
+      bytesWritten: 0,
+      readTimes: [],
+      writeTimes: [],
+      operationHistory: [],
+    };
+
     this.initPromise = this.init();
   }
 
@@ -72,15 +267,15 @@ class StorageManager {
 
       if (navigator.storage && navigator.storage.getDirectory) {
         this.root = await navigator.storage.getDirectory();
-        log.info('Accès à l\'Origin Private File System (OPFS) réussi.');
+        log.info("Accès à l'Origin Private File System (OPFS) réussi.");
         this.isPersistent = await this.requestPersistence();
         this.isInitialized = true;
       } else {
-        log.warn('OPFS non supporté. Utilisation d\'un fallback en mémoire.');
+        log.warn("OPFS non supporté. Utilisation d'un fallback en mémoire.");
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error('Erreur d\'initialisation de l\'OPFS:', err);
+      log.error("Erreur d'initialisation de l'OPFS:", err);
     }
   }
 
@@ -120,19 +315,46 @@ class StorageManager {
   }
 
   /**
+   * Enregistre une opération dans l'historique
+   */
+  private recordOperation(
+    type: OperationRecord['type'],
+    path: string,
+    size: number,
+    duration: number,
+    success: boolean
+  ): void {
+    const record: OperationRecord = {
+      type,
+      path,
+      size,
+      duration,
+      timestamp: Date.now(),
+      success,
+    };
+
+    this.metrics.operationHistory.push(record);
+
+    // Limiter la taille de l'historique
+    if (this.metrics.operationHistory.length > this.MAX_HISTORY_SIZE) {
+      this.metrics.operationHistory = this.metrics.operationHistory.slice(-this.MAX_HISTORY_SIZE);
+    }
+  }
+
+  /**
    * Obtient un handle de fichier
    */
   public async getFileHandle(
     path: string,
     options?: { create: boolean }
   ): Promise<FileSystemFileHandle | null> {
-    if (!await this.ensureReady() || !this.root) {
+    if (!(await this.ensureReady()) || !this.root) {
       return null;
     }
 
     try {
       // Gérer les chemins avec des sous-dossiers
-      const parts = path.split('/').filter(p => p.length > 0);
+      const parts = path.split('/').filter((p) => p.length > 0);
 
       if (parts.length === 1) {
         return await this.root.getFileHandle(parts[0], options);
@@ -160,7 +382,7 @@ class StorageManager {
     path: string,
     options?: { create: boolean }
   ): Promise<FileSystemDirectoryHandle | null> {
-    if (!await this.ensureReady() || !this.root) {
+    if (!(await this.ensureReady()) || !this.root) {
       return null;
     }
 
@@ -169,7 +391,7 @@ class StorageManager {
         return this.root;
       }
 
-      const parts = path.split('/').filter(p => p.length > 0);
+      const parts = path.split('/').filter((p) => p.length > 0);
       let currentDir = this.root;
 
       for (const part of parts) {
@@ -193,10 +415,14 @@ class StorageManager {
     data: string | ArrayBuffer | Blob,
     options: WriteOptions = { create: true }
   ): Promise<boolean> {
+    const startTime = performance.now();
+    let size = 0;
+
     try {
       const fileHandle = await this.getFileHandle(path, { create: options.create ?? true });
       if (!fileHandle) {
         log.error(`Impossible de créer/ouvrir le fichier: ${path}`);
+        this.recordOperation('write', path, 0, performance.now() - startTime, false);
         return false;
       }
 
@@ -210,19 +436,56 @@ class StorageManager {
       await writable.write(data);
       await writable.close();
 
-      log.debug(`Fichier écrit: ${path}`);
+      // Calculer la taille
+      if (typeof data === 'string') {
+        size = new TextEncoder().encode(data).length;
+      } else if (data instanceof ArrayBuffer) {
+        size = data.byteLength;
+      } else if (data instanceof Blob) {
+        size = data.size;
+      }
+
+      // Invalider le cache
+      this.fileCache.delete(path);
+      this.textCache.delete(path);
+
+      // Mettre à jour les métriques
+      const duration = performance.now() - startTime;
+      this.metrics.totalWrites++;
+      this.metrics.bytesWritten += size;
+      this.metrics.writeTimes.push(duration);
+      if (this.metrics.writeTimes.length > 100) {
+        this.metrics.writeTimes = this.metrics.writeTimes.slice(-100);
+      }
+      this.recordOperation('write', path, size, duration, true);
+
+      log.debug(`Fichier écrit: ${path} (${size} bytes en ${duration.toFixed(2)}ms)`);
       return true;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       log.error(`Erreur d'écriture du fichier ${path}:`, err);
+      this.recordOperation('write', path, size, performance.now() - startTime, false);
       return false;
     }
   }
 
   /**
-   * Lit le contenu d'un fichier en tant que texte
+   * Lit le contenu d'un fichier en tant que texte (avec cache)
    */
-  public async readFileAsText(path: string): Promise<string | null> {
+  public async readFileAsText(path: string, useCache: boolean = true): Promise<string | null> {
+    const startTime = performance.now();
+
+    // Vérifier le cache
+    if (useCache) {
+      const cached = this.textCache.get(path);
+      if (cached !== null) {
+        this.metrics.cacheHits++;
+        log.debug(`Cache hit (text): ${path}`);
+        return cached;
+      }
+      this.metrics.cacheMisses++;
+    }
+
     try {
       const fileHandle = await this.getFileHandle(path);
       if (!fileHandle) {
@@ -230,18 +493,52 @@ class StorageManager {
       }
 
       const file = await fileHandle.getFile();
-      return await file.text();
+      const text = await file.text();
+
+      // Mettre en cache
+      if (useCache) {
+        this.textCache.set(path, text, text.length * 2); // UTF-16
+      }
+
+      // Mettre à jour les métriques
+      const duration = performance.now() - startTime;
+      this.metrics.totalReads++;
+      this.metrics.bytesRead += file.size;
+      this.metrics.readTimes.push(duration);
+      if (this.metrics.readTimes.length > 100) {
+        this.metrics.readTimes = this.metrics.readTimes.slice(-100);
+      }
+      this.recordOperation('read', path, file.size, duration, true);
+
+      return text;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       log.error(`Erreur de lecture du fichier ${path}:`, err);
+      this.recordOperation('read', path, 0, performance.now() - startTime, false);
       return null;
     }
   }
 
   /**
-   * Lit le contenu d'un fichier en tant qu'ArrayBuffer
+   * Lit le contenu d'un fichier en tant qu'ArrayBuffer (avec cache)
    */
-  public async readFileAsArrayBuffer(path: string): Promise<ArrayBuffer | null> {
+  public async readFileAsArrayBuffer(
+    path: string,
+    useCache: boolean = true
+  ): Promise<ArrayBuffer | null> {
+    const startTime = performance.now();
+
+    // Vérifier le cache
+    if (useCache) {
+      const cached = this.fileCache.get(path);
+      if (cached !== null) {
+        this.metrics.cacheHits++;
+        log.debug(`Cache hit (binary): ${path}`);
+        return cached;
+      }
+      this.metrics.cacheMisses++;
+    }
+
     try {
       const fileHandle = await this.getFileHandle(path);
       if (!fileHandle) {
@@ -249,10 +546,28 @@ class StorageManager {
       }
 
       const file = await fileHandle.getFile();
-      return await file.arrayBuffer();
+      const buffer = await file.arrayBuffer();
+
+      // Mettre en cache
+      if (useCache) {
+        this.fileCache.set(path, buffer, buffer.byteLength);
+      }
+
+      // Mettre à jour les métriques
+      const duration = performance.now() - startTime;
+      this.metrics.totalReads++;
+      this.metrics.bytesRead += file.size;
+      this.metrics.readTimes.push(duration);
+      if (this.metrics.readTimes.length > 100) {
+        this.metrics.readTimes = this.metrics.readTimes.slice(-100);
+      }
+      this.recordOperation('read', path, file.size, duration, true);
+
+      return buffer;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       log.error(`Erreur de lecture du fichier ${path}:`, err);
+      this.recordOperation('read', path, 0, performance.now() - startTime, false);
       return null;
     }
   }
@@ -261,17 +576,169 @@ class StorageManager {
    * Lit le contenu d'un fichier en tant que Blob
    */
   public async readFileAsBlob(path: string): Promise<Blob | null> {
+    const startTime = performance.now();
+
     try {
       const fileHandle = await this.getFileHandle(path);
       if (!fileHandle) {
         return null;
       }
 
-      return await fileHandle.getFile();
+      const file = await fileHandle.getFile();
+
+      // Mettre à jour les métriques
+      const duration = performance.now() - startTime;
+      this.metrics.totalReads++;
+      this.metrics.bytesRead += file.size;
+      this.recordOperation('read', path, file.size, duration, true);
+
+      return file;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       log.error(`Erreur de lecture du fichier ${path}:`, err);
+      this.recordOperation('read', path, 0, performance.now() - startTime, false);
       return null;
+    }
+  }
+
+  /**
+   * Lecture en streaming d'un gros fichier (idéal pour les modèles)
+   */
+  public async readFileStreaming(
+    path: string,
+    onChunk: StreamChunkCallback,
+    options: StreamOptions = {}
+  ): Promise<boolean> {
+    const startTime = performance.now();
+    const chunkSize = options.chunkSize ?? this.DEFAULT_CHUNK_SIZE;
+
+    try {
+      const fileHandle = await this.getFileHandle(path);
+      if (!fileHandle) {
+        log.error(`Fichier non trouvé pour streaming: ${path}`);
+        return false;
+      }
+
+      const file = await fileHandle.getFile();
+      const totalSize = file.size;
+      let loaded = 0;
+
+      // Utiliser un ReadableStream pour le streaming
+      const stream = file.stream();
+      const reader = stream.getReader();
+
+      let buffer = new Uint8Array(0);
+
+      while (true) {
+        // Vérifier si annulé
+        if (options.signal?.aborted) {
+          reader.cancel();
+          log.info(`Streaming annulé: ${path}`);
+          return false;
+        }
+
+        const { done, value } = await reader.read();
+
+        if (done) {
+          // Envoyer le reste du buffer
+          if (buffer.length > 0) {
+            onChunk(buffer, loaded, totalSize);
+          }
+          break;
+        }
+
+        // Accumuler dans le buffer
+        const newBuffer = new Uint8Array(buffer.length + value.length);
+        newBuffer.set(buffer);
+        newBuffer.set(value, buffer.length);
+        buffer = newBuffer;
+
+        // Envoyer des chunks de taille fixe
+        while (buffer.length >= chunkSize) {
+          const chunk = buffer.slice(0, chunkSize);
+          buffer = buffer.slice(chunkSize);
+          loaded += chunk.length;
+          onChunk(chunk, loaded, totalSize);
+          options.onProgress?.(loaded, totalSize);
+        }
+      }
+
+      // Mettre à jour les métriques
+      const duration = performance.now() - startTime;
+      this.metrics.totalReads++;
+      this.metrics.bytesRead += totalSize;
+      this.recordOperation('stream', path, totalSize, duration, true);
+
+      log.info(`Streaming terminé: ${path} (${totalSize} bytes en ${duration.toFixed(2)}ms)`);
+      return true;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.error(`Erreur de streaming du fichier ${path}:`, err);
+      this.recordOperation('stream', path, 0, performance.now() - startTime, false);
+      return false;
+    }
+  }
+
+  /**
+   * Écriture en streaming d'un gros fichier
+   */
+  public async writeFileStreaming(
+    path: string,
+    dataStream: ReadableStream<Uint8Array>,
+    totalSize: number,
+    options: StreamOptions = {}
+  ): Promise<boolean> {
+    const startTime = performance.now();
+    let written = 0;
+
+    try {
+      const fileHandle = await this.getFileHandle(path, { create: true });
+      if (!fileHandle) {
+        log.error(`Impossible de créer le fichier pour streaming: ${path}`);
+        return false;
+      }
+
+      const writable = await fileHandle.createWritable();
+      const reader = dataStream.getReader();
+
+      while (true) {
+        // Vérifier si annulé
+        if (options.signal?.aborted) {
+          await writable.abort();
+          log.info(`Écriture streaming annulée: ${path}`);
+          return false;
+        }
+
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        await writable.write(value);
+        written += value.length;
+        options.onProgress?.(written, totalSize);
+      }
+
+      await writable.close();
+
+      // Invalider le cache
+      this.fileCache.delete(path);
+      this.textCache.delete(path);
+
+      // Mettre à jour les métriques
+      const duration = performance.now() - startTime;
+      this.metrics.totalWrites++;
+      this.metrics.bytesWritten += written;
+      this.recordOperation('stream', path, written, duration, true);
+
+      log.info(`Écriture streaming terminée: ${path} (${written} bytes en ${duration.toFixed(2)}ms)`);
+      return true;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.error(`Erreur d'écriture streaming du fichier ${path}:`, err);
+      this.recordOperation('stream', path, written, performance.now() - startTime, false);
+      return false;
     }
   }
 
@@ -295,12 +762,14 @@ class StorageManager {
    * Supprime un fichier
    */
   public async deleteFile(path: string): Promise<boolean> {
-    if (!await this.ensureReady() || !this.root) {
+    const startTime = performance.now();
+
+    if (!(await this.ensureReady()) || !this.root) {
       return false;
     }
 
     try {
-      const parts = path.split('/').filter(p => p.length > 0);
+      const parts = path.split('/').filter((p) => p.length > 0);
 
       if (parts.length === 1) {
         await this.root.removeEntry(parts[0]);
@@ -313,6 +782,14 @@ class StorageManager {
         await currentDir.removeEntry(parts[parts.length - 1]);
       }
 
+      // Invalider le cache
+      this.fileCache.delete(path);
+      this.textCache.delete(path);
+
+      // Mettre à jour les métriques
+      this.metrics.totalDeletes++;
+      this.recordOperation('delete', path, 0, performance.now() - startTime, true);
+
       log.debug(`Fichier supprimé: ${path}`);
       return true;
     } catch (error) {
@@ -321,6 +798,7 @@ class StorageManager {
       }
       const err = error instanceof Error ? error : new Error(String(error));
       log.error(`Erreur de suppression du fichier ${path}:`, err);
+      this.recordOperation('delete', path, 0, performance.now() - startTime, false);
       return false;
     }
   }
@@ -329,12 +807,12 @@ class StorageManager {
    * Supprime un répertoire et son contenu
    */
   public async deleteDirectory(path: string, recursive = true): Promise<boolean> {
-    if (!await this.ensureReady() || !this.root) {
+    if (!(await this.ensureReady()) || !this.root) {
       return false;
     }
 
     try {
-      const parts = path.split('/').filter(p => p.length > 0);
+      const parts = path.split('/').filter((p) => p.length > 0);
 
       if (parts.length === 1) {
         await this.root.removeEntry(parts[0], { recursive });
@@ -345,6 +823,9 @@ class StorageManager {
         }
         await currentDir.removeEntry(parts[parts.length - 1], { recursive });
       }
+
+      // Invalider tout le cache (pourrait contenir des fichiers du répertoire)
+      this.clearCache();
 
       log.debug(`Répertoire supprimé: ${path}`);
       return true;
@@ -377,14 +858,14 @@ class StorageManager {
             name,
             size: file.size,
             lastModified: file.lastModified,
-            type: 'file'
+            type: 'file',
           });
         } else {
           entries.push({
             name,
             size: 0,
             lastModified: Date.now(),
-            type: 'directory'
+            type: 'directory',
           });
         }
       }
@@ -408,7 +889,7 @@ class StorageManager {
       return await navigator.storage.estimate();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error('Erreur d\'estimation du quota:', err);
+      log.error("Erreur d'estimation du quota:", err);
       return null;
     }
   }
@@ -429,8 +910,90 @@ class StorageManager {
       usage,
       quota,
       usagePercent: quota > 0 ? (usage / quota) * 100 : 0,
-      isPersistent: this.isPersistent
+      isPersistent: this.isPersistent,
     };
+  }
+
+  /**
+   * Obtient les métriques d'utilisation
+   */
+  public getMetrics(): StorageMetrics {
+    const avgReadTime =
+      this.metrics.readTimes.length > 0
+        ? this.metrics.readTimes.reduce((a, b) => a + b, 0) / this.metrics.readTimes.length
+        : 0;
+
+    const avgWriteTime =
+      this.metrics.writeTimes.length > 0
+        ? this.metrics.writeTimes.reduce((a, b) => a + b, 0) / this.metrics.writeTimes.length
+        : 0;
+
+    const totalCacheOps = this.metrics.cacheHits + this.metrics.cacheMisses;
+    const cacheHitRate = totalCacheOps > 0 ? this.metrics.cacheHits / totalCacheOps : 0;
+
+    return {
+      totalReads: this.metrics.totalReads,
+      totalWrites: this.metrics.totalWrites,
+      totalDeletes: this.metrics.totalDeletes,
+      cacheHits: this.metrics.cacheHits,
+      cacheMisses: this.metrics.cacheMisses,
+      cacheHitRate,
+      bytesRead: this.metrics.bytesRead,
+      bytesWritten: this.metrics.bytesWritten,
+      averageReadTime: avgReadTime,
+      averageWriteTime: avgWriteTime,
+      operationHistory: [...this.metrics.operationHistory],
+    };
+  }
+
+  /**
+   * Obtient les statistiques du cache
+   */
+  public getCacheStats(): {
+    fileCache: { entries: number; size: number; maxSize: number; usagePercent: number };
+    textCache: { entries: number; size: number; maxSize: number; usagePercent: number };
+  } {
+    return {
+      fileCache: this.fileCache.getStats(),
+      textCache: this.textCache.getStats(),
+    };
+  }
+
+  /**
+   * Vide le cache
+   */
+  public clearCache(): void {
+    this.fileCache.clear();
+    this.textCache.clear();
+    log.info('Cache vidé');
+  }
+
+  /**
+   * Configure la taille maximale du cache
+   */
+  public setCacheMaxSize(maxSizeBytes: number): void {
+    this.fileCache.setMaxSize(maxSizeBytes);
+    this.textCache.setMaxSize(maxSizeBytes / 10);
+    log.info(`Taille max du cache configurée: ${maxSizeBytes} bytes`);
+  }
+
+  /**
+   * Réinitialise les métriques
+   */
+  public resetMetrics(): void {
+    this.metrics = {
+      totalReads: 0,
+      totalWrites: 0,
+      totalDeletes: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      bytesRead: 0,
+      bytesWritten: 0,
+      readTimes: [],
+      writeTimes: [],
+      operationHistory: [],
+    };
+    log.info('Métriques réinitialisées');
   }
 
   /**
@@ -446,7 +1009,7 @@ class StorageManager {
    */
   public async copyFile(sourcePath: string, destPath: string): Promise<boolean> {
     try {
-      const data = await this.readFileAsArrayBuffer(sourcePath);
+      const data = await this.readFileAsArrayBuffer(sourcePath, false);
       if (data === null) {
         log.error(`Fichier source non trouvé: ${sourcePath}`);
         return false;
@@ -493,9 +1056,11 @@ class StorageManager {
    * Vérifie si l'OPFS est supporté
    */
   public isSupported(): boolean {
-    return typeof navigator !== 'undefined' &&
-           navigator.storage !== undefined &&
-           typeof navigator.storage.getDirectory === 'function';
+    return (
+      typeof navigator !== 'undefined' &&
+      navigator.storage !== undefined &&
+      typeof navigator.storage.getDirectory === 'function'
+    );
   }
 
   /**
@@ -510,6 +1075,39 @@ class StorageManager {
    */
   public isReady(): boolean {
     return this.isInitialized;
+  }
+
+  /**
+   * Précharge un fichier dans le cache
+   */
+  public async preloadToCache(path: string): Promise<boolean> {
+    try {
+      const buffer = await this.readFileAsArrayBuffer(path, true);
+      return buffer !== null;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Précharge plusieurs fichiers dans le cache
+   */
+  public async preloadMultipleToCache(paths: string[]): Promise<{ success: string[]; failed: string[] }> {
+    const results = await Promise.allSettled(paths.map((p) => this.preloadToCache(p)));
+
+    const success: string[] = [];
+    const failed: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value) {
+        success.push(paths[index]);
+      } else {
+        failed.push(paths[index]);
+      }
+    });
+
+    log.info(`Préchargement: ${success.length} succès, ${failed.length} échecs`);
+    return { success, failed };
   }
 }
 

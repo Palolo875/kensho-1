@@ -8,20 +8,32 @@ export { fusioner } from './Fusioner';
 export { ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
 export type { ModelMeta } from './ModelCatalog';
-export type { StorageQuota, FileMetadata } from './StorageManager';
-export type { 
-  RuntimeBackend, 
-  RuntimeConfig, 
-  RuntimeStatus, 
+export type {
+  StorageQuota,
+  FileMetadata,
+  StorageStats,
+  StorageMetrics,
+  WriteOptions,
+  StreamOptions,
+  StreamChunkCallback
+} from './StorageManager';
+export type {
+  RuntimeBackend,
+  RuntimeConfig,
+  RuntimeStatus,
   InferenceResult,
   ProgressCallback,
-  IInferenceEngine 
+  IInferenceEngine,
+  InferenceOptions,
+  RetryConfig,
+  PerformanceMetrics,
+  GPUInfo
 } from './RuntimeManager';
-export type { 
-  DeviceStatus, 
-  ResourceEvent, 
-  EventHandler, 
-  ResourceConstraints, 
-  ModelLoadDecision 
+export type {
+  DeviceStatus,
+  ResourceEvent,
+  EventHandler,
+  ResourceConstraints,
+  ModelLoadDecision
 } from './KernelTypes';
 export type { ExecutionTrace, TraceEvent, TraceLevel } from './ExecutionTraceContext';
