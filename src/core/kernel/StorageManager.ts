@@ -36,8 +36,13 @@ export interface StorageStats {
 }
 
 /**
+ * Alias pour compatibilité avec les exports existants
+ */
+export type StorageQuota = StorageStats;
+
+/**
  * StorageManager - Gestionnaire de stockage utilisant l'Origin Private File System (OPFS)
- * 
+ *
  * L'OPFS est une API moderne qui permet un accès rapide et synchrone aux fichiers
  * dans un système de fichiers privé à l'origine. C'est idéal pour stocker :
  * - Les poids des modèles LLM
@@ -118,7 +123,7 @@ class StorageManager {
    * Obtient un handle de fichier
    */
   public async getFileHandle(
-    path: string, 
+    path: string,
     options?: { create: boolean }
   ): Promise<FileSystemFileHandle | null> {
     if (!await this.ensureReady() || !this.root) {
@@ -128,7 +133,7 @@ class StorageManager {
     try {
       // Gérer les chemins avec des sous-dossiers
       const parts = path.split('/').filter(p => p.length > 0);
-      
+
       if (parts.length === 1) {
         return await this.root.getFileHandle(parts[0], options);
       }
@@ -184,7 +189,7 @@ class StorageManager {
    * Écrit des données dans un fichier
    */
   public async writeFile(
-    path: string, 
+    path: string,
     data: string | ArrayBuffer | Blob,
     options: WriteOptions = { create: true }
   ): Promise<boolean> {
@@ -196,7 +201,7 @@ class StorageManager {
       }
 
       const writable = await fileHandle.createWritable({ keepExistingData: options.append });
-      
+
       if (options.append) {
         const file = await fileHandle.getFile();
         await writable.seek(file.size);
@@ -296,7 +301,7 @@ class StorageManager {
 
     try {
       const parts = path.split('/').filter(p => p.length > 0);
-      
+
       if (parts.length === 1) {
         await this.root.removeEntry(parts[0]);
       } else {
@@ -330,7 +335,7 @@ class StorageManager {
 
     try {
       const parts = path.split('/').filter(p => p.length > 0);
-      
+
       if (parts.length === 1) {
         await this.root.removeEntry(parts[0], { recursive });
       } else {
@@ -488,8 +493,8 @@ class StorageManager {
    * Vérifie si l'OPFS est supporté
    */
   public isSupported(): boolean {
-    return typeof navigator !== 'undefined' && 
-           navigator.storage !== undefined && 
+    return typeof navigator !== 'undefined' &&
+           navigator.storage !== undefined &&
            typeof navigator.storage.getDirectory === 'function';
   }
 
