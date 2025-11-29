@@ -37,3 +37,9 @@ export type {
   ModelLoadDecision
 } from './KernelTypes';
 export type { ExecutionTrace, TraceEvent, TraceLevel } from './ExecutionTraceContext';
+export type {
+  TaskExecutorConfig,
+  TaskExecutionResult,
+  PlanExecutionResult,
+  ExecutorStats
+} from './TaskExecutor';
