@@ -1,12 +1,9 @@
 import { LRUCache } from 'lru-cache';
-import { v5 as uuidv5 } from 'uuid';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('ResponseCache');
 
 log.info('Initialisation du ResponseCache v1.0 (Elite)...');
-
-const CACHE_NAMESPACE = 'f5b4b7a0-9b3c-4b1e-8b0a-0e1e2e3e4f5a';
 
 type CachedResponse = {
   response: string;
@@ -14,6 +11,25 @@ type CachedResponse = {
   timestamp: number;
   tokens?: number;
 };
+
+/**
+ * Simple hash function for generating cache keys
+ * Uses a combination of djb2 and sdbm algorithms for better distribution
+ */
+function hashString(str: string): string {
+  let hash1 = 5381;
+  let hash2 = 0;
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash1 = ((hash1 << 5) + hash1) ^ char; // djb2
+    hash2 = char + (hash2 << 6) + (hash2 << 16) - hash2; // sdbm
+  }
+
+  // Combine both hashes and convert to hex string
+  const combined = Math.abs(hash1 ^ hash2);
+  return combined.toString(16).padStart(8, '0');
+}
 
 class ResponseCache {
   private cache: LRUCache<string, CachedResponse>;
@@ -30,7 +46,7 @@ class ResponseCache {
 
   private getCacheKey(prompt: string, modelKey: string): string {
     const data = `${modelKey.trim()}:${prompt.trim()}`;
-    return uuidv5(data, CACHE_NAMESPACE);
+    return `cache-${hashString(data)}`;
   }
 
   public get(prompt: string, modelKey: string): CachedResponse | null {
@@ -74,6 +90,29 @@ class ResponseCache {
       hitRate: total > 0 ? ((this.hits / total) * 100).toFixed(1) : '0.0',
       size: this.cache.size,
     };
+  }
+
+  /**
+   * Check if a prompt/model combination is cached
+   */
+  public has(prompt: string, modelKey: string): boolean {
+    const key = this.getCacheKey(prompt, modelKey);
+    return this.cache.has(key);
+  }
+
+  /**
+   * Delete a specific cache entry
+   */
+  public delete(prompt: string, modelKey: string): boolean {
+    const key = this.getCacheKey(prompt, modelKey);
+    return this.cache.delete(key);
+  }
+
+  /**
+   * Get the number of items in cache
+   */
+  public get size(): number {
+    return this.cache.size;
   }
 }
 

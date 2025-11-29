@@ -8,7 +8,7 @@
  */
 
 import { createLogger } from '../../../lib/logger';
-import type { IInferenceEngine, RuntimeConfig, InferenceResult, ProgressCallback } from '../../kernel/RuntimeManager';
+import type { IInferenceEngine, InferenceOptions, InferenceResult, ProgressCallback } from '../../kernel/RuntimeManager';
 
 const log = createLogger('MockEngines');
 
@@ -79,7 +79,7 @@ abstract class BaseMockEngine implements IInferenceEngine {
     log.info(`[${this.name}] Modèle ${modelId} chargé avec succès (${this.type})`);
   }
 
-  async generate(prompt: string, options?: RuntimeConfig['options']): Promise<InferenceResult> {
+  async generate(prompt: string, options?: InferenceOptions): Promise<InferenceResult> {
     if (!this.loaded) {
       throw new Error(`[${this.name}] Aucun modèle chargé`);
     }
@@ -112,7 +112,7 @@ abstract class BaseMockEngine implements IInferenceEngine {
   async generateStream(
     prompt: string,
     onChunk: (chunk: string) => void,
-    options?: RuntimeConfig['options']
+    options?: InferenceOptions
   ): Promise<InferenceResult> {
     if (!this.loaded) {
       throw new Error(`[${this.name}] Aucun modèle chargé`);
@@ -158,7 +158,7 @@ abstract class BaseMockEngine implements IInferenceEngine {
     return this.currentModelId;
   }
 
-  protected generateMockResponse(prompt: string, options?: RuntimeConfig['options']): string {
+  protected generateMockResponse(prompt: string, options?: InferenceOptions): string {
     const responses = [
       `Je suis ${this.name} (${this.type}). Voici ma réponse à votre question.`,
       `Réponse simulée via ${this.type} pour le développement et les tests.`,

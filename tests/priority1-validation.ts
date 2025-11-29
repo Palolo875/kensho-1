@@ -5,18 +5,17 @@
  * ✅ Type-safe error handling
  */
 
-import { 
-  executionTraceContext, 
-  fusioner, 
-  type SystemErrorType, 
-  type TaskResult 
+import {
+  ExecutionTraceContext,
+  fusioner
 } from '@/core/kernel';
+import type { SystemErrorType, TaskResult } from '@/core/router/RouterTypes';
 
 console.log('📝 === PRIORITY 1 VALIDATION TEST ===\n');
 
 // Test 1: ExecutionTraceContext
 console.log('✅ Test 1: ExecutionTraceContext');
-const trace = new executionTraceContext.constructor('test-req-001');
+const trace = new ExecutionTraceContext('test-req-001');
 trace.addEvent('ROUTER', 'IntentClassifier', 'classification_started', 'start');
 trace.addTimedEvent('ROUTER', 'IntentClassifier', 'classification_completed', 150, 'success', { intent: 'CODE' });
 trace.addTimedEvent('KERNEL', 'KernelCoordinator', 'resource_check', 45, 'success', { score: 8.5 });
@@ -71,17 +70,17 @@ const expertResults: TaskResult[] = [
     primaryResult,
     expertResults
   });
-  
-  const fusedhWithMeta = await fusioner.fuseWithMetadata({
+
+  const fusedWithMeta = await fusioner.fuseWithMetadata({
     primaryResult,
     expertResults
   });
-  
+
   console.log(`   ✓ Fused result length: ${fused.length} chars`);
-  console.log(`   ✓ Sources: ${fusedhWithMeta.metadata.sources.join(', ')}`);
-  console.log(`   ✓ Confidence: ${(fusedhWithMeta.metadata.confidence * 100).toFixed(1)}%`);
-  console.log(`   ✓ Strategy: ${fusedhWithMeta.metadata.strategy}\n`);
-  
+  console.log(`   ✓ Sources: ${fusedWithMeta.metadata.sources.join(', ')}`);
+  console.log(`   ✓ Confidence: ${(fusedWithMeta.metadata.confidence * 100).toFixed(1)}%`);
+  console.log(`   ✓ Strategy: ${fusedWithMeta.metadata.strategy}\n`);
+
   // Summary
   console.log('📊 === PRIORITY 1 VALIDATION COMPLETE ===');
   console.log('✅ ExecutionTraceContext: Working');
