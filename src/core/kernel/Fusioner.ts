@@ -1,6 +1,6 @@
 /**
  * Fusioner v2.0 - Fusion Intelligente des Résultats Multi-Agents
- * 
+ *
  * Stratégies de fusion:
  * 1. COMPLEMENTARY: Ajouter les informations manquantes des experts
  * 2. CONFLICT_RESOLUTION: Détecter et résoudre les contradictions
@@ -9,6 +9,9 @@
  */
 
 import { TaskResult } from '../router/RouterTypes';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('Fusioner');
 
 interface FusionInput {
   primaryResult: TaskResult;
@@ -27,7 +30,7 @@ export class Fusioner {
    * Fusionne intelligemment les résultats
    */
   public async fuse(input: FusionInput): Promise<string> {
-    console.log(`[Fusioner] 🔀 Fusion: 1 primaire + ${input.expertResults.length} expert(s)`);
+    log.info(`🔀 Fusion: 1 primaire + ${input.expertResults.length} expert(s)`);
 
     // Si pas d'experts, retourner le résultat primaire
     if (input.expertResults.length === 0 || input.primaryResult.status !== 'success') {
@@ -45,7 +48,7 @@ export class Fusioner {
     // Appliquer la fusion selon la stratégie
     const fused = await this.applyStrategy(strategy, input.primaryResult, successfulExperts);
 
-    console.log(`[Fusioner] ✅ Stratégie appliquée: ${strategy.strategy}`);
+    log.info(`✅ Stratégie appliquée: ${strategy.strategy}`);
 
     return fused.content;
   }
@@ -73,7 +76,8 @@ export class Fusioner {
     strategy: string;
     experts: TaskResult[];
   } {
-    const intentHints = this.detectIntentFromAgents(expertResults);
+    // Detect intent for potential future use in strategy selection
+    const _intentHints = this.detectIntentFromAgents(expertResults);
 
     // FACTCHECK: Utiliser experts comme validators
     if (
@@ -118,7 +122,7 @@ export class Fusioner {
   private async applyStrategy(
     { strategy, experts }: ReturnType<typeof Fusioner.prototype.determineStrategy>,
     primaryResult: TaskResult,
-    expertResults: TaskResult[]
+    _expertResults: TaskResult[]
   ): Promise<{ content: string; confidence: number }> {
     switch (strategy) {
       case 'COMPLEMENTARY':

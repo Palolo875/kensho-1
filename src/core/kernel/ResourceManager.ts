@@ -1,17 +1,20 @@
 import { DeviceStatus, ResourceEvent, EventHandler } from "./KernelTypes";
+import { createLogger } from '../../lib/logger';
 
-console.log("📡 Initialisation du ResourceManager v1.0...");
+const log = createLogger('ResourceManager');
+
+log.info('📡 Initialisation du ResourceManager v1.0...');
 
 class ResourceManager {
   private currentStatus: DeviceStatus;
   private lastStatusUpdate = 0;
   private statusCacheDuration = 500;
   private memoryHistory: number[] = [];
-  
+
   private hasBatteryAPI = 'getBattery' in navigator;
   private hasMemoryAPI = 'memory' in performance && typeof (performance as any).memory !== 'undefined';
   private hasNetworkAPI = 'connection' in navigator;
-  
+
   private eventHandlers = new Map<ResourceEvent, Set<EventHandler>>();
   private listeners: Array<{ target: any; event: string; handler: any }> = [];
   private windowOnlineHandler: (() => void) | null = null;
@@ -27,7 +30,7 @@ class ResourceManager {
     };
 
     this.startMonitoring();
-    console.log("✅ [ResourceManager] Surveillance système active");
+    log.info('✅ Surveillance système active');
   }
 
   private addEventListener(target: any, event: string, handler: any) {
@@ -46,7 +49,7 @@ class ResourceManager {
           downlink: connection.downlink || 10,
           rtt: connection.rtt
         };
-        
+
         if (wasOnline && !navigator.onLine) {
           this.emit('network-offline');
         }
@@ -64,7 +67,7 @@ class ResourceManager {
             isCharging: battery.charging,
             timeToEmpty: battery.dischargingTime
           };
-          
+
           if (level < 0.15 && !battery.charging) {
             this.emit('battery-low');
           }
@@ -82,7 +85,7 @@ class ResourceManager {
       this.currentStatus.network.isOnline = false;
       this.emit('network-offline');
     };
-    
+
     window.addEventListener('online', this.windowOnlineHandler);
     window.addEventListener('offline', this.windowOfflineHandler);
   }
@@ -90,12 +93,12 @@ class ResourceManager {
   private updateMemoryTrend(current: number): 'stable' | 'rising' | 'falling' {
     this.memoryHistory.push(current);
     if (this.memoryHistory.length > 10) this.memoryHistory.shift();
-    
+
     if (this.memoryHistory.length < 3) return 'stable';
-    
+
     const recent = this.memoryHistory.slice(-3);
     const avg = recent.reduce((a, b) => a + b) / recent.length;
-    
+
     if (current > avg * 1.1) return 'rising';
     if (current < avg * 0.9) return 'falling';
     return 'stable';
@@ -106,8 +109,8 @@ class ResourceManager {
       this.emit('memory-critical');
     }
 
-    if (this.currentStatus.battery && 
-        this.currentStatus.battery.level < 0.15 && 
+    if (this.currentStatus.battery &&
+        this.currentStatus.battery.level < 0.15 &&
         !this.currentStatus.battery.isCharging) {
       this.emit('battery-low');
     }
@@ -115,7 +118,7 @@ class ResourceManager {
 
   public async getStatus(forceRefresh = false): Promise<DeviceStatus> {
     const now = Date.now();
-    
+
     if (!forceRefresh && (now - this.lastStatusUpdate) < this.statusCacheDuration) {
       return this.currentStatus;
     }
@@ -124,7 +127,7 @@ class ResourceManager {
       const mem = (performance as any).memory;
       const usageRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
       const jsHeapUsed = mem.usedJSHeapSize / (1024 * 1024);
-      
+
       this.currentStatus.memory = {
         usageRatio,
         jsHeapUsed,
@@ -143,7 +146,7 @@ class ResourceManager {
 
   private detectPowerSaveMode(): boolean {
     if (!this.currentStatus.battery) return false;
-    return this.currentStatus.battery.level < 0.2 && 
+    return this.currentStatus.battery.level < 0.2 &&
            !this.currentStatus.battery.isCharging;
   }
 
@@ -170,7 +173,7 @@ class ResourceManager {
       target.removeEventListener(event, handler);
     });
     this.listeners = [];
-    
+
     if (this.windowOnlineHandler) {
       window.removeEventListener('online', this.windowOnlineHandler);
       this.windowOnlineHandler = null;
@@ -179,7 +182,7 @@ class ResourceManager {
       window.removeEventListener('offline', this.windowOfflineHandler);
       this.windowOfflineHandler = null;
     }
-    
+
     this.eventHandlers.clear();
   }
 }

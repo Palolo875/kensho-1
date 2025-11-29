@@ -1,8 +1,11 @@
 // src/core/streaming/SSEStreamer.ts
 
 import { EventEmitter } from 'events';
+import { createLogger } from '../../lib/logger';
 
-console.log("📡✨ Initialisation du SSEStreamer v1.0 (Elite)...");
+const log = createLogger('SSEStreamer');
+
+log.info('📡✨ Initialisation du SSEStreamer v1.0 (Elite)...');
 
 // Définit les types d'événements que notre système peut diffuser.
 export type StreamEvent = {
@@ -14,7 +17,7 @@ export type StreamEvent = {
 /**
  * SSEStreamer gère le streaming d'événements en temps réel vers l'UI.
  * Il agit comme un bus d'événements centralisé pour toute l'application.
- * 
+ *
  * C'est un système découplé: n'importe quel composant (TaskExecutor, DialoguePlugin, Router)
  * peut émettre des événements, et l'UI s'y abonne pour les traiter.
  */
@@ -23,7 +26,7 @@ class SSEStreamer extends EventEmitter {
 
   constructor() {
     super();
-    console.log("[SSE] Prêt à diffuser des événements.");
+    log.info('Prêt à diffuser des événements.');
   }
 
   /**
