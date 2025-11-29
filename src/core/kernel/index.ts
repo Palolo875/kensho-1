@@ -43,3 +43,8 @@ export type {
   PlanExecutionResult,
   ExecutorStats
 } from './TaskExecutor';
+export type {
+  InitProgressReport,
+  KernelConfig,
+  KernelStatus
+} from './KernelCoordinator';

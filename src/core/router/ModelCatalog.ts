@@ -20,7 +20,7 @@ export const ROUTER_MODEL_CATALOG: Record<string, RouterModelMeta> = {
     verified: true,
     verifiedDate: "2025-11-25"
   },
-  
+
   "qwen2.5-coder-1.5b": {
     model_id: "Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC",
     size: "1.5B",
@@ -31,7 +31,7 @@ export const ROUTER_MODEL_CATALOG: Record<string, RouterModelMeta> = {
     verified: true,
     verifiedDate: "2025-11-25"
   },
-  
+
   "qwen2.5-math-1.5b": {
     model_id: "Qwen2.5-Math-1.5B-Instruct-q4f16_1-MLC",
     size: "1.5B",
@@ -45,7 +45,7 @@ export const ROUTER_MODEL_CATALOG: Record<string, RouterModelMeta> = {
 };
 
 export function getModelBySpecialization(specialization: 'dialogue' | 'code' | 'math'): RouterModelMeta | null {
-  for (const [key, model] of Object.entries(ROUTER_MODEL_CATALOG)) {
+  for (const [, model] of Object.entries(ROUTER_MODEL_CATALOG)) {
     if (model.specialization === specialization && model.verified) {
       return model;
     }

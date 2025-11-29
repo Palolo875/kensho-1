@@ -2,7 +2,7 @@
  * Structured Logging System for Kensho
  * Provides isomorphic logging (Node.js + Browser) with levels, context, and formatting
  * Replaces console.log/error/warn throughout the codebase
- * 
+ *
  * @version 2.0.0 - Enhanced with environment-aware configuration and typed data
  */
 
@@ -39,6 +39,7 @@ const LOG_LEVEL_LABELS: Record<LogLevel, string> = {
   [LogLevel.NONE]: 'NONE',
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
   [LogLevel.DEBUG]: '\x1b[36m',
   [LogLevel.INFO]: '\x1b[32m',
@@ -47,6 +48,7 @@ const LOG_LEVEL_COLORS: Record<LogLevel, string> = {
   [LogLevel.NONE]: '',
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const RESET_COLOR = '\x1b[0m';
 
 function isProduction(): boolean {
@@ -55,8 +57,8 @@ function isProduction(): boolean {
   }
   if (typeof window !== 'undefined') {
     const hostname = window.location?.hostname || '';
-    return !hostname.includes('localhost') && 
-           !hostname.includes('127.0.0.1') && 
+    return !hostname.includes('localhost') &&
+           !hostname.includes('127.0.0.1') &&
            !hostname.includes('.replit.dev');
   }
   return false;
@@ -110,12 +112,12 @@ class KenshoLogger {
 
   private shouldLog(level: LogLevel, context: string): boolean {
     if (level < this.minLevel) return false;
-    
+
     if (this.contextFilters.size > 0) {
       const hasContext = this.contextFilters.has(context);
       return this.isFilterWhitelist ? hasContext : !hasContext;
     }
-    
+
     return true;
   }
 

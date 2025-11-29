@@ -1,12 +1,11 @@
 import { IntentClassifier } from './IntentClassifier';
 import { CapacityEvaluator } from './CapacityEvaluator';
-import { ROUTER_MODEL_CATALOG, validateModelExists, getModelBySpecialization } from './ModelCatalog';
+import { getModelBySpecialization } from './ModelCatalog';
 import {
   IntentCategory,
   ExecutionPlan,
   ExecutionStrategy,
   Task,
-  TaskPriority,
   RouterError
 } from './RouterTypes';
 import { kernelCoordinator } from '../kernel';

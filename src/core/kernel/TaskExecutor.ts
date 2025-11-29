@@ -330,7 +330,6 @@ export class TaskExecutor {
     }
 
     // Toutes les tentatives ont échoué
-    const endTime = performance.now();
     log.error(`${task.agentName} échec définitif après ${retries} tentatives`);
 
     this.recordError(lastError?.message || 'UnknownError');
