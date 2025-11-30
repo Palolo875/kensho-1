@@ -30,7 +30,7 @@ export class DialoguePlugin {
     this.tokenCount = 0;
 
     try {
-      const cached = responseCache.get(userPrompt, modelKey);
+      const cached = await responseCache.get(userPrompt, modelKey);
       if (cached) {
         yield {
           type: 'complete',
