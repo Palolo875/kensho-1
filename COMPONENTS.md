@@ -68,40 +68,148 @@ class ResourceManager {
 ### 2.1. OIE (Orchestrateur Intelligent d'Exécution)
 **Path**: `src/agents/oie/index.ts`
 
-The OIE is the "Manager" agent. It uses a specialized `LLMPlanner` to decompose tasks.
+The OIE is the "Manager" agent. It orchestrates complex multi-agent workflows using intelligent LLM-based planning.
 
-**Initialization Barrier**:
-The OIE has a strict initialization sequence. It waits for the `GraphWorker` to be fully ready before accepting any requests. If a request comes in early, it enters a retry loop (max 100 retries, 50ms interval).
+**Architecture**:
+```
+User Query + File → OIE → LLMPlanner → TaskExecutor → Specialized Agents → Result
+```
 
-**Intent Classification**:
-Before planning, the OIE calls the `IntentClassifierAgent` to determine if the user wants to:
--   `MEMORIZE`: Save information to the Knowledge Graph.
--   `QUERY`: Retrieve information.
--   `EXECUTE`: Run a complex task.
+**Core Components**:
 
-**Stream Methods**:
--   `executeQuery`: The main entry point. Accepts `{ query: string, attachedFile?: any }`.
+1. **LLMPlanner** (`src/agents/oie/prompts.ts`):
+   - Uses GPT/LLM to generate intelligent execution plans
+   - Context-aware: understands available agents and their capabilities
+   - Generates JSON plans with sequential steps
+   - Supports Chain-of-Thought reasoning
+   - Token optimization: decides when to use summaries vs full text
+
+2. **TaskExecutor** (`src/agents/oie/executor.ts`):
+   - Executes multi-step plans sequentially
+   - **Interpolation**: Passes results between steps using `{{step1_result.property}}` syntax
+   - **Fallback support**: Handles `{{value1 ?? value2}}` for graceful degradation
+   - **Streaming**: Emits granular events (`planning`, `step_start`, `agent_chunk`, `step_end`, `plan_complete`)
+   - **ArrayBuffer handling**: Special support for binary file data
+
+**API**:
+
+```typescript
+// Main entry point with file attachment support
+await bus.requestStream('OIEAgent', 'executeQuery', [{
+  query: "Read this PDF and calculate the total",
+  attachedFile: {  // Optional
+    buffer: ArrayBuffer,
+    type: "application/pdf",
+    name: "doc.pdf",
+    size: 12345
+  }
+}]);
+
+// Get agent capabilities
+const caps = await bus.request('OIEAgent', 'getCapabilities', []);
+// Returns: {
+//   supportsMultiAgent: true,
+//   supportsFileAttachments: true,
+//   supportsLLMPlanning: true,
+//   availableAgents: ['MainLLMAgent', 'CalculatorAgent', 'UniversalReaderAgent']
+// }
+```
+
+**Interpolation Syntax**:
+```typescript
+{{step1_result}}                               // Full result
+{{step1_result.property}}                      // Specific property
+{{step1_result.summary ?? step1_result.fullText}} // Fallback
+{{attached_file_buffer}}                       // Attached file
+```
+
+**Stream Events**:
+- `planning`: Planning started/completed
+- `step_start`: Step N beginning
+- `agent_chunk`: Partial results from agent
+- `step_end`: Step completed (success/failure)
+- `plan_complete`: Entire plan finished
+
+**Configuration**:
+```typescript
+// src/agents/oie/index.ts
+const USE_LLM_PLANNER = true;  // Toggle LLM vs naive planner
+```
 
 **Dependencies**:
 -   `GraphWorker`: For accessing long-term memory (SQLite + HNSW).
 -   `LLMPlanner`: For generating execution plans.
 -   `TaskExecutor`: For running the generated plan.
+-   `MainLLMAgent`: For text generation.
+-   `CalculatorAgent`: For mathematical operations.
+-   `UniversalReaderAgent`: For document parsing.
 
 ### 2.2. Universal Reader
 **Path**: `src/agents/universal-reader/`
 
-A specialized agent for parsing documents.
+A specialized agent for parsing and understanding documents.
 
 **Supported Formats**:
 -   **PDF**: Uses `pdfjs-dist` (running in the worker).
 -   **Text/Markdown**: Native parsing.
 -   **Images**: (Planned) OCR via Tesseract.js.
 
+**Smart Summarization**:
+- Automatically generates summaries for documents > 1000 characters
+- Returns both `summary` and `fullText` for LLM to choose
+- Optimizes token usage in multi-agent workflows
+
+**Return Structure**:
+```typescript
+{
+  summary: string;        // Concise overview
+  fullText?: string;      // Complete content (if needed)
+  wasSummarized: boolean; // Indicates if summarization occurred
+  metadata: {             // File metadata
+    type: string;
+    size: number;
+    name: string;
+  }
+}
+```
+
+**Configuration**:
+```typescript
+// src/agents/universal-reader/index.ts
+const SUMMARY_THRESHOLD = 1000; // Characters before summarization
+```
+
 ### 2.3. Calculator
 **Path**: `src/agents/calculator/`
 
 A safe execution environment for mathematical operations.
--   **Security**: Uses `Function` constructor with strict sandboxing (no access to `window` or `document`).
+
+**Features**:
+- Evaluates arithmetic expressions securely
+- Supports basic operations: `+`, `-`, `*`, `/`, `**` (power), `%` (modulo)
+- Parentheses for grouping
+- Returns structured results with metadata
+
+**Security**: 
+- Uses `Function` constructor with strict sandboxing
+- No access to `window`, `document`, or global scope
+- Expression validation before evaluation
+
+**Return Structure**:
+```typescript
+{
+  result: number;         // Calculated result
+  expression: string;     // Original expression
+  isValid: boolean;       // Validation status
+  error?: string;         // Error message if failed
+}
+```
+
+**Examples**:
+```typescript
+"15 * 23 + 100"  → { result: 445, expression: "15 * 23 + 100", isValid: true }
+"2 ** 10"        → { result: 1024, expression: "2 ** 10", isValid: true }
+```
 
 ---
 

@@ -109,12 +109,67 @@ The Kernel (`src/core/kernel/`) is the "Operating System" layer of Kensho. It ab
 ## 5. Agent System
 
 ### 5.1. OIE (Orchestrateur Intelligent d'Exécution)
-The OIE is the "Manager" agent.
+The OIE is the "Manager" agent that orchestrates complex multi-agent workflows.
+
+**Architecture Flow**:
+```
+User Query + Optional File
+         ↓
+    [OIE Agent]
+         ↓
+   [LLMPlanner] ← Uses GPT/LLM to analyze query
+         ↓
+    JSON Plan (steps with agent assignments)
+         ↓
+  [TaskExecutor] ← Executes plan step-by-step
+         ↓
+  [┌───────────────┐]
+  [│ Step 1: Reader │] → Extract text from PDF
+  [└───────────────┘]
+         ↓ (result interpolated)
+  [┌───────────────┐]
+  [│ Step 2: LLM    │] → Extract numbers: {{step1_result.fullText}}
+  [└───────────────┘]
+         ↓ (result interpolated)
+  [┌───────────────┐]
+  [│Step 3: Calculator│] → Calculate: {{step2_result}}
+  [└───────────────┘]
+         ↓ (result interpolated)
+  [┌───────────────┐]
+  [│ Step 4: LLM    │] → Format answer: {{step3_result.result}}
+  [└───────────────┘]
+         ↓
+  Final Answer to User
+```
+
+**Key Features**:
 -   **Input**: A complex user query (e.g., "Read this PDF and calculate the total cost").
 -   **Process**:
-    1.  **Planning**: Uses an LLM to break the task into steps.
-    2.  **Delegation**: Assigns steps to specialized agents (Reader, Calculator).
-    3.  **Synthesis**: Combines results into a final answer.
+    1.  **Planning**: Uses an LLM (GPT/Qwen) to break the task into steps.
+    2.  **Delegation**: Assigns steps to specialized agents (Reader, Calculator, LLM).
+    3.  **Interpolation**: Passes results between steps using `{{stepN_result.property}}` syntax.
+    4.  **Synthesis**: Combines results into a final answer.
+
+**Intelligent Optimization**:
+- The LLMPlanner understands when to use document summaries vs full text
+- Token optimization: `{{step1_result.summary ?? step1_result.fullText}}`
+- Automatically chooses most efficient data flow
+
+**Use Cases**:
+```typescript
+// Example 1: Simple calculation
+"What is 15 * 23 + 100?"
+// Plan: CalculatorAgent → MainLLMAgent (format answer)
+
+// Example 2: Document analysis
+"Summarize this PDF" + attached file
+// Plan: UniversalReaderAgent → MainLLMAgent (generate summary)
+
+// Example 3: Complex workflow
+"Read the invoice PDF and calculate the total of all line items"
+// Plan: UniversalReaderAgent → MainLLMAgent (extract numbers) → 
+//       CalculatorAgent → MainLLMAgent (format result)
+```
 
 ### 5.2. LLM Agent
 Wraps **WebLLM** (@mlc-ai/web-llm).
