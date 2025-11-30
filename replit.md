@@ -6,6 +6,18 @@ Kensho is an advanced AI debate orchestration system designed for reliable, tran
 ## User Preferences
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
 
+## Recent Changes (Nov 30, 2025)
+- **MemoryManager v2.0 Enhanced:** Complete rewrite with advanced VRAM management
+  - **Smart Recommendations:** `suggestModelToUnload()` uses LRU + utility scoring (recency, usage, efficiency, priority)
+  - **Forced Reclaim:** `forceReclaim(targetFreeVRAM)` with iterative VRAM re-evaluation after each unload
+  - **Emergency Cleanup:** `emergencyCleanup()` for critical situations
+  - **State Persistence:** Automatic save/restore via localStorage with validation and resync from catalog
+  - **Advanced Metrics:** Track inferenceCount, totalInferenceTime, lastAccessedAt per model
+  - **Model Pinning:** CRITICAL/HIGH/NORMAL/LOW priorities with pin protection for essential models
+  - **Strict Validation:** Validate cached entries (timestamps, VRAM, priority) before restoration
+- **ModelCatalog Enhanced:** Added `virtual_vram_gb`, `specialty`, `priority`, `pin` fields for each model
+- **DialoguePlugin Updated:** Uses new `suggestModelToUnload()` API for intelligent VRAM recommendations
+
 ## Recent Changes (Nov 28, 2025)
 - **Sound Wave Visualization ENHANCED:** Completely redesigned WaveformVisualizer with 3-layer animated waveforms, much larger display (200x200px SVG), dynamic frequency response to audio intensity, multiple gradient layers, glow effects, and pulsing intensity meter with radial display
 - **File Upload Buttons FIXED:** Both Plus (+) and Paperclip buttons now properly trigger file selection with preventDefault/stopPropagation, accept multiple formats (.pdf, .png, .jpg, .jpeg, .gif, .webp, .doc, .docx, .txt)
@@ -26,7 +38,7 @@ Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) 
 *   **Asynchronous Kernel (v2.0):** Manages AI models and system resources.
 *   **Intelligent Router (v2.0):** Directs user requests to appropriate AI agents.
 *   **TaskExecutor (v3.1):** Cache-aware orchestration with multi-queue support (SERIAL, PARALLEL_LIMITED, PARALLEL_FULL) and real-time streaming.
-*   **MemoryManager (v1.0):** Manages VRAM with real-time estimation and LRU strategies for model unloading.
+*   **MemoryManager (v2.0):** Advanced VRAM management with smart recommendations (LRU + utility scoring), forced reclaim with iterative re-evaluation, emergency cleanup, state persistence with validation, inference metrics tracking, and model pinning support.
 *   **ModelManager (v3.1):** Memory-aware model switching with transparent status updates via SSEStreamer.
 *   **ResponseCache (v1.0):** LRU cache with TTL and deterministic UUID v5 hashing.
 *   **SSEStreamer (v1.0):** Central EventEmitter-based real-time event bus for UI updates, delivering tokens, complete messages, errors, and metrics.
