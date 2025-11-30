@@ -22,7 +22,9 @@ I prefer detailed explanations and transparency in the AI's operations. I want t
   - **Unified API:** `fuseUnified(results[])` for homogeneous multi-agent fusion (no primaire/experts distinction)
   - **Advanced Contradiction Detection:** Multi-agent conflict scoring with detail tracking
   - **Enriched Metadata:** `FusionOutput` with sources, confidence, strategy, conflicts count, tokensUsed, timestamp
-  - **Mock Harmonizer by Specialty:** Synthesizes CODE (with 🔒 security + ⚡ perf tips), DIALOGUE (passthrough), MATH (alternative methods)
+  - **Mock Harmonizer by Specialty:** Synthesizes CODE (with 🔒 security + ⚡ perf tips as inline tips), DIALOGUE (passthrough), MATH (alternative methods)
+  - **Intelligent Fallback:** If primary fails, select best expert via weighted scoring (confidence 50% + length 30% + speed 20%)
+  - **Natural Synthesis:** One-line insights using `> emoji message` format instead of section headers
   - **Fusion Strategies:** CONSENSUS, CONFLICT_RESOLUTION, PRIORITY, ENRICHMENT, COMPLEMENTARY, QUALITY_SYNTHESIS
   - **Backward Compatible:** Original `fuse(primaryResult, expertResults)` API still works
 

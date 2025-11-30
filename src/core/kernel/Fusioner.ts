@@ -4,9 +4,11 @@
  * ✨ NOUVELLES FEATURES:
  * - API unifiée: fuseUnified(results[]) pour N agents égaux
  * - Stratégies: COMPLEMENTARY, CONFLICT_RESOLUTION, QUALITY_SYNTHESIS, ENRICHMENT, CONSENSUS, PRIORITY
- * - Mock Harmonizer par spécialité (CODE, DIALOGUE, MATH)
- * - Détection avancée de contradictions
+ * - Mock Harmonizer par spécialité (CODE, DIALOGUE, MATH) avec synthèse "une ligne"
+ * - Détection avancée de contradictions avec scoring multi-agent
  * - Métadonnées enrichies (tokens, timestamp, confidence)
+ * - Fallback intelligent: si primary échoue, utiliser expert comme réponse
+ * - Format naturel: utiliser `>` pour inline tips au lieu de sections
  */
 
 import { TaskResult } from '../router/RouterTypes';
@@ -54,48 +56,69 @@ interface FusionMetadata {
 }
 
 /**
- * Mock Harmonizer - Simule la synthèse par spécialité
+ * Mock Harmonizer - Simule la synthèse NATURELLE par spécialité
+ * Synthèse "une ligne" au lieu de sections
  */
 class MockHarmonizer {
+  /**
+   * CODE: Synthèse inline avec 🔒 security + ⚡ perf tips (UNE LIGNE chacun)
+   */
   synthesizeCode(primary: string, expertResults: UnifiedTaskResult[]): string {
     let result = primary;
+    const tips: string[] = [];
+
+    // Extraire UNE LIGNE pour sécurité
+    const securityExpert = expertResults.find(e => 
+      e.content.toLowerCase().includes('security') || 
+      e.content.toLowerCase().includes('xss') ||
+      e.content.toLowerCase().includes('faille')
+    );
     
-    // Extraction d'insights critiques
-    const securityIssues = expertResults
-      .filter(e => e.content.toLowerCase().includes('security') || e.content.toLowerCase().includes('xss'))
-      .map(e => `🔒 ${e.content.split('\n')[0]}`)
-      .slice(0, 2);
-    
-    const perfTips = expertResults
-      .filter(e => e.content.toLowerCase().includes('performance') || e.content.toLowerCase().includes('o(n'))
-      .map(e => `⚡ ${e.content.split('\n')[0]}`)
-      .slice(0, 2);
-    
-    if (securityIssues.length > 0) {
-      result += `\n\n**Sécurité:**\n${securityIssues.join('\n')}`;
+    if (securityExpert) {
+      const secLine = securityExpert.content.split('\n')[0] || securityExpert.content.substring(0, 60);
+      tips.push(`> 🔒 ${secLine.trim()}`);
     }
+
+    // Extraire UNE LIGNE pour perf
+    const perfExpert = expertResults.find(e => 
+      e.content.toLowerCase().includes('performance') || 
+      e.content.toLowerCase().includes('o(n') ||
+      e.content.toLowerCase().includes('optimiz')
+    );
     
-    if (perfTips.length > 0) {
-      result += `\n\n**Performance:**\n${perfTips.join('\n')}`;
+    if (perfExpert) {
+      const perfLine = perfExpert.content.split('\n')[0] || perfExpert.content.substring(0, 60);
+      tips.push(`> ⚡ ${perfLine.trim()}`);
+    }
+
+    if (tips.length > 0) {
+      result += `\n\n${tips.join('\n')}`;
     }
     
     return result;
   }
 
+  /**
+   * DIALOGUE: Passe-through naturel (déjà bien synthétisé)
+   */
   synthesizeDialogue(primary: string, _expertResults: UnifiedTaskResult[]): string {
-    // Dialogue passe-through, déjà optimisé
-    return primary;
+    return primary; // Dialogue est déjà chaleureux
   }
 
+  /**
+   * MATH: Ajoute méthode alternative (UNE LIGNE)
+   */
   synthesizeMath(primary: string, expertResults: UnifiedTaskResult[]): string {
     let result = primary;
     
-    const altMethods = expertResults
-      .filter(e => e.content.toLowerCase().includes('method') || e.content.toLowerCase().includes('alternative'))
-      .slice(0, 1);
+    const altExpert = expertResults.find(e => 
+      e.content.toLowerCase().includes('method') || 
+      e.content.toLowerCase().includes('alternative')
+    );
     
-    if (altMethods.length > 0) {
-      result += `\n\n**Méthode Alternative:**\n${altMethods[0].content.substring(0, 100)}...`;
+    if (altExpert) {
+      const altLine = altExpert.content.split('\n')[0] || altExpert.content.substring(0, 80);
+      result += `\n\n*(Autre méthode: ${altLine.trim()})*`;
     }
     
     return result;
@@ -108,6 +131,9 @@ export class Fusioner {
   /**
    * API UNIFIÉE: Fusionne N résultats d'agents (NOUVEAU)
    * Permet de traiter primaryResult et expertResults de manière homogène
+   * 
+   * IMPORTANT: Gère le fallback intelligent - si aucun résultat primaire,
+   * les experts peuvent compenser
    */
   public async fuseUnified(results: UnifiedTaskResult[]): Promise<FusionOutput> {
     if (results.length === 0) {
@@ -127,6 +153,7 @@ export class Fusioner {
     // Filtrer les résultats réussis
     const successful = results.filter(r => r.status === 'success');
     
+    // FALLBACK INTELLIGENT: Si tous échouent, c'est une erreur réelle
     if (successful.length === 0) {
       return {
         content: 'Tous les agents ont échoué. Veuillez réessayer.',
@@ -170,8 +197,23 @@ export class Fusioner {
   public async fuse(input: FusionInput): Promise<string> {
     log.info(`🔀 Fusion: 1 primaire + ${input.expertResults.length} expert(s)`);
 
+    // FALLBACK INTELLIGENT: Si primary échoue mais experts réussissent
+    if (input.primaryResult.status !== 'success') {
+      const successfulExperts = input.expertResults.filter(r => r.status === 'success');
+      
+      if (successfulExperts.length > 0) {
+        // Utiliser le meilleur expert comme fallback
+        const bestExpert = this.selectBestExpert(successfulExperts);
+        log.info(`⚠️ Primary échoué, fallback vers expert: ${bestExpert.agentName}`);
+        return bestExpert.result || 'Erreur: aucun résultat disponible.';
+      }
+      
+      // Si tout échoue
+      return 'Erreur lors du traitement. Veuillez réessayer.';
+    }
+
     // Si pas d'experts, retourner le résultat primaire
-    if (input.expertResults.length === 0 || input.primaryResult.status !== 'success') {
+    if (input.expertResults.length === 0) {
       return input.primaryResult.result || '';
     }
 
@@ -202,6 +244,26 @@ export class Fusioner {
     const metadata = this.extractMetadata(input);
 
     return { content, metadata };
+  }
+
+  /**
+   * NOUVEAU: Sélectionne le meilleur expert (pour fallback)
+   * Pondération: confiance > longueur > récence
+   */
+  private selectBestExpert(experts: TaskResult[]): TaskResult {
+    return experts.reduce((best, current) => {
+      const currentScore = 
+        (current.confidence || 0.7) * 0.5 +  // 50% confiance
+        (Math.min(current.result?.length || 0, 500) / 500) * 0.3 +  // 30% longueur
+        ((current.duration && current.duration < 5000) ? 0.2 : 0);  // 20% rapidité
+      
+      const bestScore = 
+        (best.confidence || 0.7) * 0.5 +
+        (Math.min(best.result?.length || 0, 500) / 500) * 0.3 +
+        ((best.duration && best.duration < 5000) ? 0.2 : 0);
+      
+      return currentScore > bestScore ? current : best;
+    });
   }
 
   /**
@@ -246,7 +308,7 @@ export class Fusioner {
     results: UnifiedTaskResult[],
     conflicts: ReturnType<typeof Fusioner.prototype.detectContradictions>
   ): string {
-    // Si consensus fort (>80% similarité moyenne)
+    // Si consensus fort (pas de conflits)
     if (conflicts.count === 0) {
       return 'CONSENSUS';
     }
@@ -267,38 +329,38 @@ export class Fusioner {
   }
 
   /**
-   * NOUVEAU: Applique stratégie pour API unifiée
+   * NOUVEAU: Applique stratégie pour API unifiée (avec fallback)
    */
   private async applyUnifiedStrategy(
     strategy: string,
-    results: UnifiedTaskResult[]
+    successful: UnifiedTaskResult[]
   ): Promise<string> {
     switch (strategy) {
       case 'CONSENSUS':
-        return results[0].content; // Tous d'accord, prendre le premier
+        return successful[0].content; // Tous d'accord, prendre le premier
 
       case 'CONFLICT_RESOLUTION':
-        // Ajouter un avertissement + toutes les perspectives
-        return `⚠️ **Perspectives variées:**\n\n${results
-          .map(r => `**${r.agentName}:**\n${r.content}`)
-          .join('\n\n---\n\n')}`;
+        // Ajouter un avertissement + perspectives compactes
+        return `⚠️ **Perspectives variées:**\n\n${successful
+          .map(r => `**${r.agentName}:** ${r.content.substring(0, 100).trim()}${r.content.length > 100 ? '...' : ''}`)
+          .join('\n\n')}`;
 
       case 'PRIORITY':
         // Synthèse par spécialité
-        const specialty = results[0].specialty || 'GENERAL';
-        return this.synthesizeBySpecialty(specialty, results[0], results.slice(1));
+        const specialty = successful[0].specialty || 'GENERAL';
+        return this.synthesizeBySpecialty(specialty, successful[0], successful.slice(1));
 
       case 'ENRICHMENT':
       default:
-        return `${results[0].content}\n\n${results
+        return `${successful[0].content}\n\n${successful
           .slice(1)
-          .map(r => `**${r.agentName}:** ${r.content.substring(0, 80)}...`)
+          .map(r => `**${r.agentName}:** ${r.content.substring(0, 80).trim()}${r.content.length > 80 ? '...' : ''}`)
           .join('\n\n')}`;
     }
   }
 
   /**
-   * NOUVEAU: Synthèse par spécialité (Mock Harmonizer)
+   * NOUVEAU: Synthèse par spécialité (Mock Harmonizer avec synthèse "une ligne")
    */
   private synthesizeBySpecialty(
     specialty: string,
