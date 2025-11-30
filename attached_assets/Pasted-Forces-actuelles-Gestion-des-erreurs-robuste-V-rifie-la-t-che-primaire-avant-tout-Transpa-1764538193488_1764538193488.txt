@@ -1,0 +1,113 @@
+Forces actuelles
+
+    Gestion des erreurs robuste : Vérifie la tâche primaire avant tout
+    Transparence : Notifie quels experts ont échoué
+    ** Structure claire** : Séparation succès/échec bien gérée
+
+🔴 Limitations critiques (pour une "Usine Vide" intelligente)
+1. "Edit-based synthesis" = TODO comment
+Ta logique actuelle : primary + "\n\n" + expert1 + "\n\n" + expert2
+Résultat :
+Copy
+
+"Voici le code : ..."
+
+--- Analyse de l'expert "security" ---
+Il y a une faille XSS ici.
+
+--- Analyse de l'expert "performance" ---
+C'est O(n²), tu peux passer à O(n).
+
+Problème : L'utilisateur reçoit un dossier à lire, pas une réponse synthétisée.
+2. Pas de pondération par expert
+Si primary (Code) échoue mais security réussit, tu renvoies une erreur. Mais pourquoi pas la sécurité comme fallback ?
+3. Format rigide
+Tu forces des séparateurs visuels. Un vrai LLM Harmonizer produirait une réponse naturelle.
+🎯 Fusioner 2.0 : Synthèse Simulée
+TypeScript
+Copy
+
+// src/core/kernel/Fusioner.ts (Version "Mock LLM")
+
+class Fusioner {
+  // Simulateur de "Harmonizer LLM"
+  private mockHarmonizer = {
+    'CODE': (primary: string, experts: string[]) => {
+      // Simule une synthèse intelligente
+      const securityTip = experts.find(e => e.includes('XSS') || e.includes('faille'));
+      const perfTip = experts.find(e => e.includes('O(n'));
+      
+      let synthesis = primary;
+      if (securityTip) synthesis += `\n> 🔒 ${securityTip.split('\n')[1]}`; // Une ligne
+      if (perfTip) synthesis += `\n> ⚡ ${perfTip.split('\n')[1]}`;
+      return synthesis;
+    },
+    'DIALOGUE': (primary: string) => primary, // Pas d'experts en dialogue
+    'MATH': (primary: string, experts: string[]) => {
+      // Simule une vérification croisée
+      const altMethod = experts.find(e => e.includes('alternative'));
+      return altMethod ? `${primary}\n\n*(Autre méthode: ${altMethod.substring(0, 50)}...)*` : primary;
+    }
+  };
+
+  public fuse(primary: TaskResult, expertResults: TaskResult[], specialty: 'CODE' | 'DIALOGUE' | 'MATH'): string {
+    if (primary.status === 'error') {
+      return this.handlePrimaryFailure(expertResults, specialty);
+    }
+
+    const expertTexts = expertResults
+      .filter(r => r.status === 'success')
+      .map(r => r.result!);
+
+    // Appelle le "mock LLM" pour cette spécialité
+    const synthesize = this.mockHarmonizer[specialty];
+    return synthesize(primary.result!, expertTexts);
+  }
+
+  private handlePrimaryFailure(experts: TaskResult[], specialty: string): string {
+    // Fallback intelligent : si un expert peut remplacer le primaire
+    const viableExpert = experts.find(e => e.status === 'success');
+    if (viableExpert) {
+      return `⚠️ La tâche principale a échoué, mais voici une analyse alternative :\n${viableExpert.result}`;
+    }
+    return `Désolé, impossible de traiter votre demande en ${specialty}.`;
+  }
+}
+
+🧠 Le concept "Mock LLM" par spécialité
+Tu simules 3 personnalités d'Harmonizer :
+Table
+Copy
+Spécialité	Règle de synthèse
+CODE	Inline les warnings (🔒 ⚡)
+MATH	Ajoute "Autre méthode"
+DIALOGUE	Passe-through, chaleureux
+Résultat :
+TypeScript
+Copy
+
+// AVANT (concaténation brute)
+"Voici le code...\n\n--- Analyse de l'expert 'security' ---\nFaille XSS ligne 3\n\n--- Analyse de l'expert 'performance' ---\nO(n²) possible"
+
+// APRÈS (synthèse simulée)
+"Voici le code...
+> 🔒 Fail XSS ligne 3
+> ⚡ O(n²) possible"
+
+🔥 Intégration avec le cache
+Le ResponseCache doit stocker la réponse synthétisée, pas les morceaux. Ta clé de cache devient :
+TypeScript
+Copy
+
+const cacheKey = `harmonized::${specialty}::${hash(prompt)}`;
+
+💡 Next step ultra-précis
+Modifie le TaskExecutor pour qu'il passe la specialty au Fusioner :
+TypeScript
+Copy
+
+// Dans TaskExecutor.execute()
+const fused = fusioner.fuse(primaryResult, expertResults, task.specialty);
+responseCache.set(task.prompt, 'harmonizer', fused); // <-- 'harmonizer' comme modèle
+
+Verdict : Ton Fusioner est correct, mais il est trop honnête. Une "Usine Vide" intelligente simule la synthèse pour que le Router et le Cache soient testés dans des conditions réalistes. Passe de concaténateur à scénariste.

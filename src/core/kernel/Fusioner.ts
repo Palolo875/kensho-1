@@ -1,17 +1,45 @@
 /**
- * Fusioner v2.0 - Fusion Intelligente des Résultats Multi-Agents
+ * Fusioner v3.0 - Fusion Intelligente et Unifiée des Résultats Multi-Agents
  *
- * Stratégies de fusion:
- * 1. COMPLEMENTARY: Ajouter les informations manquantes des experts
- * 2. CONFLICT_RESOLUTION: Détecter et résoudre les contradictions
- * 3. QUALITY_SYNTHESIS: Choisir la meilleure réponse selon qualité
- * 4. ENRICHMENT: Améliorer la réponse primaire avec contexte expert
+ * ✨ NOUVELLES FEATURES:
+ * - API unifiée: fuseUnified(results[]) pour N agents égaux
+ * - Stratégies: COMPLEMENTARY, CONFLICT_RESOLUTION, QUALITY_SYNTHESIS, ENRICHMENT, CONSENSUS, PRIORITY
+ * - Mock Harmonizer par spécialité (CODE, DIALOGUE, MATH)
+ * - Détection avancée de contradictions
+ * - Métadonnées enrichies (tokens, timestamp, confidence)
  */
 
 import { TaskResult } from '../router/RouterTypes';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('Fusioner');
+
+/**
+ * Résultat unifié d'un agent (primaire ou expert)
+ */
+export interface UnifiedTaskResult {
+  agentName: string;
+  content: string;
+  status: 'success' | 'error' | 'timeout';
+  confidence?: number;
+  tokens?: number;
+  timestamp?: number;
+  error?: string;
+  specialty?: 'CODE' | 'DIALOGUE' | 'MATH' | 'GENERAL';
+}
+
+/**
+ * Résultat de fusion avec métadonnées complètes
+ */
+export interface FusionOutput {
+  content: string;
+  sources: string[];
+  confidence: number;
+  strategy: string;
+  conflicts: number;
+  tokensUsed: number;
+  timestamp: number;
+}
 
 interface FusionInput {
   primaryResult: TaskResult;
@@ -25,9 +53,119 @@ interface FusionMetadata {
   quality: number;
 }
 
+/**
+ * Mock Harmonizer - Simule la synthèse par spécialité
+ */
+class MockHarmonizer {
+  synthesizeCode(primary: string, expertResults: UnifiedTaskResult[]): string {
+    let result = primary;
+    
+    // Extraction d'insights critiques
+    const securityIssues = expertResults
+      .filter(e => e.content.toLowerCase().includes('security') || e.content.toLowerCase().includes('xss'))
+      .map(e => `🔒 ${e.content.split('\n')[0]}`)
+      .slice(0, 2);
+    
+    const perfTips = expertResults
+      .filter(e => e.content.toLowerCase().includes('performance') || e.content.toLowerCase().includes('o(n'))
+      .map(e => `⚡ ${e.content.split('\n')[0]}`)
+      .slice(0, 2);
+    
+    if (securityIssues.length > 0) {
+      result += `\n\n**Sécurité:**\n${securityIssues.join('\n')}`;
+    }
+    
+    if (perfTips.length > 0) {
+      result += `\n\n**Performance:**\n${perfTips.join('\n')}`;
+    }
+    
+    return result;
+  }
+
+  synthesizeDialogue(primary: string, _expertResults: UnifiedTaskResult[]): string {
+    // Dialogue passe-through, déjà optimisé
+    return primary;
+  }
+
+  synthesizeMath(primary: string, expertResults: UnifiedTaskResult[]): string {
+    let result = primary;
+    
+    const altMethods = expertResults
+      .filter(e => e.content.toLowerCase().includes('method') || e.content.toLowerCase().includes('alternative'))
+      .slice(0, 1);
+    
+    if (altMethods.length > 0) {
+      result += `\n\n**Méthode Alternative:**\n${altMethods[0].content.substring(0, 100)}...`;
+    }
+    
+    return result;
+  }
+}
+
 export class Fusioner {
+  private harmonizer = new MockHarmonizer();
+
   /**
-   * Fusionne intelligemment les résultats
+   * API UNIFIÉE: Fusionne N résultats d'agents (NOUVEAU)
+   * Permet de traiter primaryResult et expertResults de manière homogène
+   */
+  public async fuseUnified(results: UnifiedTaskResult[]): Promise<FusionOutput> {
+    if (results.length === 0) {
+      return {
+        content: 'Aucun résultat disponible.',
+        sources: [],
+        confidence: 0,
+        strategy: 'NONE',
+        conflicts: 0,
+        tokensUsed: 0,
+        timestamp: Date.now()
+      };
+    }
+
+    log.info(`🔀 Fusion Unifiée: ${results.length} agent(s)`);
+
+    // Filtrer les résultats réussis
+    const successful = results.filter(r => r.status === 'success');
+    
+    if (successful.length === 0) {
+      return {
+        content: 'Tous les agents ont échoué. Veuillez réessayer.',
+        sources: results.map(r => r.agentName),
+        confidence: 0,
+        strategy: 'FAILURE',
+        conflicts: 0,
+        tokensUsed: 0,
+        timestamp: Date.now()
+      };
+    }
+
+    // Détecter les contradictions
+    const conflicts = this.detectContradictions(successful);
+    
+    // Déterminer la stratégie optimale
+    const strategy = this.determineUnifiedStrategy(successful, conflicts);
+    
+    // Appliquer la fusion
+    const content = await this.applyUnifiedStrategy(strategy, successful);
+    
+    const tokensUsed = successful.reduce((sum, r) => sum + (r.tokens || 0), 0);
+    const avgConfidence = successful.reduce((sum, r) => sum + (r.confidence || 0.8), 0) / successful.length;
+
+    log.info(`✅ Stratégie appliquée: ${strategy} (${conflicts.count} conflits détectés)`);
+
+    return {
+      content,
+      sources: successful.map(r => r.agentName),
+      confidence: avgConfidence,
+      strategy,
+      conflicts: conflicts.count,
+      tokensUsed,
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Fusionne les résultats de manière intelligente (ANCIEN API - compatibilité)
    */
   public async fuse(input: FusionInput): Promise<string> {
     log.info(`🔀 Fusion: 1 primaire + ${input.expertResults.length} expert(s)`);
@@ -67,7 +205,120 @@ export class Fusioner {
   }
 
   /**
-   * Détermine la meilleure stratégie de fusion
+   * NOUVEAU: Détecte les contradictions de manière avancée
+   */
+  private detectContradictions(results: UnifiedTaskResult[]): {
+    count: number;
+    details: Array<{ agent1: string; agent2: string; similarity: number }>;
+  } {
+    const details: Array<{ agent1: string; agent2: string; similarity: number }> = [];
+    let conflictCount = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      for (let j = i + 1; j < results.length; j++) {
+        const r1 = results[i];
+        const r2 = results[j];
+        
+        const similarity = this.calculateSimilarity(
+          this.tokenize(r1.content),
+          this.tokenize(r2.content)
+        );
+
+        // Si similarité < 0.4, c'est une possible contradiction
+        if (similarity < 0.4) {
+          conflictCount++;
+          details.push({
+            agent1: r1.agentName,
+            agent2: r2.agentName,
+            similarity
+          });
+        }
+      }
+    }
+
+    return { count: conflictCount, details };
+  }
+
+  /**
+   * NOUVEAU: Détermine la stratégie pour API unifiée
+   */
+  private determineUnifiedStrategy(
+    results: UnifiedTaskResult[],
+    conflicts: ReturnType<typeof Fusioner.prototype.detectContradictions>
+  ): string {
+    // Si consensus fort (>80% similarité moyenne)
+    if (conflicts.count === 0) {
+      return 'CONSENSUS';
+    }
+
+    // Si conflits détectés
+    if (conflicts.count > 0) {
+      return 'CONFLICT_RESOLUTION';
+    }
+
+    // Si spécialités diverses
+    const specialties = new Set(results.map(r => r.specialty || 'GENERAL'));
+    if (specialties.size > 1) {
+      return 'ENRICHMENT';
+    }
+
+    // Défaut
+    return 'PRIORITY';
+  }
+
+  /**
+   * NOUVEAU: Applique stratégie pour API unifiée
+   */
+  private async applyUnifiedStrategy(
+    strategy: string,
+    results: UnifiedTaskResult[]
+  ): Promise<string> {
+    switch (strategy) {
+      case 'CONSENSUS':
+        return results[0].content; // Tous d'accord, prendre le premier
+
+      case 'CONFLICT_RESOLUTION':
+        // Ajouter un avertissement + toutes les perspectives
+        return `⚠️ **Perspectives variées:**\n\n${results
+          .map(r => `**${r.agentName}:**\n${r.content}`)
+          .join('\n\n---\n\n')}`;
+
+      case 'PRIORITY':
+        // Synthèse par spécialité
+        const specialty = results[0].specialty || 'GENERAL';
+        return this.synthesizeBySpecialty(specialty, results[0], results.slice(1));
+
+      case 'ENRICHMENT':
+      default:
+        return `${results[0].content}\n\n${results
+          .slice(1)
+          .map(r => `**${r.agentName}:** ${r.content.substring(0, 80)}...`)
+          .join('\n\n')}`;
+    }
+  }
+
+  /**
+   * NOUVEAU: Synthèse par spécialité (Mock Harmonizer)
+   */
+  private synthesizeBySpecialty(
+    specialty: string,
+    primary: UnifiedTaskResult,
+    experts: UnifiedTaskResult[]
+  ): string {
+    switch (specialty) {
+      case 'CODE':
+        return this.harmonizer.synthesizeCode(primary.content, experts);
+      case 'DIALOGUE':
+        return this.harmonizer.synthesizeDialogue(primary.content, experts);
+      case 'MATH':
+        return this.harmonizer.synthesizeMath(primary.content, experts);
+      default:
+        return primary.content;
+    }
+  }
+
+  /**
+   * Détermine la meilleure stratégie de fusion (ANCIEN - compatibilité)
    */
   private determineStrategy(
     primaryResult: TaskResult,
@@ -77,7 +328,7 @@ export class Fusioner {
     experts: TaskResult[];
   } {
     // Detect intent for potential future use in strategy selection
-    const _intentHints = this.detectIntentFromAgents(expertResults);
+    this.detectIntentFromAgents(expertResults);
 
     // FACTCHECK: Utiliser experts comme validators
     if (
@@ -117,7 +368,7 @@ export class Fusioner {
   }
 
   /**
-   * Applique la stratégie de fusion choisie
+   * Applique la stratégie de fusion choisie (ANCIEN - compatibilité)
    */
   private async applyStrategy(
     { strategy, experts }: ReturnType<typeof Fusioner.prototype.determineStrategy>,
@@ -248,7 +499,7 @@ export class Fusioner {
   }
 
   /**
-   * Détecte les conflits entre réponses
+   * Détecte les conflits entre réponses (ANCIEN - compatibilité)
    */
   private detectConflicts(
     primaryContent: string,
@@ -310,7 +561,7 @@ export class Fusioner {
   }
 
   /**
-   * Utilitaires
+   * Utilitaires de tokenization et similarité
    */
   private tokenize(text: string): string[] {
     return text

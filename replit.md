@@ -17,6 +17,14 @@ I prefer detailed explanations and transparency in the AI's operations. I want t
   - **Strict Validation:** Validate cached entries (timestamps, VRAM, priority) before restoration
 - **ModelCatalog Enhanced:** Added `virtual_vram_gb`, `specialty`, `priority`, `pin` fields for each model
 - **DialoguePlugin Updated:** Uses new `suggestModelToUnload()` API for intelligent VRAM recommendations
+- **ResponseCache v2.0 Enhanced:** SHA-256 hashing (Web Crypto API), full `CachedResponse` metadata (modelUsed, timestamp, tokens, promptHash), utility methods (`invalidateModel`, `invalidateOlderThan`, `getEntriesByModel`), advanced stats by model
+- **Fusioner v3.0 Refactored:** 
+  - **Unified API:** `fuseUnified(results[])` for homogeneous multi-agent fusion (no primaire/experts distinction)
+  - **Advanced Contradiction Detection:** Multi-agent conflict scoring with detail tracking
+  - **Enriched Metadata:** `FusionOutput` with sources, confidence, strategy, conflicts count, tokensUsed, timestamp
+  - **Mock Harmonizer by Specialty:** Synthesizes CODE (with 🔒 security + ⚡ perf tips), DIALOGUE (passthrough), MATH (alternative methods)
+  - **Fusion Strategies:** CONSENSUS, CONFLICT_RESOLUTION, PRIORITY, ENRICHMENT, COMPLEMENTARY, QUALITY_SYNTHESIS
+  - **Backward Compatible:** Original `fuse(primaryResult, expertResults)` API still works
 
 ## Recent Changes (Nov 28, 2025)
 - **Sound Wave Visualization ENHANCED:** Completely redesigned WaveformVisualizer with 3-layer animated waveforms, much larger display (200x200px SVG), dynamic frequency response to audio intensity, multiple gradient layers, glow effects, and pulsing intensity meter with radial display
