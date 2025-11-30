@@ -1,0 +1,96 @@
+Objectif : Construire le vrai MemoryManager. Il doit être capable de suivre les modèles (factices) chargés en mémoire, calculer leur "poids" virtuel, et fournir des informations au Router pour qu'il puisse prendre des décisions éclairées.
+Philosophie "Usine Vide" : Le MemoryManager ne déchargera aucun vrai modèle. Il manipulera une liste interne de loadedModels et simulera les calculs de VRAM basés sur un catalogue de mocks.
+Étape 1 : Mise à jour du ModelCatalog avec des poids virtuels
+TypeScript
+
+// src/core/kernel/ModelCatalog.ts (Mise à jour)
+
+export const MOCK_MODEL_CATALOG = {
+  "dialogue-gemma-mock": { specialty: 'DIALOGUE', virtual_vram_gb: 0.5 },
+  "code-qwen-mock": { specialty: 'CODE', virtual_vram_gb: 1.8 },
+  "math-bitnet-mock": { specialty: 'MATH', virtual_vram_gb: 1.2 },
+  // ... etc.
+};
+
+export type MockModelKey = keyof typeof MOCK_MODEL_CATALOG;
+
+Étape 2 : Implémentation du MemoryManager de Production
+TypeScript
+
+// src/core/kernel/MemoryManager.ts (VRAIE Implémentation)
+
+import { MOCK_MODEL_CATALOG, MockModelKey } from './ModelCatalog';
+
+console.log("🧠 MemoryManager (Production) initialisé.");
+
+type LoadedModelInfo = {
+  key: MockModelKey;
+  vram: number;
+  loadedAt: number;
+};
+
+class MemoryManager {
+  private loadedModels: Map<MockModelKey, LoadedModelInfo> = new Map();
+  private readonly TOTAL_VIRTUAL_VRAM_GB = 8; // Simule une machine avec 8GB de VRAM
+
+  /**
+   * Enregistre un modèle comme étant "chargé" en mémoire.
+   */
+  public registerLoaded(modelKey: MockModelKey): void {
+    if (this.loadedModels.has(modelKey)) {
+      console.log(`[MemoryManager] ${modelKey} est déjà chargé.`);
+      return;
+    }
+    const modelInfo = MOCK_MODEL_CATALOG[modelKey];
+    if (!modelInfo) {
+      console.error(`[MemoryManager] Tentative de charger un modèle inconnu: ${modelKey}`);
+      return;
+    }
+    this.loadedModels.set(modelKey, {
+      key: modelKey,
+      vram: modelInfo.virtual_vram_gb,
+      loadedAt: Date.now(),
+    });
+    console.log(`[MemoryManager] ✅ Modèle "${modelKey}" chargé (VRAM virtuelle: ${modelInfo.virtual_vram_gb}GB).`);
+    this.logStats();
+  }
+
+  /**
+   * Enregistre un modèle comme étant "déchargé".
+   */
+  public registerUnloaded(modelKey: MockModelKey): void {
+    if (this.loadedModels.delete(modelKey)) {
+      console.log(`[MemoryManager] ⛔ Modèle "${modelKey}" déchargé.`);
+      this.logStats();
+    }
+  }
+
+  /**
+   * Vérifie s'il y a assez de VRAM virtuelle pour charger un nouveau modèle.
+   */
+  public canLoadModel(modelKey: MockModelKey): boolean {
+    const modelInfo = MOCK_MODEL_CATALOG[modelKey];
+    if (!modelInfo) return false;
+
+    const requiredVRAM = modelInfo.virtual_vram_gb;
+    const usedVRAM = this.getUsedVRAM();
+    const availableVRAM = this.TOTAL_VIRTUAL_VRAM_GB - usedVRAM;
+
+    return requiredVRAM <= availableVRAM;
+  }
+
+  private getUsedVRAM(): number {
+    return Array.from(this.loadedModels.values()).reduce((sum, model) => sum + model.vram, 0);
+  }
+
+  public logStats(): void {
+    const usedVRAM = this.getUsedVRAM();
+    const percentage = ((usedVRAM / this.TOTAL_VIRTUAL_VRAM_GB) * 100).toFixed(1);
+    console.log(`[MemoryManager] Stats: ${this.loadedModels.size} modèles chargés, ${usedVRAM.toFixed(2)}/${this.TOTAL_VIRTUAL_VRAM_GB}GB VRAM utilisée (${percentage}%).`);
+  }
+}
+
+export const memoryManager = new MemoryManager();
+
+Statut : Tâche #5 du Manifeste - TERMINÉE.
+Le MemoryManager est construit. Il est prêt à être utilisé par le Router pour prendre des décisions basées sur une simulation réaliste de la consommation mémoire, et par le TaskExecutor pour enregistrer les modèles qu'il "charge" ou "décharge".

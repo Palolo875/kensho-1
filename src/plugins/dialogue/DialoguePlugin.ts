@@ -41,13 +41,13 @@ export class DialoguePlugin {
       }
 
       try {
-        const canLoad = memoryManager.canLoadModel(modelKey);
+        const canLoad = memoryManager.canLoadModel(modelKey as any);
         if (!canLoad) {
           log.warn(`Mémoire insuffisante pour charger ${modelKey}`);
           
-          const toUnload = memoryManager.getModelsToUnload(0.5);
-          if (toUnload.length > 0) {
-            log.info(`Suggestion: décharger ${toUnload.join(', ')} pour libérer VRAM`);
+          const recommendation = memoryManager.suggestModelToUnload();
+          if (recommendation) {
+            log.info(`Suggestion: décharger ${recommendation.modelKey} pour libérer ${recommendation.reclaimableVRAM.toFixed(2)}GB VRAM (${recommendation.reason})`);
           } else {
             log.warn(`Impossible de libérer assez de VRAM - continuation en mode dégradé`);
           }
