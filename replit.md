@@ -6,6 +6,15 @@ Kensho is an advanced AI debate orchestration system designed for reliable, tran
 ## User Preferences
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
 
+## Recent Changes (Dec 1, 2025)
+- **Model Selector Dialog Removed:** Application now starts directly without model selection popup
+- **SharedWorker Architecture (v1.0):** Complete isolation architecture for UI/Backend communication
+  - **KenshoWorker:** SharedWorker entry point supporting multi-tab connections with connection tracking
+  - **KernelInitializer:** Secure message handling with Zod validation, AbortController for task cancellation, cleanup lifecycle
+  - **UI Bridge:** Promise-based API with automatic timeout, message queue for unready worker, reconnection (3 attempts), helper methods (processPrompt, cancelTask, clearCache, ping)
+  - **Message Types:** Strict TypeScript types with Zod schemas for process-prompt, cancel-task, clear-cache, get-status, ping
+  - **Security:** Message validation at worker entry, exhaustive switch for type safety, error isolation
+
 ## Recent Changes (Nov 30, 2025)
 - **MemoryManager v2.0 Enhanced:** Complete rewrite with advanced VRAM management
   - **Smart Recommendations:** `suggestModelToUnload()` uses LRU + utility scoring (recency, usage, efficiency, priority)
