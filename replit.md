@@ -6,7 +6,30 @@ Kensho is an advanced AI debate orchestration system designed for reliable, tran
 ## User Preferences
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
 
-## Recent Changes (Dec 1, 2025)
+## Recent Changes (Dec 1, 2025 - Afternoon)
+- **Worker Architecture v1.5 "Production-Ready":** Major enhancements for stability and monitoring
+  - **Protocol Versioning (v1.0):** Explicit version in all messages for compatibility tracking
+  - **Heartbeat Mechanism:** 5-second interval broadcasts to detect connection health
+  - **Multi-Tab Broadcast:** `sendToAllPorts()` ensures state consistency across tabs
+  - **OPFS Persistence (OPFSPersistence):** Cross-session metrics tracking:
+    - `historicalStats`: Total requests/tokens/uptime accumulated across sessions
+    - `currentSession`: Per-session tracking to avoid double-counting
+    - `sessionCount`: Total number of sessions launched
+    - Automatic session promotion on worker restart
+  - **Enhanced UI Bridge v2.0:**
+    - State callbacks: `onStateChange(state, details)` for state machine tracking
+    - Automatic reconnection with exponential backoff (5 attempts, max 15s)
+    - Heartbeat timeout detection (15s window)
+    - Promise-based message queue with timeout protection
+    - Connection ID tracking for debugging multi-tab scenarios
+  - **Worker Metrics Tracking:**
+    - Real-time: `activeConnections`, `uptime`, `memoryUsage`, `totalRequests`
+    - Persisted: historical stats via OPFS every 60s
+    - Connection health: heartbeat-based liveness detection
+  - **Error Handling:** Isolated error domains, graceful degradation, no cascading failures
+  - **Message Types Extended:** NEW types: `connected`, `ready`, `heartbeat`, `initializing`
+
+## Recent Changes (Dec 1, 2025 - Morning)
 - **Model Selector Dialog Removed:** Application now starts directly without model selection popup
 - **SharedWorker Architecture (v1.0):** Complete isolation architecture for UI/Backend communication
   - **KenshoWorker:** SharedWorker entry point supporting multi-tab connections with connection tracking
@@ -51,19 +74,21 @@ I prefer detailed explanations and transparency in the AI's operations. I want t
 - **Responsive Utilities:** Consistent use of px-3 sm:px-6 spacing, text-[10px] sm:text-xs for small labels, gap-2 sm:gap-4 for grid spacing
 
 ## System Architecture
-Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) orchestrated in a 4-step flow with graceful degradation and cognitive traceability via a `JournalCognitif` system. The architecture emphasizes memory-aware orchestration, cache-aware execution, and real-time streaming for high performance and transparency.
+Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) orchestrated in a 4-step flow with graceful degradation and cognitive traceability via a `JournalCognitif` system. The architecture emphasizes memory-aware orchestration, cache-aware execution, real-time streaming, and distributed process isolation via SharedWorker.
 
 **Core Architectural Components:**
-*   **Asynchronous Kernel (v2.0):** Manages AI models and system resources.
+*   **SharedWorker + UI Bridge (v2.0):** Isolated backend processing with multi-tab state synchronization, heartbeat monitoring, and OPFS persistence across session boundaries
+*   **Asynchronous Kernel (v2.0):** Manages AI models and system resources with state tracking.
 *   **Intelligent Router (v2.0):** Directs user requests to appropriate AI agents.
 *   **TaskExecutor (v3.1):** Cache-aware orchestration with multi-queue support (SERIAL, PARALLEL_LIMITED, PARALLEL_FULL) and real-time streaming.
 *   **MemoryManager (v2.0):** Advanced VRAM management with smart recommendations (LRU + utility scoring), forced reclaim with iterative re-evaluation, emergency cleanup, state persistence with validation, inference metrics tracking, and model pinning support.
 *   **ModelManager (v3.1):** Memory-aware model switching with transparent status updates via SSEStreamer.
-*   **ResponseCache (v1.0):** LRU cache with TTL and deterministic UUID v5 hashing.
+*   **ResponseCache (v2.0):** LRU cache with TTL, SHA-256 hashing, and deterministic keys.
 *   **SSEStreamer (v1.0):** Central EventEmitter-based real-time event bus for UI updates, delivering tokens, complete messages, errors, and metrics.
 *   **DialoguePlugin (v1.0):** Orchestrates caching, VRAM checks, streaming, and metrics.
+*   **OPFSPersistence (v1.0):** Cross-session metrics storage with session tracking and automatic aggregation.
 *   **Fact-Checking System:** Integrated into the chat interface, providing status (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN), evidence, and confidence scores using semantic search and a knowledge graph.
-*   **Production Hardening:** Includes `Fusioner v2.0`, `ExecutionTraceContext`, type-safe error handling, and retry logic.
+*   **Production Hardening:** Includes `Fusioner v3.0`, `ExecutionTraceContext`, type-safe error handling, and retry logic.
 *   **Structured Logging (v1.0):** Isomorphic logger with context tracking and log levels.
 *   **Utilities Library (v1.0):** Modularized utilities (classnames, formatters, JSON, timing).
 
@@ -74,6 +99,7 @@ Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) 
 *   **Real-Time Streaming:** Provides immediate feedback and transparency for system operations.
 *   **Responsive Design:** Optimized for mobile and desktop.
 *   **Natural Color Palette:** Organic, calming colors (linen, old paper, rice) in light mode; "noir doux" soft black theme in dark mode with warm accents. Theme toggle available in Settings.
+*   **Connection State Feedback:** UI reflects worker connection state (connecting → initializing → ready → error → disconnected).
 
 ## External Dependencies
 *   **LLM Providers:** Abstracted models for agent reasoning and verification.
@@ -82,4 +108,5 @@ Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) 
 *   **`lru-cache` (11.2.2):** For `ResponseCache`.
 *   **`uuid` (13.0.0):** For deterministic UUID v5 cache key generation.
 *   **`events` (3.3.0):** EventEmitter for `SSEStreamer`.
+*   **`zod` (3.23.8):** Message validation in worker protocol.
 *   **External Knowledge Graph/Database:** Implied for semantic search and evidence retrieval.
