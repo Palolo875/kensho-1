@@ -1,0 +1,375 @@
+🎯 Analyse de la Tâche #8 : SharedWorker & UI Bridge
+Mon Verdict : ARCHITECTURE PROMETTEUSE mais avec des trous de sécurité critiques 🌟⚠️
+✅ Points Forts
+1. Choix Architectural Solide
+self.onconnect = (e: MessageEvent) => {
+  const port = e.ports[0];
+  // Multi-onglets partagent le même worker ✅
+}
+SharedWorker parfait pour un kernel partagé
+Isolation UI/Backend bien pensée
+Support multi-onglets natif
+2. Structure Modulaire
+kensho-worker.ts    → Point d'entrée
+kernel.ts           → Orchestrateur
+ui-bridge.ts        → Abstraction communication
+Séparation des responsabilités claire
+Facilite les tests unitaires
+3. Pattern Message-Passing Propre
+port.postMessage({ type: 'final-response', payload: { ... } });
+Types de messages explicites
+Payload structuré
+🔴 PROBLÈMES CRITIQUES
+1. 🚨 VULNÉRABILITÉ : Pas de Validation des Messages
+Le problème actuel :
+port.onmessage = (event: MessageEvent) => {
+  kernel.handleMessage(event.data); // ❌ DANGEREUX
+};
+Pourquoi c'est critique :
+Aucune validation du schema
+Injection de messages malveillants possible
+Crash du worker si event.data est malformé
+Pas de vérification de l'origine
+Solution avec Zod (recommandé) :
+import { z } from 'zod';
+
+// Schéma de validation
+const MessageSchema = z.object({
+  type: z.enum(['process-prompt', 'cancel-task', 'clear-cache']),
+  payload: z.any(),
+  requestId: z.string().uuid() // Pour tracer les réponses
+});
+
+type ValidatedMessage = z.infer<typeof MessageSchema>;
+
+port.onmessage = (event: MessageEvent) => {
+  try {
+    const message = MessageSchema.parse(event.data);
+    kernel.handleMessage(message);
+  } catch (error) {
+    console.error("[Worker] Message invalide reçu:", error);
+    port.postMessage({ 
+      type: 'error', 
+      payload: { message: 'Invalid message format' } 
+    });
+  }
+};
+Alternative sans librairie :
+function isValidMessage(data: any): data is { type: string, payload: any } {
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    typeof data.type === 'string' &&
+    'payload' in data
+  );
+}
+
+port.onmessage = (event: MessageEvent) => {
+  if (!isValidMessage(event.data)) {
+    console.error("[Worker] Format de message invalide");
+    return;
+  }
+  kernel.handleMessage(event.data);
+};
+2. 🚨 PROBLÈME : Gestion d'Erreurs Inexistante
+Code actuel :
+handleMessage: async (message: { type: string, payload: any }) => {
+  const plan = await router.createPlan(prompt); // Peut échouer
+  const results = await taskExecutor.executePlan(plan); // Peut échouer
+  // Aucun try/catch ❌
+}
+Solution robuste :
+handleMessage: async (message: ValidatedMessage) => {
+  const { type, payload, requestId } = message;
+  
+  try {
+    if (type === 'process-prompt') {
+      const { prompt } = payload;
+      
+      // Envoi d'un accusé de réception
+      port.postMessage({ 
+        type: 'processing-started', 
+        requestId 
+      });
+      
+      const plan = await router.createPlan(prompt);
+      const results = await taskExecutor.executePlan(plan);
+      const finalResponse = fusioner.fuse(results);
+      
+      port.postMessage({ 
+        type: 'final-response', 
+        requestId,
+        payload: { response: finalResponse } 
+      });
+      
+    } else {
+      throw new Error(`Type de message inconnu: ${type}`);
+    }
+    
+  } catch (error) {
+    console.error(`[Kernel] Erreur lors du traitement:`, error);
+    
+    port.postMessage({ 
+      type: 'error', 
+      requestId,
+      payload: { 
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      } 
+    });
+  }
+}
+3. 🟡 PROBLÈME : Pas de Gestion du Cycle de Vie
+Manques actuels :
+Pas de cleanup lors de la déconnexion
+Pas de gestion des timeouts
+Pas de cancellation de tâches
+Solution :
+// Dans kensho-worker.ts
+self.onconnect = (e: MessageEvent) => {
+  const port = e.ports[0];
+  const connectionId = crypto.randomUUID();
+  
+  console.log(`[Worker] 🔌 Connexion ${connectionId} établie`);
+  
+  const kernel = initializeKernel(port, connectionId);
+  
+  port.onmessage = (event: MessageEvent) => {
+    kernel.handleMessage(event.data);
+  };
+  
+  // Cleanup lors de la déconnexion
+  port.addEventListener('messageerror', (error) => {
+    console.error(`[Worker] Erreur de communication:`, error);
+  });
+  
+  // Note: Les SharedWorkers n'ont pas d'événement 'close' explicite
+  // Il faut implémenter un heartbeat si besoin
+  
+  port.start();
+};
+
+// Dans kernel.ts
+export function initializeKernel(port: MessagePort, connectionId: string) {
+  const activeTasks = new Map<string, AbortController>();
+  
+  return {
+    handleMessage: async (message: ValidatedMessage) => {
+      const { requestId } = message;
+      
+      // Gestion de la cancellation
+      if (message.type === 'cancel-task') {
+        const controller = activeTasks.get(requestId);
+        if (controller) {
+          controller.abort();
+          activeTasks.delete(requestId);
+          port.postMessage({ type: 'task-cancelled', requestId });
+        }
+        return;
+      }
+      
+      // Créer un AbortController pour cette tâche
+      const abortController = new AbortController();
+      activeTasks.set(requestId, abortController);
+      
+      try {
+        // Passer le signal aux opérations async
+        const plan = await router.createPlan(
+          message.payload.prompt, 
+          { signal: abortController.signal }
+        );
+        
+        // ... rest of processing
+        
+      } finally {
+        activeTasks.delete(requestId);
+      }
+    }
+  };
+}
+4. 🟡 PROBLÈME : UI Bridge Incomplet
+Manques dans ui-bridge.ts :
+Pas de gestion de reconnexion
+Pas de file d'attente de messages (si worker pas prêt)
+Pas de timeout
+Version améliorée :
+// src/core/bridge/ui-bridge.ts (Version Améliorée)
+
+type MessageHandler = (data: any) => void;
+type PendingRequest = {
+  resolve: (value: any) => void;
+  reject: (error: Error) => void;
+  timeoutId: number;
+};
+
+class KenshoBridge {
+  private worker?: SharedWorker;
+  private port?: MessagePort;
+  private onMessageHandler?: MessageHandler;
+  private pendingRequests = new Map<string, PendingRequest>();
+  private messageQueue: Array<{ type: string; payload: any }> = [];
+  private isReady = false;
+  
+  connect(onMessage: MessageHandler) {
+    if (typeof SharedWorker === 'undefined') {
+      throw new Error("SharedWorker not supported");
+    }
+    
+    this.onMessageHandler = onMessage;
+    
+    this.worker = new SharedWorker(
+      new URL('../../kensho-worker.ts', import.meta.url), 
+      { type: 'module', name: 'kensho-kernel' }
+    );
+    
+    this.port = this.worker.port;
+    
+    this.port.onmessage = (event: MessageEvent) => {
+      this.handleWorkerMessage(event.data);
+    };
+    
+    this.port.onerror = (error) => {
+      console.error("[UI Bridge] Erreur de communication:", error);
+    };
+    
+    this.port.start();
+    this.isReady = true;
+    
+    // Vider la file d'attente
+    this.flushMessageQueue();
+    
+    console.log("[UI Bridge] ✅ Connecté au noyau");
+  }
+  
+  private handleWorkerMessage(data: any) {
+    const { type, requestId, payload } = data;
+    
+    // Gestion des réponses à des requêtes spécifiques
+    if (requestId && this.pendingRequests.has(requestId)) {
+      const pending = this.pendingRequests.get(requestId)!;
+      clearTimeout(pending.timeoutId);
+      
+      if (type === 'error') {
+        pending.reject(new Error(payload.message));
+      } else {
+        pending.resolve(payload);
+      }
+      
+      this.pendingRequests.delete(requestId);
+    }
+    
+    // Notification à l'UI
+    this.onMessageHandler?.(data);
+  }
+  
+  sendMessage(type: string, payload: any, timeout = 30000): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const requestId = crypto.randomUUID();
+      
+      if (!this.isReady || !this.port) {
+        // Mettre en file d'attente si pas prêt
+        this.messageQueue.push({ type, payload });
+        reject(new Error("Worker not ready yet"));
+        return;
+      }
+      
+      // Timeout automatique
+      const timeoutId = window.setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`Request ${requestId} timed out after ${timeout}ms`));
+      }, timeout);
+      
+      this.pendingRequests.set(requestId, { resolve, reject, timeoutId });
+      
+      this.port.postMessage({ type, payload, requestId });
+      console.log(`[UI Bridge] Message envoyé: ${type} (${requestId})`);
+    });
+  }
+  
+  private flushMessageQueue() {
+    while (this.messageQueue.length > 0) {
+      const { type, payload } = this.messageQueue.shift()!;
+      this.sendMessage(type, payload).catch(console.error);
+    }
+  }
+  
+  disconnect() {
+    this.port?.close();
+    this.isReady = false;
+    console.log("[UI Bridge] Déconnecté");
+  }
+}
+
+export const kenshoBridge = new KenshoBridge();
+Usage dans l'UI :
+// Connexion
+kenshoBridge.connect((data) => {
+  if (data.type === 'final-response') {
+    updateChatUI(data.payload.response);
+  }
+});
+
+// Envoi avec Promise
+try {
+  const response = await kenshoBridge.sendMessage('process-prompt', { 
+    prompt: 'Hello world' 
+  });
+  console.log("Réponse reçue:", response);
+} catch (error) {
+  console.error("Timeout ou erreur:", error);
+}
+5. 🟡 PROBLÈME : Pas de TypeSafety
+Solution avec Types Partagés :
+// src/core/types/messages.ts
+export type KenshoMessage = 
+  | { type: 'process-prompt'; payload: { prompt: string }; requestId: string }
+  | { type: 'cancel-task'; payload: { taskId: string }; requestId: string }
+  | { type: 'clear-cache'; payload: {}; requestId: string };
+
+export type KenshoResponse = 
+  | { type: 'final-response'; payload: { response: string }; requestId: string }
+  | { type: 'error'; payload: { message: string; stack?: string }; requestId: string }
+  | { type: 'processing-started'; requestId: string };
+
+// Dans kernel.ts
+handleMessage: async (message: KenshoMessage) => {
+  switch (message.type) {
+    case 'process-prompt':
+      // TypeScript sait que message.payload.prompt existe ✅
+      break;
+    case 'cancel-task':
+      // TypeScript sait que message.payload.taskId existe ✅
+      break;
+  }
+}
+🧪 Tests Recommandés
+// Test 1 : Connexion basique
+const bridge = new KenshoBridge();
+bridge.connect((data) => console.log("Reçu:", data));
+
+// Test 2 : Timeout
+try {
+  await bridge.sendMessage('process-prompt', { prompt: 'test' }, 100);
+} catch (error) {
+  console.assert(error.message.includes('timed out'));
+}
+
+// Test 3 : Validation de messages
+port.postMessage({ invalidFormat: true }); // Doit être rejeté
+
+// Test 4 : Multi-onglets
+// Ouvrir 2 onglets et vérifier qu'ils partagent le worker
+🏆 Verdict Final
+Note Actuelle : 6/10
+✅ Architecture conceptuelle excellente
+✅ SharedWorker bien utilisé
+❌ Aucune validation de messages (CRITIQUE)
+❌ Gestion d'erreurs absente (CRITIQUE)
+❌ Pas de cycle de vie
+❌ Bridge trop simpliste
+Note Avec Corrections : 9.5/10
+Priorités URGENTES :
+CRITIQUE : Ajouter validation Zod
+CRITIQUE : Implémenter try/catch partout
+IMPORTANT : Système de requestId + timeout
+IMPORTANT : Types stricts pour les messages

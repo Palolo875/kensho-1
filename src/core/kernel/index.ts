@@ -7,7 +7,9 @@ export { taskExecutor, TaskExecutor } from './TaskExecutor';
 export { fusioner } from './Fusioner';
 export { ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
+export { initializeKernel } from './KernelInitializer';
 export type { ModelMeta } from './ModelCatalog';
+export type { KernelInstance, KernelStatus } from './KernelInitializer';
 export type {
   StorageQuota,
   FileMetadata,
