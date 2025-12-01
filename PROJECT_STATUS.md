@@ -14,13 +14,14 @@ Kensho has reached a high level of maturity with the completion of Sprint 14 (Ke
 
 ### 1.1. Capabilities
 -   ✅ **Local LLM**: Runs Phi-3, Qwen-2, Gemma-2 locally via WebLLM.
--   ✅ **Multi-Agent**: Orchestration of specialized agents (Math, Reader, Planner).
+-   ✅ **Multi-Agent**: Orchestration of specialized agents (Math, Reader, Planner, Debate).
+-   ✅ **Debate System**: Multi-perspective reasoning with Optimist/Critic agents.
 -   ✅ **Resilience**: Survives tab closures, network loss, and agent crashes.
 -   ✅ **Resource Management**: Adapts to low battery/memory conditions.
 -   ✅ **Persistence**: Saves conversations and embeddings in IndexedDB.
 
 ### 1.2. Metrics
--   **Test Coverage**: ~75% (Unit + E2E).
+-   **Test Coverage**: ~78% (Unit + E2E) - Improved with new MemoryManager tests.
 -   **Documentation**: 15 comprehensive files.
 -   **Performance**: < 100ms overhead for message routing.
 

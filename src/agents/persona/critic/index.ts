@@ -18,7 +18,7 @@ runAgent({
         runtime.registerMethod(
             'critique',
             async (payload: { text: string }): Promise<Critique> => {
-                runtime.log('info', `[CriticAgent] Analyse critique du texte: "${payload.text.substring(0, 50)}..."`);
+                runtime.log('info', `[CriticAgent] Analyse critique du texte: "${payload.text?.substring(0, 50) || 'vide'}..."`);
                 
                 const prompt = CRITIC_SYSTEM_PROMPT.replace('{{text_to_critique}}', payload.text);
                 
@@ -28,7 +28,7 @@ runAgent({
                         'generateSingleResponse', 
                         [prompt],
                         30000 // Timeout de 30s
-                    );
+                    ) as Promise<string>;
 
                     runtime.log('info', `[CriticAgent] Réponse brute reçue: ${rawResponse.substring(0, 100)}...`);
 

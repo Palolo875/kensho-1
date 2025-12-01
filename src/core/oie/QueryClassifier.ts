@@ -1,4 +1,7 @@
 // src/core/oie/QueryClassifier.ts
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('QueryClassifier');
 
 /**
  * QueryClassifier : Le "trieur" à l'entrée du cerveau
@@ -61,7 +64,7 @@ export class QueryClassifier {
             score += 0.2;
         }
 
-        console.log(`[QueryClassifier] Score de complexité pour la requête: ${score.toFixed(2)} (seuil: ${COMPLEXITY_THRESHOLD})`);
+        log.debug(`Score de complexité pour la requête: ${score.toFixed(2)} (seuil: ${COMPLEXITY_THRESHOLD})`);
 
         return score >= COMPLEXITY_THRESHOLD ? 'complex' : 'simple';
     }

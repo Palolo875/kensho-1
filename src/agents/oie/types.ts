@@ -1,81 +1,45 @@
-/**
- * Types pour le système de planification et d'exécution de l'OIE
- */
+// src/agents/oie/types.ts
+// Types partagés pour le système OIE
 
-/**
- * Une étape individuelle dans un plan d'action
- */
 export interface PlanStep {
-    /**
-     * Identifiant unique de l'étape (ex: "step1", "step2")
-     */
-    id?: string;
-    
-    /**
-     * Le nom de l'agent à appeler (ex: "CalculatorAgent", "MainLLMAgent")
-     */
-    agent: string;
-    
-    /**
-     * La méthode ou action à exécuter sur l'agent
-     */
-    action: string;
-    
-    /**
-     * Arguments à passer à la méthode
-     * Peut contenir des placeholders comme {{step1_result}} pour l'interpolation
-     */
-    args: Record<string, unknown>;
-    
-    /**
-     * Prompt spécifique pour les agents LLM (optionnel)
-     */
-    prompt?: string;
-    
-    /**
-     * Label lisible pour l'UI (optionnel)
-     */
-    label?: string;
+  id?: string;
+  agent: string;
+  action: string;
+  args?: Record<string, any>;
+  prompt?: string;
+  label?: string;
 }
 
-/**
- * Types de plans supportés
- */
-export type PlanType = 'SimplePlan' | 'DebatePlan';
-
-/**
- * Un plan d'action complet généré par le LLMPlanner
- */
-export interface Plan {
-    /**
-     * Le type de plan (SimplePlan ou DebatePlan)
-     */
-    type?: PlanType;
-    
-    /**
-     * La "pensée" ou raisonnement du planificateur
-     * Ce champ explique pourquoi ce plan a été choisi
-     */
-    thought: string;
-    
-    /**
-     * La séquence d'étapes à exécuter
-     */
-    steps: PlanStep[];
+export interface BasePlan {
+  type: string;
+  thought: string;
+  steps: PlanStep[];
 }
 
-/**
- * Statut d'une étape de pensée pour l'UI
- */
-export type ThoughtStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+export interface SimplePlan extends BasePlan {
+  type: 'SimplePlan';
+}
 
-/**
- * Une étape de pensée pour l'affichage dans l'UI
- */
-export interface ThoughtStep {
-    id: string;
-    label: string;
-    status: ThoughtStepStatus;
-    result?: unknown;
-    error?: string;
+export interface DebatePlan extends BasePlan {
+  type: 'DebatePlan';
+  steps: [
+    { id: 'step1'; agent: 'OptimistAgent'; action: 'generateInitialResponse' },
+    { id: 'step2'; agent: 'CriticAgent'; action: 'critique' },
+    { id: 'step3'; agent: 'MetaCriticAgent'; action: 'validate' },
+    { id: 'step4'; agent: 'SynthesizerAgent'; action: 'synthesizeDebate' }
+  ];
+}
+
+export type Plan = SimplePlan | DebatePlan;
+
+export interface MetaCriticValidation {
+  overall_relevance_score: number;
+  is_forced: boolean;
+  feedback?: string;
+}
+
+export interface SynthesizedResponse {
+  text: string;
+  confidence: number;
+  sources: string[];
 }

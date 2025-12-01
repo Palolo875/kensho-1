@@ -117,43 +117,47 @@ User Query + Optional File
          ↓
     [OIE Agent]
          ↓
-   [LLMPlanner] ← Uses GPT/LLM to analyze query
+   [QueryClassifier] ← Determines if simple or complex query
+         ↓
+   [LLMPlanner] ← Uses GPT/LLM to analyze query (for complex)
          ↓
     JSON Plan (steps with agent assignments)
          ↓
   [TaskExecutor] ← Executes plan step-by-step
          ↓
-  [┌───────────────┐]
-  [│ Step 1: Reader │] → Extract text from PDF
-  [└───────────────┘]
+  [┌──────────────────┐]
+  [│ Step 1: Optimist │] → Generate optimistic response (for complex)
+  [└──────────────────┘]
          ↓ (result interpolated)
-  [┌───────────────┐]
-  [│ Step 2: LLM    │] → Extract numbers: {{step1_result.fullText}}
-  [└───────────────┘]
+  [┌─────────────────┐]
+  [│ Step 2: Critic  │] → Provide critical analysis (for complex)
+  [└─────────────────┘]
          ↓ (result interpolated)
-  [┌───────────────┐]
-  [│Step 3: Calculator│] → Calculate: {{step2_result}}
-  [└───────────────┘]
+  [┌─────────────────────┐]
+  [│ Step 3: MetaCritic  │] → Validate relevance (for complex)
+  [└─────────────────────┘]
          ↓ (result interpolated)
-  [┌───────────────┐]
-  [│ Step 4: LLM    │] → Format answer: {{step3_result.result}}
-  [└───────────────┘]
+  [┌─────────────────────┐]
+  [│ Step 4: Synthesizer │] → Combine perspectives (for complex)
+  [└─────────────────────┘]
          ↓
   Final Answer to User
 ```
 
 **Key Features**:
--   **Input**: A complex user query (e.g., "Read this PDF and calculate the total cost").
+-   **Input**: A user query (simple or complex).
 -   **Process**:
-    1.  **Planning**: Uses an LLM (GPT/Qwen) to break the task into steps.
-    2.  **Delegation**: Assigns steps to specialized agents (Reader, Calculator, LLM).
-    3.  **Interpolation**: Passes results between steps using `{{stepN_result.property}}` syntax.
-    4.  **Synthesis**: Combines results into a final answer.
+    1.  **Classification**: Uses QueryClassifier to determine query complexity.
+    2.  **Planning**: Uses an LLM (GPT/Qwen) to break complex tasks into steps.
+    3.  **Delegation**: Assigns steps to specialized agents (Reader, Calculator, LLM, Optimist, Critic).
+    4.  **Interpolation**: Passes results between steps using `{{stepN_result.property}}` syntax.
+    5.  **Synthesis**: Combines results into a final answer.
 
 **Intelligent Optimization**:
 - The LLMPlanner understands when to use document summaries vs full text
 - Token optimization: `{{step1_result.summary ?? step1_result.fullText}}`
-- Automatically chooses most efficient data flow
+- Graceful degradation: Falls back to simple response when debate is not relevant
+- Real-time thought visualization: Transparent cognitive process tracking
 
 **Use Cases**:
 ```typescript

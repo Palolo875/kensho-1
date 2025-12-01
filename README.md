@@ -59,9 +59,11 @@ Open [http://localhost:8080](http://localhost:8080) to start chatting with your 
 ## 🌟 Key Features
 
 -   **Local-First**: Runs 100% on your device. No data leaves your browser.
--   **Multi-Agent**: Orchestrates specialized agents (Math, Reading, Planning).
+-   **Multi-Agent**: Orchestrates specialized agents (Math, Reading, Planning, Debate).
+-   **Debate System**: Multi-perspective reasoning with Optimist and Critic agents.
 -   **Resilient**: Works offline and handles resource constraints gracefully.
--   **Kernel v2.0**: Advanced memory management using WebGPU.
+-   **Kernel v2.0**: Advanced memory management with intelligent model loading.
+-   **Transparent Thinking**: Real-time visualization of AI thought processes.
 
 ---
 
