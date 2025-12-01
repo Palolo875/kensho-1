@@ -1,6 +1,7 @@
-import type { KenshoResponse } from '../types/messages';
+import type { KenshoResponse, WorkerState } from '../types/messages';
 
 type MessageHandler = (data: KenshoResponse) => void;
+type StateChangeHandler = (state: WorkerState, details?: { version?: string; uptime?: number }) => void;
 
 interface PendingRequest {
   resolve: (value: KenshoResponse['payload']) => void;
@@ -13,41 +14,64 @@ export interface BridgeConfig {
   defaultTimeout: number;
   reconnectAttempts: number;
   reconnectDelay: number;
+  heartbeatTimeout: number;
 }
 
 const DEFAULT_CONFIG: BridgeConfig = {
   defaultTimeout: 60000,
-  reconnectAttempts: 3,
+  reconnectAttempts: 5,
   reconnectDelay: 1000,
+  heartbeatTimeout: 15000,
 };
 
 export class KenshoBridge {
   private worker?: SharedWorker;
   private port?: MessagePort;
   private onMessageHandler?: MessageHandler;
+  private onStateChangeHandler?: StateChangeHandler;
   private pendingRequests = new Map<string, PendingRequest>();
   private messageQueue: Array<{ type: string; payload: unknown; requestId: string }> = [];
   private isReady = false;
   private connectionId?: string;
   private config: BridgeConfig;
   private reconnectAttempts = 0;
+  private currentState: WorkerState = 'disconnected';
+  private lastHeartbeat = 0;
+  private heartbeatCheckInterval?: number;
+  private workerVersion?: string;
+  private workerUptime = 0;
 
   constructor(config: Partial<BridgeConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  connect(onMessage?: MessageHandler): Promise<void> {
+  private setState(state: WorkerState, details?: { version?: string; uptime?: number }): void {
+    if (this.currentState !== state) {
+      this.currentState = state;
+      console.log(`[UI Bridge] État: ${state}`);
+      this.onStateChangeHandler?.(state, details);
+    }
+  }
+
+  connect(options: {
+    onMessage?: MessageHandler;
+    onStateChange?: StateChangeHandler;
+  } = {}): Promise<void> {
     return new Promise((resolve, reject) => {
+      this.onMessageHandler = options.onMessage;
+      this.onStateChangeHandler = options.onStateChange;
+      
       if (typeof SharedWorker === 'undefined') {
         const error = new Error("Les SharedWorkers ne sont pas supportés par ce navigateur.");
         console.error("[UI Bridge]", error.message);
+        this.setState('error');
         reject(error);
         return;
       }
 
-      try {
-        this.onMessageHandler = onMessage;
+      this.setState('connecting');
 
+      try {
         this.worker = new SharedWorker(
           new URL('../../kensho-worker.ts', import.meta.url),
           { type: 'module', name: 'kensho-kernel' }
@@ -58,13 +82,26 @@ export class KenshoBridge {
         this.port.onmessage = (event: MessageEvent) => {
           this.handleWorkerMessage(event.data);
           
-          if (event.data?.type === 'connected') {
+          if (event.data?.type === 'ready') {
             this.connectionId = event.data.payload?.connectionId;
+            this.workerVersion = event.data.payload?.version;
             this.isReady = true;
             this.reconnectAttempts = 0;
+            this.lastHeartbeat = Date.now();
+            this.startHeartbeatCheck();
             this.flushMessageQueue();
-            console.log(`[UI Bridge] ✅ Connecté au noyau Kensho (${this.connectionId})`);
+            this.setState('ready', { 
+              version: this.workerVersion, 
+              uptime: event.data.payload?.uptime 
+            });
+            console.log(`[UI Bridge] ✅ Connecté v${this.workerVersion} (${this.connectionId})`);
             resolve();
+          } else if (event.data?.type === 'connected') {
+            this.connectionId = event.data.payload?.connectionId;
+            this.workerVersion = event.data.payload?.version;
+            this.setState('initializing', { version: this.workerVersion });
+          } else if (event.data?.type === 'initializing') {
+            this.setState('initializing');
           }
         };
 
@@ -75,13 +112,21 @@ export class KenshoBridge {
 
         this.worker.onerror = (error) => {
           console.error("[UI Bridge] Erreur du worker:", error);
+          this.setState('error');
           reject(new Error("Échec du démarrage du worker"));
         };
 
         this.port.start();
 
+        setTimeout(() => {
+          if (!this.isReady && this.currentState === 'connecting') {
+            this.setState('initializing');
+          }
+        }, 2000);
+
       } catch (error) {
         console.error("[UI Bridge] Erreur lors de la connexion:", error);
+        this.setState('error');
         reject(error);
       }
     });
@@ -90,7 +135,13 @@ export class KenshoBridge {
   private handleWorkerMessage(data: KenshoResponse): void {
     const { type, requestId, payload } = data;
 
-    if (requestId && this.pendingRequests.has(requestId)) {
+    if (type === 'heartbeat') {
+      this.lastHeartbeat = Date.now();
+      this.workerUptime = payload?.uptime || 0;
+      return;
+    }
+
+    if (requestId && requestId !== 'system' && this.pendingRequests.has(requestId)) {
       const pending = this.pendingRequests.get(requestId)!;
 
       if (type === 'stream-chunk' && payload?.chunk && pending.onChunk) {
@@ -116,23 +167,51 @@ export class KenshoBridge {
     this.onMessageHandler?.(data);
   }
 
+  private startHeartbeatCheck(): void {
+    this.stopHeartbeatCheck();
+    
+    this.heartbeatCheckInterval = window.setInterval(() => {
+      const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat;
+      
+      if (timeSinceLastHeartbeat > this.config.heartbeatTimeout) {
+        console.warn('[UI Bridge] Heartbeat timeout - worker potentiellement mort');
+        this.handleConnectionError();
+      }
+    }, this.config.heartbeatTimeout / 2);
+  }
+
+  private stopHeartbeatCheck(): void {
+    if (this.heartbeatCheckInterval) {
+      clearInterval(this.heartbeatCheckInterval);
+      this.heartbeatCheckInterval = undefined;
+    }
+  }
+
   private handleConnectionError(): void {
     this.isReady = false;
+    this.stopHeartbeatCheck();
     
     if (this.reconnectAttempts < this.config.reconnectAttempts) {
       this.reconnectAttempts++;
-      console.log(`[UI Bridge] Tentative de reconnexion ${this.reconnectAttempts}/${this.config.reconnectAttempts}...`);
+      const delay = this.config.reconnectDelay * this.reconnectAttempts;
+      
+      console.log(`[UI Bridge] Tentative de reconnexion ${this.reconnectAttempts}/${this.config.reconnectAttempts} dans ${delay}ms...`);
+      this.setState('connecting');
       
       setTimeout(() => {
-        this.connect(this.onMessageHandler).catch(console.error);
-      }, this.config.reconnectDelay * this.reconnectAttempts);
+        this.connect({
+          onMessage: this.onMessageHandler,
+          onStateChange: this.onStateChangeHandler,
+        }).catch(console.error);
+      }, delay);
     } else {
       console.error("[UI Bridge] Échec de la reconnexion après plusieurs tentatives");
+      this.setState('error');
       
-      for (const [requestId, pending] of this.pendingRequests) {
+      for (const [, pending] of this.pendingRequests) {
         pending.reject(new Error("Connexion perdue avec le worker"));
-        this.pendingRequests.delete(requestId);
       }
+      this.pendingRequests.clear();
     }
   }
 
@@ -163,6 +242,7 @@ export class KenshoBridge {
           if (index >= 0) {
             this.messageQueue.splice(index, 1);
           }
+          this.pendingRequests.delete(requestId);
           reject(new Error(`Timeout: le worker n'est pas prêt après ${timeout}ms`));
         }, timeout);
 
@@ -261,6 +341,8 @@ export class KenshoBridge {
   }
 
   disconnect(): void {
+    this.stopHeartbeatCheck();
+    
     for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timeoutId);
       pending.reject(new Error("Bridge déconnecté"));
@@ -274,6 +356,7 @@ export class KenshoBridge {
     this.isReady = false;
     this.connectionId = undefined;
     
+    this.setState('disconnected');
     console.log("[UI Bridge] Déconnecté du noyau Kensho");
   }
 
@@ -284,20 +367,35 @@ export class KenshoBridge {
   getConnectionId(): string | undefined {
     return this.connectionId;
   }
+
+  getState(): WorkerState {
+    return this.currentState;
+  }
+
+  getWorkerVersion(): string | undefined {
+    return this.workerVersion;
+  }
+
+  getWorkerUptime(): number {
+    return this.workerUptime;
+  }
 }
 
 export const kenshoBridge = new KenshoBridge();
 
-export function connectToKernel(
-  onMessage: MessageHandler
-): Promise<{ 
+export function connectToKernel(options: {
+  onMessage?: MessageHandler;
+  onStateChange?: StateChangeHandler;
+} = {}): Promise<{ 
   sendMessage: typeof kenshoBridge.sendMessage;
   processPrompt: typeof kenshoBridge.processPrompt;
   disconnect: typeof kenshoBridge.disconnect;
+  getState: typeof kenshoBridge.getState;
 }> {
-  return kenshoBridge.connect(onMessage).then(() => ({
+  return kenshoBridge.connect(options).then(() => ({
     sendMessage: kenshoBridge.sendMessage.bind(kenshoBridge),
     processPrompt: kenshoBridge.processPrompt.bind(kenshoBridge),
     disconnect: kenshoBridge.disconnect.bind(kenshoBridge),
+    getState: kenshoBridge.getState.bind(kenshoBridge),
   }));
 }

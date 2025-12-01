@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const PROTOCOL_VERSION = '1.0';
+
 export const KenshoMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('process-prompt'),
@@ -47,7 +49,13 @@ export type KenshoResponseType =
   | 'task-cancelled'
   | 'cache-cleared'
   | 'status'
-  | 'pong';
+  | 'pong'
+  | 'connected'
+  | 'ready'
+  | 'heartbeat'
+  | 'initializing';
+
+export type WorkerState = 'connecting' | 'initializing' | 'ready' | 'error' | 'disconnected';
 
 export interface KenshoResponse {
   type: KenshoResponseType;
@@ -57,6 +65,9 @@ export interface KenshoResponse {
     chunk?: string;
     message?: string;
     stack?: string;
+    code?: string;
+    version?: string;
+    connectionId?: string;
     status?: {
       activeConnections: number;
       activeTasks: number;
@@ -65,6 +76,8 @@ export interface KenshoResponse {
     };
     progress?: number;
     tokensGenerated?: number;
+    uptime?: number;
+    memoryUsage?: number;
   };
   timestamp: number;
 }

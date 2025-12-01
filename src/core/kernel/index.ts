@@ -8,6 +8,7 @@ export { fusioner } from './Fusioner';
 export { ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
 export { initializeKernel } from './KernelInitializer';
+export { opfsPersistence, OPFSPersistence } from './OPFSPersistence';
 export type { ModelMeta } from './ModelCatalog';
 export type { KernelInstance, KernelInstanceStatus } from './KernelInitializer';
 export type {
