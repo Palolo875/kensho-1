@@ -185,6 +185,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
         <div className="flex flex-col gap-2 px-2">
           <Button
             variant="ghost"
+            onClick={() => navigate('/dashboard')}
+            className={cn(
+              "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
+              isCollapsed ? "w-11 px-0" : "w-full justify-start"
+            )}
+          >
+            <BarChart3 className="h-5 w-5" />
+            {!isCollapsed && <span className="ml-3">Dashboard</span>}
+          </Button>
+
+          <Button
+            variant="ghost"
             onClick={onOpenSettings}
             className={cn(
               "h-11 hover:bg-sidebar-accent/60 rounded-xl transition-all duration-200 font-light",
@@ -284,6 +296,18 @@ const Sidebar = ({ onOpenSettings, onOpenSearch, onOpenObservatory, onNewConvers
 
         {/* Bottom Actions */}
         <div className="flex flex-col gap-2 px-2">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              navigate('/dashboard');
+              onToggle ? onToggle() : setInternalIsOpen(false);
+            }}
+            className="h-11 hover:bg-sidebar-accent/60 w-full justify-start rounded-xl transition-all duration-200 font-light"
+          >
+            <BarChart3 className="h-5 w-5" />
+            <span className="ml-3">Dashboard</span>
+          </Button>
+
           <Button
             variant="ghost"
             onClick={() => {

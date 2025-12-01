@@ -9,6 +9,7 @@ export { ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
 export { initializeKernel } from './KernelInitializer';
 export { opfsPersistence, OPFSPersistence } from './OPFSPersistence';
+export { sessionManager, SessionManager } from './SessionManager';
 export type { ModelMeta } from './ModelCatalog';
 export type { KernelInstance, KernelInstanceStatus } from './KernelInitializer';
 export type {
