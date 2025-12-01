@@ -1,0 +1,63 @@
+Objectif : Construire le vrai Fusioner. Sa responsabilité est de prendre les multiples réponses (simulées) produites par le TaskExecutor et de les combiner en une seule réponse textuelle, prête à être envoyée à l'utilisateur.
+Philosophie "Usine Vide" : Le Fusioner ne fera pas appel à un vrai LLM pour la synthèse. Il appliquera une logique de fusion simulée mais structurellement correcte. Nous testons sa capacité à gérer différents scénarios (une seule réponse, plusieurs réponses, des réponses d'erreur) et à produire une sortie formatée de manière prévisible.
+Implémentation du Fusioner de Production (avec Logique Simulée)
+TypeScript
+
+// src/core/kernel/Fusioner.ts (VRAIE Implémentation)
+
+console.log("🎨 Fusioner (Production) initialisé.");
+
+// Type pour les résultats que le TaskExecutor produira
+export type TaskResult = {
+  expert: string;
+  result?: string; // La réponse textuelle
+  error?: string;
+  status: 'success' | 'error';
+};
+
+class Fusioner {
+  /**
+   * Fusionne les résultats de plusieurs tâches en une seule réponse textuelle.
+   */
+  public fuse(primaryResult: TaskResult, expertResults: TaskResult[]): string {
+    console.log(`[Fusioner] Fusion de ${1 + expertResults.length} résultat(s)...`);
+
+    // Cas 1 : La tâche primaire a échoué. C'est une erreur critique.
+    if (primaryResult.status === 'error') {
+      console.error("[Fusioner] La tâche primaire a échoué. Impossible de fusionner.");
+      return `Désolé, une erreur est survenue lors du traitement de votre demande principale. Détails : ${primaryResult.error}`;
+    }
+
+    let finalResponse = primaryResult.result || "Je n'ai pas pu générer de réponse principale.";
+
+    // Cas 2 : Il y a des résultats d'experts à intégrer.
+    const successfulExperts = expertResults.filter(r => r.status === 'success');
+    if (successfulExperts.length > 0) {
+      // C'est ici que la logique "Edit-based synthesis" sera implémentée.
+      // Pour notre simulation, nous allons simplement les ajouter.
+      const expertInsights = successfulExperts
+        .map(expert => `--- Analyse de l'expert "${expert.expert}" ---\n${expert.result}`)
+        .join('\n\n');
+      
+      finalResponse += `\n\n${expertInsights}`;
+      console.log("[Fusioner] Les résultats des experts ont été ajoutés.");
+    }
+
+    // Cas 3 : Certains experts ont échoué. On peut le notifier (optionnel).
+    const failedExperts = expertResults.filter(r => r.status === 'error');
+    if (failedExperts.length > 0) {
+      const errorSummary = failedExperts.map(e => e.expert).join(', ');
+      finalResponse += `\n\n(Note : Les experts suivants n'ont pas pu contribuer : ${errorSummary})`;
+      console.warn(`[Fusioner] ${failedExperts.length} expert(s) ont échoué.`);
+    }
+
+    console.log("[Fusioner] ✅ Fusion terminée.");
+    return finalResponse;
+  }
+}
+
+export const fusioner = new Fusioner();
+
+Statut : Tâche #7 du Manifeste - TERMINÉE.
+Le Fusioner est construit. Il est prêt à recevoir la sortie du TaskExecutor. Il sait comment gérer le succès et l'échec, et comment assembler une réponse finale structurée. Le jour où nous activerons les vrais modèles, nous remplacerons la simple concaténation par l'appel au prompt "Harmonizer" sur notre LLM de base, mais la structure de la classe, elle, ne changera pas.
+L'usine a maintenant son poste de contrôle qualité et d'assemblage final.

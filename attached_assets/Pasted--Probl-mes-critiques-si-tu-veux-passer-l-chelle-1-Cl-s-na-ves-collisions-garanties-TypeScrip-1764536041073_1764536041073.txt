@@ -1,0 +1,145 @@
+ Problèmes critiques (si tu veux passer à l'échelle)
+1. Clés naïves = collisions garanties
+TypeScript
+Copy
+
+// Deux prompts différents peuvent créer la même clé si :
+"model::user dit: salut" === "model::user dit: salut" // false positif
+// Solution : vrai hash SHA-256
+
+2. Volatilité totale
+Au reload du worker/service worker, le cache mémoire est perdu. OPFS résout ça.
+3. Pas de versioning
+Si tu mets à jour un modèle (ex: dialogue-gemma-mock-v2), les anciennes réponses restent en cache et sont invalides.
+💾 Version OPFS-Powered (le vrai game changer)
+TypeScript
+Copy
+
+// src/core/kernel/ResponseCache.ts (Version Hybride)
+
+import { LRUCache } from 'lru-cache';
+
+type CachedResponse = {
+  response: string;
+  modelUsed: string;
+  modelVersion: string; // <-- NOUVEAU
+  createdAt: number;
+  promptHash: string;   // <-- NOUVEAU
+};
+
+class ResponseCache {
+  private memoryCache: LRUCache<string, CachedResponse>;
+  private opfsRoot: FileSystemDirectoryHandle;
+  private readonly CACHE_DB_NAME = 'response-cache-v1';
+
+  constructor(opfsRoot: FileSystemDirectoryHandle) {
+    this.opfsRoot = opfsRoot;
+    this.memoryCache = new LRUCache({
+      max: 100,
+      ttl: 1000 * 60 * 30,
+      // Quand on evict, on sauvegarde sur OPFS <-- MAGIC
+      dispose: async (key, value) => {
+        await this.saveToOPFS(key, value);
+      }
+    });
+  }
+
+  // Hash robuste avec Web Crypto API
+  private async hashPrompt(prompt: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(prompt);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  private async getKey(prompt: string, modelKey: string): Promise<string> {
+    const hash = await this.hashPrompt(prompt);
+    return `${modelKey}::${hash.substring(0, 16)}`; // 16 caractères suffisent
+  }
+
+  public async get(prompt: string, modelKey: string): Promise<string | null> {
+    const key = await this.getKey(prompt, modelKey);
+    
+    // 1. Check mémoire (rapide)
+    const memoryHit = this.memoryCache.get(key);
+    if (memoryHit) {
+      this.logHit();
+      return memoryHit.response;
+    }
+
+    // 2. Check OPFS (plus lent mais persistant)
+    const diskHit = await this.loadFromOPFS(key);
+    if (diskHit) {
+      this.logHit();
+      // Recharge en mémoire
+      this.memoryCache.set(key, diskHit);
+      return diskHit.response;
+    }
+
+    this.logMiss();
+    return null;
+  }
+
+  public async set(prompt: string, modelKey: string, response: string): Promise<void> {
+    const key = await this.getKey(prompt, modelKey);
+    const entry: CachedResponse = {
+      response,
+      modelUsed: modelKey,
+      modelVersion: '1.0.0', // À récupérer depuis le ModelCatalog
+      createdAt: Date.now(),
+      promptHash: await this.hashPrompt(prompt),
+    };
+
+    this.memoryCache.set(key, entry);
+    // Pas besoin de sauver immédiatement sur OPFS, le dispose s'en charge
+  }
+
+  private async saveToOPFS(key: string, value: CachedResponse): Promise<void> {
+    try {
+      const fileHandle = await this.opfsRoot.getFileHandle(key, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(value));
+      await writable.close();
+    } catch (e) {
+      console.warn(`[Cache] OPFS write failed for ${key}:`, e);
+    }
+  }
+
+  private async loadFromOPFS(key: string): Promise<CachedResponse | null> {
+    try {
+      const fileHandle = await this.opfsRoot.getFileHandle(key);
+      const file = await fileHandle.getFile();
+      return JSON.parse(await file.text());
+    } catch {
+      return null; // File not found = cache miss
+    }
+  }
+
+  // Stats persistées
+  private stats = { hits: 0, misses: 0 };
+  private async saveStats(): Promise<void> {
+    const fileHandle = await this.opfsRoot.getFileHandle('cache-stats.json', { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(this.stats));
+    await writable.close();
+  }
+}
+
+🧠 Le concept "Cache Hybride"
+Tu obtiens 3 niveaux de vitesse :
+
+    Mémoire (µs) : Les 100 dernières réponses
+    OPFS (ms) : Toutes les réponses depuis 30j
+    Réseau (s) : Appel au LLM (mock)
+
+Le TTL de lru-cache gère l'éviction mémoire, puis OPFS devient le cold storage automatique. Au reboot du worker, tu peux pré-charger les 100 réponses les plus récentes depuis OPFS.
+🔥 Action immédiate
+TypeScript
+Copy
+
+// Dans ton Worker
+const opfsRoot = await navigator.storage.getDirectory();
+const responseCache = new ResponseCache(opfsRoot);
+await responseCache.warmUp(); // Pré-charge depuis OPFS

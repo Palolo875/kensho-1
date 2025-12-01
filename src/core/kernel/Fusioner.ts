@@ -1,17 +1,47 @@
 /**
- * Fusioner v2.0 - Fusion Intelligente des Résultats Multi-Agents
+ * Fusioner v3.0 - Fusion Intelligente et Unifiée des Résultats Multi-Agents
  *
- * Stratégies de fusion:
- * 1. COMPLEMENTARY: Ajouter les informations manquantes des experts
- * 2. CONFLICT_RESOLUTION: Détecter et résoudre les contradictions
- * 3. QUALITY_SYNTHESIS: Choisir la meilleure réponse selon qualité
- * 4. ENRICHMENT: Améliorer la réponse primaire avec contexte expert
+ * ✨ NOUVELLES FEATURES:
+ * - API unifiée: fuseUnified(results[]) pour N agents égaux
+ * - Stratégies: COMPLEMENTARY, CONFLICT_RESOLUTION, QUALITY_SYNTHESIS, ENRICHMENT, CONSENSUS, PRIORITY
+ * - Mock Harmonizer par spécialité (CODE, DIALOGUE, MATH) avec synthèse "une ligne"
+ * - Détection avancée de contradictions avec scoring multi-agent
+ * - Métadonnées enrichies (tokens, timestamp, confidence)
+ * - Fallback intelligent: si primary échoue, utiliser expert comme réponse
+ * - Format naturel: utiliser `>` pour inline tips au lieu de sections
  */
 
 import { TaskResult } from '../router/RouterTypes';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('Fusioner');
+
+/**
+ * Résultat unifié d'un agent (primaire ou expert)
+ */
+export interface UnifiedTaskResult {
+  agentName: string;
+  content: string;
+  status: 'success' | 'error' | 'timeout';
+  confidence?: number;
+  tokens?: number;
+  timestamp?: number;
+  error?: string;
+  specialty?: 'CODE' | 'DIALOGUE' | 'MATH' | 'GENERAL';
+}
+
+/**
+ * Résultat de fusion avec métadonnées complètes
+ */
+export interface FusionOutput {
+  content: string;
+  sources: string[];
+  confidence: number;
+  strategy: string;
+  conflicts: number;
+  tokensUsed: number;
+  timestamp: number;
+}
 
 interface FusionInput {
   primaryResult: TaskResult;
@@ -25,15 +55,165 @@ interface FusionMetadata {
   quality: number;
 }
 
-export class Fusioner {
+/**
+ * Mock Harmonizer - Simule la synthèse NATURELLE par spécialité
+ * Synthèse "une ligne" au lieu de sections
+ */
+class MockHarmonizer {
   /**
-   * Fusionne intelligemment les résultats
+   * CODE: Synthèse inline avec 🔒 security + ⚡ perf tips (UNE LIGNE chacun)
+   */
+  synthesizeCode(primary: string, expertResults: UnifiedTaskResult[]): string {
+    let result = primary;
+    const tips: string[] = [];
+
+    // Extraire UNE LIGNE pour sécurité
+    const securityExpert = expertResults.find(e => 
+      e.content.toLowerCase().includes('security') || 
+      e.content.toLowerCase().includes('xss') ||
+      e.content.toLowerCase().includes('faille')
+    );
+    
+    if (securityExpert) {
+      const secLine = securityExpert.content.split('\n')[0] || securityExpert.content.substring(0, 60);
+      tips.push(`> 🔒 ${secLine.trim()}`);
+    }
+
+    // Extraire UNE LIGNE pour perf
+    const perfExpert = expertResults.find(e => 
+      e.content.toLowerCase().includes('performance') || 
+      e.content.toLowerCase().includes('o(n') ||
+      e.content.toLowerCase().includes('optimiz')
+    );
+    
+    if (perfExpert) {
+      const perfLine = perfExpert.content.split('\n')[0] || perfExpert.content.substring(0, 60);
+      tips.push(`> ⚡ ${perfLine.trim()}`);
+    }
+
+    if (tips.length > 0) {
+      result += `\n\n${tips.join('\n')}`;
+    }
+    
+    return result;
+  }
+
+  /**
+   * DIALOGUE: Passe-through naturel (déjà bien synthétisé)
+   */
+  synthesizeDialogue(primary: string, _expertResults: UnifiedTaskResult[]): string {
+    return primary; // Dialogue est déjà chaleureux
+  }
+
+  /**
+   * MATH: Ajoute méthode alternative (UNE LIGNE)
+   */
+  synthesizeMath(primary: string, expertResults: UnifiedTaskResult[]): string {
+    let result = primary;
+    
+    const altExpert = expertResults.find(e => 
+      e.content.toLowerCase().includes('method') || 
+      e.content.toLowerCase().includes('alternative')
+    );
+    
+    if (altExpert) {
+      const altLine = altExpert.content.split('\n')[0] || altExpert.content.substring(0, 80);
+      result += `\n\n*(Autre méthode: ${altLine.trim()})*`;
+    }
+    
+    return result;
+  }
+}
+
+export class Fusioner {
+  private harmonizer = new MockHarmonizer();
+
+  /**
+   * API UNIFIÉE: Fusionne N résultats d'agents (NOUVEAU)
+   * Permet de traiter primaryResult et expertResults de manière homogène
+   * 
+   * IMPORTANT: Gère le fallback intelligent - si aucun résultat primaire,
+   * les experts peuvent compenser
+   */
+  public async fuseUnified(results: UnifiedTaskResult[]): Promise<FusionOutput> {
+    if (results.length === 0) {
+      return {
+        content: 'Aucun résultat disponible.',
+        sources: [],
+        confidence: 0,
+        strategy: 'NONE',
+        conflicts: 0,
+        tokensUsed: 0,
+        timestamp: Date.now()
+      };
+    }
+
+    log.info(`🔀 Fusion Unifiée: ${results.length} agent(s)`);
+
+    // Filtrer les résultats réussis
+    const successful = results.filter(r => r.status === 'success');
+    
+    // FALLBACK INTELLIGENT: Si tous échouent, c'est une erreur réelle
+    if (successful.length === 0) {
+      return {
+        content: 'Tous les agents ont échoué. Veuillez réessayer.',
+        sources: results.map(r => r.agentName),
+        confidence: 0,
+        strategy: 'FAILURE',
+        conflicts: 0,
+        tokensUsed: 0,
+        timestamp: Date.now()
+      };
+    }
+
+    // Détecter les contradictions
+    const conflicts = this.detectContradictions(successful);
+    
+    // Déterminer la stratégie optimale
+    const strategy = this.determineUnifiedStrategy(successful, conflicts);
+    
+    // Appliquer la fusion
+    const content = await this.applyUnifiedStrategy(strategy, successful);
+    
+    const tokensUsed = successful.reduce((sum, r) => sum + (r.tokens || 0), 0);
+    const avgConfidence = successful.reduce((sum, r) => sum + (r.confidence || 0.8), 0) / successful.length;
+
+    log.info(`✅ Stratégie appliquée: ${strategy} (${conflicts.count} conflits détectés)`);
+
+    return {
+      content,
+      sources: successful.map(r => r.agentName),
+      confidence: avgConfidence,
+      strategy,
+      conflicts: conflicts.count,
+      tokensUsed,
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Fusionne les résultats de manière intelligente (ANCIEN API - compatibilité)
    */
   public async fuse(input: FusionInput): Promise<string> {
     log.info(`🔀 Fusion: 1 primaire + ${input.expertResults.length} expert(s)`);
 
+    // FALLBACK INTELLIGENT: Si primary échoue mais experts réussissent
+    if (input.primaryResult.status !== 'success') {
+      const successfulExperts = input.expertResults.filter(r => r.status === 'success');
+      
+      if (successfulExperts.length > 0) {
+        // Utiliser le meilleur expert comme fallback
+        const bestExpert = this.selectBestExpert(successfulExperts);
+        log.info(`⚠️ Primary échoué, fallback vers expert: ${bestExpert.agentName}`);
+        return bestExpert.result || 'Erreur: aucun résultat disponible.';
+      }
+      
+      // Si tout échoue
+      return 'Erreur lors du traitement. Veuillez réessayer.';
+    }
+
     // Si pas d'experts, retourner le résultat primaire
-    if (input.expertResults.length === 0 || input.primaryResult.status !== 'success') {
+    if (input.expertResults.length === 0) {
       return input.primaryResult.result || '';
     }
 
@@ -67,7 +247,140 @@ export class Fusioner {
   }
 
   /**
-   * Détermine la meilleure stratégie de fusion
+   * NOUVEAU: Sélectionne le meilleur expert (pour fallback)
+   * Pondération: confiance > longueur > récence
+   */
+  private selectBestExpert(experts: TaskResult[]): TaskResult {
+    return experts.reduce((best, current) => {
+      const currentScore = 
+        (current.confidence || 0.7) * 0.5 +  // 50% confiance
+        (Math.min(current.result?.length || 0, 500) / 500) * 0.3 +  // 30% longueur
+        ((current.duration && current.duration < 5000) ? 0.2 : 0);  // 20% rapidité
+      
+      const bestScore = 
+        (best.confidence || 0.7) * 0.5 +
+        (Math.min(best.result?.length || 0, 500) / 500) * 0.3 +
+        ((best.duration && best.duration < 5000) ? 0.2 : 0);
+      
+      return currentScore > bestScore ? current : best;
+    });
+  }
+
+  /**
+   * NOUVEAU: Détecte les contradictions de manière avancée
+   */
+  private detectContradictions(results: UnifiedTaskResult[]): {
+    count: number;
+    details: Array<{ agent1: string; agent2: string; similarity: number }>;
+  } {
+    const details: Array<{ agent1: string; agent2: string; similarity: number }> = [];
+    let conflictCount = 0;
+
+    for (let i = 0; i < results.length; i++) {
+      for (let j = i + 1; j < results.length; j++) {
+        const r1 = results[i];
+        const r2 = results[j];
+        
+        const similarity = this.calculateSimilarity(
+          this.tokenize(r1.content),
+          this.tokenize(r2.content)
+        );
+
+        // Si similarité < 0.4, c'est une possible contradiction
+        if (similarity < 0.4) {
+          conflictCount++;
+          details.push({
+            agent1: r1.agentName,
+            agent2: r2.agentName,
+            similarity
+          });
+        }
+      }
+    }
+
+    return { count: conflictCount, details };
+  }
+
+  /**
+   * NOUVEAU: Détermine la stratégie pour API unifiée
+   */
+  private determineUnifiedStrategy(
+    results: UnifiedTaskResult[],
+    conflicts: ReturnType<typeof Fusioner.prototype.detectContradictions>
+  ): string {
+    // Si consensus fort (pas de conflits)
+    if (conflicts.count === 0) {
+      return 'CONSENSUS';
+    }
+
+    // Si conflits détectés
+    if (conflicts.count > 0) {
+      return 'CONFLICT_RESOLUTION';
+    }
+
+    // Si spécialités diverses
+    const specialties = new Set(results.map(r => r.specialty || 'GENERAL'));
+    if (specialties.size > 1) {
+      return 'ENRICHMENT';
+    }
+
+    // Défaut
+    return 'PRIORITY';
+  }
+
+  /**
+   * NOUVEAU: Applique stratégie pour API unifiée (avec fallback)
+   */
+  private async applyUnifiedStrategy(
+    strategy: string,
+    successful: UnifiedTaskResult[]
+  ): Promise<string> {
+    switch (strategy) {
+      case 'CONSENSUS':
+        return successful[0].content; // Tous d'accord, prendre le premier
+
+      case 'CONFLICT_RESOLUTION':
+        // Ajouter un avertissement + perspectives compactes
+        return `⚠️ **Perspectives variées:**\n\n${successful
+          .map(r => `**${r.agentName}:** ${r.content.substring(0, 100).trim()}${r.content.length > 100 ? '...' : ''}`)
+          .join('\n\n')}`;
+
+      case 'PRIORITY':
+        // Synthèse par spécialité
+        const specialty = successful[0].specialty || 'GENERAL';
+        return this.synthesizeBySpecialty(specialty, successful[0], successful.slice(1));
+
+      case 'ENRICHMENT':
+      default:
+        return `${successful[0].content}\n\n${successful
+          .slice(1)
+          .map(r => `**${r.agentName}:** ${r.content.substring(0, 80).trim()}${r.content.length > 80 ? '...' : ''}`)
+          .join('\n\n')}`;
+    }
+  }
+
+  /**
+   * NOUVEAU: Synthèse par spécialité (Mock Harmonizer avec synthèse "une ligne")
+   */
+  private synthesizeBySpecialty(
+    specialty: string,
+    primary: UnifiedTaskResult,
+    experts: UnifiedTaskResult[]
+  ): string {
+    switch (specialty) {
+      case 'CODE':
+        return this.harmonizer.synthesizeCode(primary.content, experts);
+      case 'DIALOGUE':
+        return this.harmonizer.synthesizeDialogue(primary.content, experts);
+      case 'MATH':
+        return this.harmonizer.synthesizeMath(primary.content, experts);
+      default:
+        return primary.content;
+    }
+  }
+
+  /**
+   * Détermine la meilleure stratégie de fusion (ANCIEN - compatibilité)
    */
   private determineStrategy(
     primaryResult: TaskResult,
@@ -77,7 +390,7 @@ export class Fusioner {
     experts: TaskResult[];
   } {
     // Detect intent for potential future use in strategy selection
-    const _intentHints = this.detectIntentFromAgents(expertResults);
+    this.detectIntentFromAgents(expertResults);
 
     // FACTCHECK: Utiliser experts comme validators
     if (
@@ -117,7 +430,7 @@ export class Fusioner {
   }
 
   /**
-   * Applique la stratégie de fusion choisie
+   * Applique la stratégie de fusion choisie (ANCIEN - compatibilité)
    */
   private async applyStrategy(
     { strategy, experts }: ReturnType<typeof Fusioner.prototype.determineStrategy>,
@@ -248,7 +561,7 @@ export class Fusioner {
   }
 
   /**
-   * Détecte les conflits entre réponses
+   * Détecte les conflits entre réponses (ANCIEN - compatibilité)
    */
   private detectConflicts(
     primaryContent: string,
@@ -310,7 +623,7 @@ export class Fusioner {
   }
 
   /**
-   * Utilitaires
+   * Utilitaires de tokenization et similarité
    */
   private tokenize(text: string): string[] {
     return text

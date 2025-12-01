@@ -1,0 +1,94 @@
+xécution : Tâche #8 du Manifeste - Implémenter le SharedWorker et le UI BridgeObjectif : Construire la vraie architecture d'isolation. Nous allons créer le SharedWorker qui hébergera tout notre noyau, et le UI Bridge qui permettra à l'interface de communiquer avec lui de manière propre et asynchrone.Philosophie "Usine Vide" : C'est une tâche d'infrastructure pure. Elle ne dépend d'aucun modèle, réel ou factice. Son but est de mettre en place la plomberie et le câblage entre l'UI et le backend local.Étape 1 : Création du point d'entrée du Worker (kensho-worker.ts)Ce fichier est le "main.ts" de notre backend local. Il initialise tous nos services à l'intérieur du worker.// src/kensho-worker.ts (VRAIE Implémentation)
+
+import { initializeKernel } from './core/kernel';
+
+console.log("🚀 Kensho Worker v1.0 démarré. Prêt pour les connexions.");
+
+// Écoute les nouvelles connexions depuis l'UI (chaque onglet est un port)
+self.onconnect = (e: MessageEvent) => {
+  const port = e.ports[0];
+  console.log("[Worker] 🔌 Nouvelle connexion UI établie.");
+
+  // Initialise le noyau de Kensho. On passe le port pour qu'il puisse répondre.
+  const kernel = initializeKernel(port);
+
+  // Définit comment le noyau doit réagir aux messages entrants
+  port.onmessage = (event: MessageEvent) => {
+    kernel.handleMessage(event.data);
+  };
+
+  port.start();
+};
+Étape 2 : Création du Noyau (kernel.ts)Ce fichier orchestre l'initialisation de tous nos services à l'intérieur du worker.// src/core/kernel.ts
+
+import { router } from './kernel/Router';
+import { taskExecutor } from './kernel/TaskExecutor';
+// ... importez tous nos autres services : memoryManager, responseCache, fusioner
+
+export function initializeKernel(port: MessagePort) {
+  console.log("[Kernel] Initialisation du noyau Kensho...");
+
+  // Ici, on pourrait initialiser les services si nécessaire
+  // Par exemple, charger des données, etc.
+
+  return {
+    handleMessage: async (message: { type: string, payload: any }) => {
+      console.log(`[Kernel] Message reçu: ${message.type}`);
+      
+      if (message.type === 'process-prompt') {
+        const prompt = message.payload.prompt;
+        
+        // C'est ici que notre logique d'orchestration vivra plus tard
+        // Pour l'instant, on simule un flux simple
+        const plan = await router.createPlan(prompt);
+        const results = await taskExecutor.executePlan(plan);
+        
+        // Simuler la fusion et la réponse
+        const finalResponse = `Réponse fusionnée pour : "${prompt}"`;
+        
+        port.postMessage({ type: 'final-response', payload: { response: finalResponse } });
+      }
+    }
+  };
+}
+Étape 3 : Création du Pont de Communication (ui-bridge.ts)Ce fichier sera importé par l'UI pour parler au worker.// src/core/bridge/ui-bridge.ts (VRAIE Implémentation)
+
+let worker: SharedWorker;
+let port: MessagePort;
+
+// Le callback sera la fonction de l'UI qui met à jour l'état du chat
+type MessageHandler = (data: any) => void;
+
+export function connectToKernel(onMessage: MessageHandler): { sendMessage: (type: string, payload: any) => void } {
+  if (typeof SharedWorker === 'undefined') {
+    console.error("Les SharedWorkers ne sont pas supportés par ce navigateur.");
+    throw new Error("SharedWorker not supported.");
+  }
+
+  // Crée ou se connecte au worker existant
+  worker = new SharedWorker(new URL('../../kensho-worker.ts', import.meta.url), {
+    type: 'module',
+    name: 'kensho-kernel'
+  });
+
+  port = worker.port;
+
+  // Écoute les messages venant du worker
+  port.onmessage = (event: MessageEvent) => {
+    console.log("[UI Bridge] Message reçu du Worker:", event.data);
+    onMessage(event.data); // Transmet le message à l'UI
+  };
+
+  port.start();
+  console.log("[UI Bridge] ✅ Connecté au noyau Kensho.");
+
+  // Retourne une fonction pour envoyer des messages
+  return {
+    sendMessage: (type: string, payload: any) => {
+      if (!port) throw new Error("La connexion au noyau n'est pas établie.");
+      port.postMessage({ type, payload });
+      console.log(`[UI Bridge] Message envoyé au Worker: ${type}`);
+    }
+  };
+}
+Statut : Tâche #8 du Manifeste - TERMINÉE.L'architecture d'isolation est en place. Notre logique est maintenant prête à tourner dans un processus de fond, garantissant que l'interface utilisateur restera fluide et réactive, quoi qu'il arrive. Nous avons la plomberie la plus importante de notre usine.

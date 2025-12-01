@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /**
  * MemoryManager (Production) - Gestionnaire de Mémoire Virtuelle
  * 
@@ -15,10 +16,14 @@
  */
 
 import { MOCK_MODEL_CATALOG, MockModelKey } from './ModelCatalog';
+=======
+import { MODEL_CATALOG, ModelKey, ModelPriority } from './ModelCatalog';
+>>>>>>> 5193e61d00f89ac6457425ba55d56a4f07171792
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('MemoryManager');
 
+<<<<<<< HEAD
 log.info('🧠 MemoryManager (Production) initialisé.');
 
 type LoadedModelInfo = {
@@ -26,6 +31,64 @@ type LoadedModelInfo = {
   vram: number;
   loadedAt: number;
   lastAccessed: number; // Pour LRU tracking
+};
+=======
+log.info('Initialisation du MemoryManager v2.0 (Elite - Enhanced)...');
+
+interface GPUAdapterLike {
+  requestDevice(): Promise<GPUDeviceLike>;
+}
+
+interface GPUDeviceLike {
+  limits?: { maxBufferSize?: number };
+  destroy(): void;
+}
+
+interface GPULike {
+  requestAdapter(): Promise<GPUAdapterLike | null>;
+}
+
+export interface LoadedModelInfo {
+  key: ModelKey;
+  vram: number;
+  loadedAt: number;
+  lastAccessedAt: number;
+  inferenceCount: number;
+  totalInferenceTime: number;
+  priority: ModelPriority;
+  pinned: boolean;
+}
+
+export interface MemoryStats {
+  totalVRAM: number;
+  usedVRAM: number;
+  availableVRAM: number;
+  usagePercentage: number;
+  loadedModelsCount: number;
+  pinnedModelsCount: number;
+}
+
+export interface ModelUtilityScore {
+  key: ModelKey;
+  score: number;
+  inferenceCount: number;
+  timeSinceLastAccess: number;
+  avgInferenceTime: number;
+}
+
+export type UnloadRecommendation = {
+  modelKey: ModelKey;
+  reason: string;
+  priority: ModelPriority;
+  utilityScore: number;
+  reclaimableVRAM: number;
+};
+
+export type ReclaimResult = {
+  success: boolean;
+  reclaimedVRAM: number;
+  unloadedModels: ModelKey[];
+  errors: string[];
 };
 
 class MemoryManager {

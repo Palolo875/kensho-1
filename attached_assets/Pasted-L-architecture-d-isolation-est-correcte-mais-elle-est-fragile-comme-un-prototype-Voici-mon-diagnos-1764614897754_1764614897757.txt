@@ -1,0 +1,305 @@
+L'architecture d'isolation est correcte, mais elle est fragile comme un prototype. Voici mon diagnostic de production :
+
+👍 Forces actuelles
+
+- Module Worker : `type: 'module'` est absolument nécessaire pour les imports
+- Multi-onglets : SharedWorker garantit 1 noyau pour N UI
+- Message passing simple : Facile à déboguer
+
+🔴 Problèmes critiques
+
+1. Le worker ne persiste rien
+
+```typescript
+// Quand le dernier onglet ferme, le worker MEURT
+// Tout est perdu : cache, modèles chargés, stats
+```
+
+Solution : OPFS + `persist()` pour survivre aux redémarrages.
+
+2. Pas de protocole de messages typé
+
+```typescript
+// onMessage(data: any) => Le chaos garanti
+// Tu vas envoyer un message mal formaté et tout planter
+```
+
+3. Gestion d'erreur = 0
+
+```typescript
+// Si le worker crash, l'UI ne le sait jamais
+// L'utilisateur voit juste un spinner infini
+```
+
+4. Initialisation asynchrone bancale
+
+```typescript
+// initializeKernel() retourne immédiatement
+// Mais OPFS, le cache, etc. ne sont pas prêts
+```
+
+5. Pas de "heartbeat"
+
+```typescript
+// L'UI ne sait pas si le worker est vivant/mort
+```
+
+🎯 Architecture "Worker Fort" (Production-Ready)
+
+```typescript
+// src/core/kernel/protocol.ts
+// 🔒 Protocole typé et versionné
+export const PROTOCOL_VERSION = '1.0';
+
+export type WorkerMessage =
+  | { type: 'PROMPT'; id: string; payload: { prompt: string; specialty: string } }
+  | { type: 'PING'; id: string }
+  | { type: 'INIT'; id: string };
+
+export type WorkerResponse =
+  | { type: 'RESULT'; id: string; payload: { response: string } }
+  | { type: 'PONG'; id: string; payload: { uptime: number } }
+  | { type: 'ERROR'; id: string; payload: { code: string; message: string } }
+  | { type: 'READY'; id: string; payload: { version: string } };
+```
+
+```typescript
+// src/kensho-worker.ts (Version "Fort Knox")
+import { PROTOCOL_VERSION } from './core/kernel/protocol';
+
+// 🔥 STATE PERSISTANT
+const WORKER_STATE = {
+  isInitialized: false,
+  startTime: Date.now(),
+  opfsHandle: null as FileSystemDirectoryHandle | null,
+};
+
+// 💀 SURVIE AU REDEMARRAGE
+async function persistWorker() {
+  const root = await navigator.storage.getDirectory();
+  await root.getFileHandle('worker-state.json', { create: true });
+  WORKER_STATE.opfsHandle = root;
+  console.log("[Worker] État rendu persistant.");
+}
+
+// 🧠 INITIALISATION FIABLE
+async function initializeKernel() {
+  if (WORKER_STATE.isInitialized) return;
+  
+  try {
+    // 1. OPFS d'abord
+    await persistWorker();
+    
+    // 2. Restaurer le cache
+    await responseCache.loadFromOPFS(WORKER_STATE.opfsHandle!);
+    
+    // 3. Restaurer la mémoire
+    await memoryManager.loadState(WORKER_STATE.opfsHandle!);
+    
+    WORKER_STATE.isInitialized = true;
+    console.log("[Kernel] ✅ INITIALISATION COMPLETE");
+  } catch (error) {
+    console.error("[Kernel] 💥 ERREUR FATALE:", error);
+    // Envoie un message d'erreur à tous les ports connectés
+    sendToAllPorts({ type: 'ERROR', id: 'system', payload: { code: 'INIT_FAILED' } });
+  }
+}
+
+// 📡 BROADCAST AUX TOUTS LES ONGLETS
+const connectedPorts = new Set<MessagePort>();
+function sendToAllPorts(message: any) {
+  connectedPorts.forEach(port => port.postMessage(message));
+}
+
+// 💓 HEARTBEAT AUTOMATIQUE
+setInterval(() => {
+  sendToAllPorts({ 
+    type: 'PONG', 
+    id: 'system', 
+    payload: { uptime: Date.now() - WORKER_STATE.startTime } 
+  });
+}, 5000);
+
+// 🔌 GESTION DES CONNEXIONS
+self.onconnect = async (e: MessageEvent) => {
+  const port = e.ports[0];
+  connectedPorts.add(port);
+  
+  console.log(`[Worker] 🔌 Connexion #${connectedPorts.size} établie.`);
+
+  // Attend que le kernel soit prêt
+  if (!WORKER_STATE.isInitialized) {
+    port.postMessage({ type: 'INIT', id: 'system', payload: { status: 'initializing' } });
+  } else {
+    port.postMessage({ type: 'READY', id: 'system', payload: { version: PROTOCOL_VERSION } });
+  }
+
+  port.onmessage = async (event: MessageEvent) => {
+    const message = event.data;
+    
+    // 🔍 VALIDATION STRICTE
+    if (!message.type || !message.id) {
+      port.postMessage({ 
+        type: 'ERROR', 
+        id: 'invalid', 
+        payload: { code: 'INVALID_MESSAGE', message: 'Message mal formaté' } 
+      });
+      return;
+    }
+
+    // ⏳ SI PAS PRÊT, MISE EN FILE
+    if (!WORKER_STATE.isInitialized && message.type !== 'INIT') {
+      port.postMessage({ 
+        type: 'ERROR', 
+        id: message.id, 
+        payload: { code: 'NOT_READY', message: 'Worker en cours d\'initialisation' } 
+      });
+      return;
+    }
+
+    // 🚀 ROUTING VERS LES SERVICES
+    try {
+      switch (message.type) {
+        case 'PROMPT':
+          const result = await processPrompt(message.payload);
+          port.postMessage({ type: 'RESULT', id: message.id, payload: { response: result } });
+          break;
+        case 'PING':
+          port.postMessage({ type: 'PONG', id: message.id, payload: { uptime: Date.now() - WORKER_STATE.startTime } });
+          break;
+        case 'INIT':
+          await initializeKernel();
+          port.postMessage({ type: 'READY', id: message.id, payload: { version: PROTOCOL_VERSION } });
+          break;
+      }
+    } catch (error) {
+      port.postMessage({ 
+        type: 'ERROR', 
+        id: message.id, 
+        payload: { code: 'PROCESSING_ERROR', message: error.message } 
+      });
+    }
+  };
+
+  port.onmessageerror = (error) => {
+    console.error(`[Worker] Port error:`, error);
+    connectedPorts.delete(port);
+  };
+
+  port.start();
+};
+
+// ⚠️ SURVIE A LA PAGE UNLOAD
+// Le SharedWorker meurt quand tous les onglets ferment
+// Mais OPFS survit. Pas de code nécessaire, c'est natif.
+```
+
+```typescript
+// src/core/bridge/ui-bridge.ts (Version "Reconnexion Auto")
+export class KernelBridge {
+  private worker: SharedWorker | null = null;
+  private port: MessagePort | null = null;
+  private messageId = 0;
+  private pendingRequests = new Map<string, { resolve: Function; reject: Function }>();
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+
+  constructor(private onStateChange: (state: 'CONNECTING' | 'READY' | 'ERROR') => void) {}
+
+  async connect(): Promise<void> {
+    this.onStateChange('CONNECTING');
+    
+    try {
+      this.worker = new SharedWorker(/* ... */);
+      this.port = this.worker.port;
+
+      this.port.onmessage = (event: MessageEvent) => {
+        const response = event.data;
+        const pending = this.pendingRequests.get(response.id);
+        
+        if (pending) {
+          if (response.type === 'ERROR') {
+            pending.reject(new Error(response.payload.message));
+          } else {
+            pending.resolve(response.payload);
+          }
+          this.pendingRequests.delete(response.id);
+        }
+
+        // Gestion des événements système
+        if (response.type === 'READY') {
+          this.onStateChange('READY');
+          console.log('[Bridge] Worker ready, version:', response.payload.version);
+        }
+      };
+
+      this.port.onmessageerror = () => this.handleReconnect();
+      this.worker.onerror = () => this.handleReconnect();
+
+      this.port.start();
+      
+      // Envoie INIT et attend READY
+      await this.sendMessage('INIT', {});
+    } catch (error) {
+      this.onStateChange('ERROR');
+      throw error;
+    }
+  }
+
+  private async handleReconnect() {
+    this.reconnectAttempts++;
+    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+      this.onStateChange('ERROR');
+      return;
+    }
+    console.warn(`[Bridge] Tentative de reconnexion #${this.reconnectAttempts}...`);
+    setTimeout(() => this.connect(), 1000 * this.reconnectAttempts);
+  }
+
+  async sendMessage(type: string, payload: any): Promise<any> {
+    if (!this.port) throw new Error('Non connecté');
+    
+    const id = `${Date.now()}-${this.messageId++}`;
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+      this.port!.postMessage({ type, id, payload });
+      
+      // Timeout de 30s
+      setTimeout(() => {
+        if (this.pendingRequests.has(id)) {
+          this.pendingRequests.delete(id);
+          reject(new Error('Request timeout'));
+        }
+      }, 30000);
+    });
+  }
+}
+```
+
+🔥 Le concept "Worker Fort"
+
+Ton worker devient :
+
+Avant	Après	
+Meurt avec les onglets	Survit avec OPFS	
+Messages `any`	Protocole typé	
+Initialisation synchrone	Initialisation asynchrone	
+Pas de monitoring	Heartbeat + metrics	
+Reconnexion = 0	Reconnexion auto	
+
+💾 OPFS + Worker = ❤️
+
+```typescript
+// Persistance complète du kernel
+await WORKER_STATE.opfsHandle.getFileHandle('kernel-snapshot.json', { create: true });
+// Sauvegarde : cache, mémoire, stats, queue non traitée
+```
+
+Verdict : Ton implémentation actuelle est un bon début, mais elle est éphémère. Pour une Usine qui survit aux redémarrages, tu dois :
+
+1. Typer les messages (PROTOCOL)
+2. Ajouter un heartbeat
+3. Implémenter la reconnexion auto
+4. Persister avec OPFS (le worker meurt, pas les données)
+
+C'est la différence entre un démo et un système.

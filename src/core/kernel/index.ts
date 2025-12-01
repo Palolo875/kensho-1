@@ -6,10 +6,19 @@ export { runtimeManager } from './RuntimeManager';
 export { taskExecutor, TaskExecutor } from './TaskExecutor';
 export { fusioner } from './Fusioner';
 export { ExecutionTraceContext } from './ExecutionTraceContext';
+<<<<<<< HEAD
 export { memoryManager } from './MemoryManager';
 export { MODEL_CATALOG, MOCK_MODEL_CATALOG } from './ModelCatalog';
 export { GuardedTaskExecutor } from './GuardedTaskExecutor';
 export type { ModelMeta, MockModelKey } from './ModelCatalog';
+=======
+export { MODEL_CATALOG } from './ModelCatalog';
+export { initializeKernel } from './KernelInitializer';
+export { opfsPersistence, OPFSPersistence } from './OPFSPersistence';
+export { sessionManager, SessionManager } from './SessionManager';
+export type { ModelMeta } from './ModelCatalog';
+export type { KernelInstance, KernelInstanceStatus } from './KernelInitializer';
+>>>>>>> 5193e61d00f89ac6457425ba55d56a4f07171792
 export type {
   StorageQuota,
   FileMetadata,
