@@ -78,12 +78,10 @@ async function initializeWorker(): Promise<void> {
     const opfsReady = await opfsPersistence.initialize();
     
     if (opfsReady) {
-      const snapshot = await opfsPersistence.loadSnapshot();
-      if (snapshot) {
-        console.log('[Worker] État précédent restauré depuis OPFS');
-        WORKER_STATE.totalRequests = snapshot.stats.totalRequests;
-        WORKER_STATE.totalTokensGenerated = snapshot.stats.totalTokensGenerated;
-      }
+      await opfsPersistence.startNewSession();
+      
+      const historicalStats = opfsPersistence.getHistoricalStats();
+      console.log(`[Worker] Historique: ${historicalStats.totalRequests} requêtes, ${historicalStats.sessionCount} sessions`);
     }
 
     WORKER_STATE.isInitialized = true;
@@ -124,18 +122,16 @@ setInterval(() => {
   }
 }, HEARTBEAT_INTERVAL);
 
-const SNAPSHOT_INTERVAL = 60000;
+const METRICS_SAVE_INTERVAL = 60000;
 setInterval(async () => {
   if (WORKER_STATE.isInitialized && opfsPersistence.isInitialized()) {
-    await opfsPersistence.saveSnapshot({
-      stats: {
-        totalRequests: WORKER_STATE.totalRequests,
-        totalTokensGenerated: WORKER_STATE.totalTokensGenerated,
-        uptime: Date.now() - WORKER_STATE.startTime,
-      }
+    await opfsPersistence.saveCurrentSession({
+      requests: WORKER_STATE.totalRequests,
+      tokens: WORKER_STATE.totalTokensGenerated,
+      uptime: Date.now() - WORKER_STATE.startTime,
     });
   }
-}, SNAPSHOT_INTERVAL);
+}, METRICS_SAVE_INTERVAL);
 
 self.onconnect = (e: MessageEvent) => {
   const port = e.ports[0];
