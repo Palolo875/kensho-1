@@ -9,7 +9,7 @@ export { ExecutionTraceContext } from './ExecutionTraceContext';
 export { MODEL_CATALOG } from './ModelCatalog';
 export { initializeKernel } from './KernelInitializer';
 export type { ModelMeta } from './ModelCatalog';
-export type { KernelInstance, KernelStatus } from './KernelInitializer';
+export type { KernelInstance, KernelInstanceStatus } from './KernelInitializer';
 export type {
   StorageQuota,
   FileMetadata,

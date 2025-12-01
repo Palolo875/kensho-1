@@ -1,4 +1,3 @@
-import { router } from '../router/Router';
 import { taskExecutor } from './TaskExecutor';
 import { responseCache } from '../cache/ResponseCache';
 import { 
@@ -11,10 +10,10 @@ import {
 export interface KernelInstance {
   handleMessage: (message: unknown) => Promise<void>;
   cleanup: () => void;
-  getStatus: () => KernelStatus;
+  getStatus: () => KernelInstanceStatus;
 }
 
-export interface KernelStatus {
+export interface KernelInstanceStatus {
   activeTasks: number;
   cacheSize: number;
   uptime: number;
@@ -66,8 +65,6 @@ export function initializeKernel(
     sendResponse(createResponse('processing-started', requestId, { progress: 0 }));
 
     try {
-      const plan = await router.createPlan(prompt);
-
       if (abortController.signal.aborted) {
         sendResponse(createResponse('task-cancelled', requestId));
         return;
@@ -91,7 +88,7 @@ export function initializeKernel(
           }
         }
       } else {
-        const result = await taskExecutor.executePlan(plan, prompt);
+        const response = await taskExecutor.process(prompt);
         
         if (abortController.signal.aborted) {
           sendResponse(createResponse('task-cancelled', requestId));
@@ -99,8 +96,7 @@ export function initializeKernel(
         }
 
         sendResponse(createResponse('final-response', requestId, { 
-          response: result.fusedResponse,
-          tokensGenerated: result.primaryResult.tokensGenerated
+          response
         }));
       }
     } catch (error) {
@@ -212,7 +208,7 @@ export function initializeKernel(
       console.log(`[Kernel] Connexion ${connectionId} nettoyée`);
     },
 
-    getStatus: (): KernelStatus => ({
+    getStatus: (): KernelInstanceStatus => ({
       activeTasks: activeTasks.size,
       cacheSize: responseCache.size,
       uptime: Date.now() - startTime,
