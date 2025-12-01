@@ -59,10 +59,10 @@ export default function Dashboard() {
     try {
       const status = await kenshoBridge.getStatus();
       setWorkerMetrics({
-        activeConnections: status?.activeConnections || 0,
-        uptime: status?.uptime || 0,
+        activeConnections: status.activeConnections || 0,
+        uptime: status.uptime || 0,
         memoryUsage: 0,
-        totalRequests: 0,
+        totalRequests: status.activeTasks || 0,
         isInitialized: true,
       });
 

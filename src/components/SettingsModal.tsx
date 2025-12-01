@@ -22,7 +22,7 @@ interface SettingsModalProps {
   onOpenModelSelector?: () => void;
 }
 
-type TabType = "settings" | "usage" | "tasks";
+type TabType = "settings" | "usage" | "dashboard";
 
 const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelector }: SettingsModalProps) => {
   const navigate = useNavigate();
@@ -42,7 +42,7 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
   const tabs = [
     { id: "settings" as TabType, label: "Paramètres" },
     { id: "usage" as TabType, label: "Utilisation" },
-    { id: "tasks" as TabType, label: "Tâches" },
+    { id: "dashboard" as TabType, label: "Dashboard" },
   ];
 
   const renderTabContent = () => {
@@ -282,7 +282,7 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
           </div>
         );
 
-      case "tasks":
+      case "dashboard":
         return (
           <div className="space-y-6">
             {/* Tools Section */}
