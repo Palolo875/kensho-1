@@ -6,8 +6,10 @@ export { runtimeManager } from './RuntimeManager';
 export { taskExecutor, TaskExecutor } from './TaskExecutor';
 export { fusioner } from './Fusioner';
 export { ExecutionTraceContext } from './ExecutionTraceContext';
-export { MODEL_CATALOG } from './ModelCatalog';
-export type { ModelMeta } from './ModelCatalog';
+export { memoryManager } from './MemoryManager';
+export { MODEL_CATALOG, MOCK_MODEL_CATALOG } from './ModelCatalog';
+export { GuardedTaskExecutor } from './GuardedTaskExecutor';
+export type { ModelMeta, MockModelKey } from './ModelCatalog';
 export type {
   StorageQuota,
   FileMetadata,

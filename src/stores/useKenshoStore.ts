@@ -520,7 +520,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
      * - Met à jour le placeholder au fur et à mesure du streaming
      */
     sendMessage: async (text) => {
-        const { messages, modelProgress } = get();
+        const { messages, modelProgress, mainBus } = get();
 
         if (text.trim() === '') {
             return;
@@ -598,8 +598,14 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         } catch (error) {
             log.error('❌ Erreur de stream', error instanceof Error ? error : undefined);
             set(state => {
-                const updatedMessages = state.messages.filter(msg =>
-                    msg.id !== kenshoResponsePlaceholder.id
+                const updatedMessages = state.messages.map(msg =>
+                    msg.id === kenshoResponsePlaceholder.id
+                        ? {
+                            ...msg,
+                            text: "Désolé, une erreur s'est produite lors de la génération de la réponse.",
+                            thinking: "Erreur de traitement"
+                        }
+                        : msg
                 );
                 saveMessagesToLocalStorage(updatedMessages);
                 return {

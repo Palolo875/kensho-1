@@ -8,6 +8,10 @@ import { MemoryRetriever } from '../graph/MemoryRetriever';
 import type { Intent } from '../intent-classifier';
 import { createLogger } from '../../lib/logger';
 
+// Import kernel components and guardrails
+import { taskExecutor as kernelTaskExecutor } from '../../core/kernel';
+import { GuardedTaskExecutor } from '../../core/kernel/GuardedTaskExecutor';
+
 const log = createLogger('OIEAgent');
 
 runAgent({
@@ -137,6 +141,7 @@ runAgent({
                             const msg = deletedCount > 0 
                                 ? `D'accord, j'ai oublié ${deletedCount} information(s) sur ce sujet.`
                                 : "D'accord, j'ai oublié cette information.";
+                            
                             stream.chunk({ type: 'text', data: msg });
                             stream.end();
                             return;
@@ -181,7 +186,7 @@ runAgent({
                     log.info('Plan envoyé à l\'UI');
                     
                     if (plan.type === 'DebatePlan' && plan.steps) {
-                        const thoughtSteps = plan.steps.map(step => ({
+                        const thoughtSteps = plan.steps.map((step: any) => ({
                             id: step.id || 'unknown',
                             label: step.label || `${step.agent}.${step.action}`,
                             status: 'pending' as const
@@ -198,28 +203,27 @@ runAgent({
                         attachedFile: attachedFile ? {
                             buffer: attachedFile.buffer,
                             type: attachedFile.type,
-                            name: attachedFile.name,
+                            name: attachedFile.name
                         } : undefined
                     };
+
+                    // Use the kernel's TaskExecutor with guardrails for processing
+                    const guardedExecutor = new GuardedTaskExecutor(kernelTaskExecutor);
                     
-                    const executor = new TaskExecutor(runtime, executionContext);
-                    await executor.execute(plan, stream);
+                    // Process the stream with guardrails
+                    const clientId = payload.clientId || 'anonymous';
+                    for await (const chunk of guardedExecutor.processStream(query, clientId)) {
+                        stream.chunk(chunk);
+                    }
                     
-                    log.info('Exécution terminée');
+                    stream.end();
+
                 } catch (error) {
-                    const err = error instanceof Error ? error : new Error('Erreur inconnue');
-                    log.error('Erreur durant l\'orchestration:', err);
-                    runtime.log('error', `Erreur durant l'orchestration: ${err.message}`);
+                    const err = error instanceof Error ? error : new Error(String(error));
+                    log.error('Erreur critique dans executeQuery:', err);
                     stream.error(err);
                 }
             }
         );
-
-        runtime.registerMethod('getAvailableAgents', () => {
-            return {
-                available: ['MainLLMAgent', 'CalculatorAgent', 'UniversalReaderAgent'],
-                default: 'MainLLMAgent',
-            };
-        });
     }
 });
