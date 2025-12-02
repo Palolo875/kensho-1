@@ -158,22 +158,16 @@ export class TaskExecutor {
     // Queue pour SERIAL: 1 tâche à la fois
     this.queueSerial = new PQueue({
       concurrency: this.config.concurrencySerial,
-      timeout: this.config.defaultTimeoutMs,
-      throwOnTimeout: true,
     });
 
     // Queue pour PARALLEL_LIMITED: max 2 tâches
     this.queueParallelLimited = new PQueue({
       concurrency: this.config.concurrencyLimited,
-      timeout: this.config.defaultTimeoutMs,
-      throwOnTimeout: true,
     });
 
     // Queue pour PARALLEL_FULL: max 4 tâches
     this.queueParallelFull = new PQueue({
       concurrency: this.config.concurrencyFull,
-      timeout: this.config.defaultTimeoutMs,
-      throwOnTimeout: true,
     });
 
     log.info('Queues initialisées:', {
@@ -401,7 +395,7 @@ export class TaskExecutor {
 
       // 2. Vérifier le cache
       if (this.config.enableCache) {
-        const cached = responseCache.get(userPrompt, plan.primaryTask.modelKey);
+        const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
         if (cached) {
           this.stats.cacheHits++;
           log.info('Cache HIT - Réponse trouvée');
@@ -634,7 +628,7 @@ export class TaskExecutor {
 
     // Vérifier le cache
     if (this.config.enableCache) {
-      const cached = responseCache.get(userPrompt, plan.primaryTask.modelKey);
+      const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
       if (cached) {
         this.stats.cacheHits++;
         return {
