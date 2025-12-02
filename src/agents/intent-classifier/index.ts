@@ -39,8 +39,9 @@ runAgent({
   init: (runtime: AgentRuntime) => {
     runtime.registerMethod(
       'classify',
-      async (payload: ClassifyRequest): Promise<Intent> => {
-        const text = payload.text.trim();
+      async (payload: unknown): Promise<Intent> => {
+        const request = payload as ClassifyRequest;
+        const text = request.text.trim();
 
         for (const [intentType, rules] of Object.entries(INTENT_PATTERNS)) {
           for (const rule of rules) {

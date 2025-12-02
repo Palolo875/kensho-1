@@ -240,7 +240,6 @@ export class GraphWorker {
     try {
       const db = await this.sqliteManager.getDb();
       
-      const topicEmbedding = await this.hnswManager.search(Array.from(new Float32Array(384).fill(0.1)), 1);
       const candidates = await this.hnswManager.search(Array.from(new Float32Array(384).fill(0.1)), 50);
 
       const txId = crypto.randomUUID();

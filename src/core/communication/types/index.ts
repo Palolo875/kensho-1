@@ -50,8 +50,8 @@ export interface MessageMetadata {
 export interface KenshoMessage<T = unknown> {
   /** Identifiant unique de ce message spécifique (UUID v4), généré à l'envoi. */
   readonly messageId: string;
-  /** Identifiant de la transaction globale, pour suivre une requête de bout en bout. */
-  readonly traceId: string;
+  /** Identifiant de la transaction globale, pour suivre une requête de bout en bout. Optionnel. */
+  readonly traceId?: string;
   /** Le nom du worker qui envoie le message. */
   readonly sourceWorker: WorkerName;
   /** Le nom du worker destinataire. */

@@ -122,4 +122,17 @@ export class OrionGuardian {
         if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
         if (this.failureDetectorTimer) clearTimeout(this.failureDetectorTimer);
     }
+
+    public getStatus(): { isLeader: boolean; currentLeader: WorkerName | null; epoch: number } {
+        return {
+            isLeader: this.isSelfLeader(),
+            currentLeader: this.currentLeader,
+            epoch: this.currentEpoch
+        };
+    }
+
+    public dispose(): void {
+        this.stop();
+        log.info(`Guardian pour ${this.selfName} arrêté.`);
+    }
 }

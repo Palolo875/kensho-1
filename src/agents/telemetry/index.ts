@@ -14,17 +14,19 @@ const plannerStats = {
 runAgent({
     name: 'TelemetryWorker',
     init: (runtime) => {
-        runtime.registerMethod('logBatch', (logBatch: any[]) => {
+        runtime.registerMethod('logBatch', (payload: unknown) => {
+            const logBatch = payload as any[];
             // Transférer le lot de logs au thread principal pour affichage.
             self.postMessage({ type: 'LOG_BATCH', payload: logBatch });
         });
 
         // Méthode pour tracker les métriques du planificateur
-        runtime.registerMethod('trackPlannerMetric', (metric: {
-            planningTime: number;
-            wasValid: boolean;
-            usedTool: boolean;
-        }) => {
+        runtime.registerMethod('trackPlannerMetric', (payload: unknown) => {
+            const metric = payload as {
+                planningTime: number;
+                wasValid: boolean;
+                usedTool: boolean;
+            };
             plannerStats.totalPlans++;
             if (metric.wasValid) plannerStats.validPlans++;
             if (metric.usedTool) plannerStats.toolPlans++;
