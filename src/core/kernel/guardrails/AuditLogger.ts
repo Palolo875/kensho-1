@@ -9,22 +9,46 @@ const auditEvents: Array<{
   eventType: string;
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   details: any;
+  requestId?: string;
+  userId?: string;
+  model?: string;
+  policyVersion?: string;
 }> = [];
+
+interface AuditEvent {
+  timestamp: number;
+  eventType: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  details: any;
+  requestId?: string;
+  userId?: string;
+  model?: string;
+  policyVersion?: string;
+}
+
+interface AuditContext {
+  requestId?: string;
+  userId?: string;
+  model?: string;
+  policyVersion?: string;
+}
 
 class AuditLogger {
   /**
-   * Logs a security event
+   * Logs a security event with enhanced metadata
    */
   public logSecurityEvent(
     eventType: string, 
     details: any,
-    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'MEDIUM'
+    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'MEDIUM',
+    context?: AuditContext
   ): void {
-    const event = {
+    const event: AuditEvent = {
       timestamp: Date.now(),
       eventType,
       severity,
-      details
+      details,
+      ...context
     };
     
     auditEvents.push(event);
@@ -35,7 +59,8 @@ class AuditLogger {
     }
     
     // Log to console with appropriate level
-    const message = `[Audit] ${eventType}: ${JSON.stringify(details)}`;
+    const contextStr = context ? ` [Context: ${JSON.stringify(context)}]` : '';
+    const message = `[Audit] ${eventType}: ${JSON.stringify(details)}${contextStr}`;
     switch (severity) {
       case 'CRITICAL':
         log.error(message);
@@ -55,7 +80,7 @@ class AuditLogger {
   /**
    * Gets recent audit events
    */
-  public getRecentEvents(count: number = 50): any[] {
+  public getRecentEvents(count: number = 50): AuditEvent[] {
     return auditEvents.slice(-count);
   }
 
@@ -73,19 +98,74 @@ class AuditLogger {
     totalEvents: number; 
     eventsByType: Record<string, number>;
     eventsBySeverity: Record<string, number>;
+    eventsByUser?: Record<string, number>;
+    eventsByModel?: Record<string, number>;
   } {
     const stats = {
       totalEvents: auditEvents.length,
       eventsByType: {} as Record<string, number>,
-      eventsBySeverity: {} as Record<string, number>
+      eventsBySeverity: {} as Record<string, number>,
+      eventsByUser: {} as Record<string, number>,
+      eventsByModel: {} as Record<string, number>
     };
 
     for (const event of auditEvents) {
       stats.eventsByType[event.eventType] = (stats.eventsByType[event.eventType] || 0) + 1;
       stats.eventsBySeverity[event.severity] = (stats.eventsBySeverity[event.severity] || 0) + 1;
+      
+      if (event.userId) {
+        stats.eventsByUser[event.userId] = (stats.eventsByUser[event.userId] || 0) + 1;
+      }
+      
+      if (event.model) {
+        stats.eventsByModel[event.model] = (stats.eventsByModel[event.model] || 0) + 1;
+      }
     }
 
     return stats;
+  }
+
+  /**
+   * Detects anomalous behavior based on event patterns
+   */
+  public detectAnomalies(): Array<{userId: string, anomalyType: string, count: number}> {
+    const anomalies: Array<{userId: string, anomalyType: string, count: number}> = [];
+    
+    // Group events by user
+    const eventsByUser: Record<string, AuditEvent[]> = {};
+    for (const event of auditEvents) {
+      if (event.userId) {
+        if (!eventsByUser[event.userId]) {
+          eventsByUser[event.userId] = [];
+        }
+        eventsByUser[event.userId].push(event);
+      }
+    }
+    
+    // Check for anomalies per user
+    for (const [userId, userEvents] of Object.entries(eventsByUser)) {
+      // Count blocked prompts
+      const blockedPrompts = userEvents.filter(e => e.eventType === 'INPUT_VALIDATION_FAILED').length;
+      if (blockedPrompts > 10) { // Threshold for anomaly
+        anomalies.push({
+          userId,
+          anomalyType: 'HIGH_BLOCKED_PROMPTS',
+          count: blockedPrompts
+        });
+      }
+      
+      // Count frequent sanitizations
+      const sanitizations = userEvents.filter(e => e.eventType === 'OUTPUT_SANITIZED').length;
+      if (sanitizations > 20) { // Threshold for anomaly
+        anomalies.push({
+          userId,
+          anomalyType: 'HIGH_SANITIZATION_RATE',
+          count: sanitizations
+        });
+      }
+    }
+    
+    return anomalies;
   }
 }
 

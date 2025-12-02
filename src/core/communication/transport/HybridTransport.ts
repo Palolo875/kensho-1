@@ -15,6 +15,9 @@ export class HybridTransport implements NetworkTransport {
     private readonly remoteTransport: WebSocketTransport;
     private messageHandler: ((message: KenshoMessage) => void) | null = null;
     private processedMessageIds = new Set<string>();
+    private readonly MAX_MESSAGE_HISTORY = 1000;
+    private readonly MESSAGE_CLEANUP_DELAY_MS = 10000;
+    private messageTimestamps = new Map<string, number>();
 
     constructor(wsUrl?: string) {
         this.localTransport = new BroadcastTransport();
@@ -30,12 +33,24 @@ export class HybridTransport implements NetworkTransport {
             return;
         }
 
+        const now = Date.now();
         this.processedMessageIds.add(message.messageId);
+        this.messageTimestamps.set(message.messageId, now);
 
         // Nettoyer l'historique après 10 secondes
         setTimeout(() => {
             this.processedMessageIds.delete(message.messageId);
-        }, 10000);
+            this.messageTimestamps.delete(message.messageId);
+        }, this.MESSAGE_CLEANUP_DELAY_MS);
+
+        // Nettoyage de sécurité pour éviter les fuites mémoire
+        if (this.processedMessageIds.size > this.MAX_MESSAGE_HISTORY) {
+            const oldestMessageId = this.getOldestMessageId();
+            if (oldestMessageId) {
+                this.processedMessageIds.delete(oldestMessageId);
+                this.messageTimestamps.delete(oldestMessageId);
+            }
+        }
 
         if (this.messageHandler) {
             this.messageHandler(message);
@@ -69,9 +84,24 @@ export class HybridTransport implements NetworkTransport {
         this.remoteTransport.resetCircuitBreaker();
     }
 
+    private getOldestMessageId(): string | null {
+        let oldestId: string | null = null;
+        let oldestTime = Infinity;
+        
+        for (const [id, timestamp] of this.messageTimestamps.entries()) {
+            if (timestamp < oldestTime) {
+                oldestTime = timestamp;
+                oldestId = id;
+            }
+        }
+        
+        return oldestId;
+    }
+
     public dispose(): void {
         this.localTransport.dispose();
         this.remoteTransport.dispose();
         this.processedMessageIds.clear();
+        this.messageTimestamps.clear();
     }
 }

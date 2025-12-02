@@ -1,6 +1,9 @@
 import { initializeKernel, type KernelInstance } from './core/kernel/KernelInitializer';
 import { opfsPersistence } from './core/kernel/OPFSPersistence';
 import { PROTOCOL_VERSION, type KenshoResponse } from './core/types/messages';
+import { createLogger } from './lib/logger';
+
+const log = createLogger('KenshoWorker');
 
 interface SharedWorkerGlobalScope {
   onconnect: ((e: MessageEvent) => void) | null;
@@ -9,7 +12,7 @@ interface SharedWorkerGlobalScope {
 
 declare const self: SharedWorkerGlobalScope;
 
-console.log(`🚀 Kensho Worker v${PROTOCOL_VERSION} démarré. Prêt pour les connexions.`);
+log.info(`🚀 Kensho Worker v${PROTOCOL_VERSION} démarré. Prêt pour les connexions.`);
 
 interface ConnectionInfo {
   port: MessagePort;
@@ -46,7 +49,7 @@ function sendToAllPorts(response: KenshoResponse): void {
     try {
       port.postMessage(response);
     } catch (error) {
-      console.error('[Worker] Erreur broadcast:', error);
+      log.error('[Worker] Erreur broadcast:', error);
     }
   });
 }
@@ -68,7 +71,7 @@ async function initializeWorker(): Promise<void> {
   }
 
   WORKER_STATE.isInitializing = true;
-  console.log('[Worker] Initialisation du kernel...');
+  log.info('[Worker] Initialisation du kernel...');
 
   sendToAllPorts(createSystemResponse('initializing', { 
     version: PROTOCOL_VERSION 
@@ -81,13 +84,13 @@ async function initializeWorker(): Promise<void> {
       await opfsPersistence.startNewSession();
       
       const historicalStats = opfsPersistence.getHistoricalStats();
-      console.log(`[Worker] Historique: ${historicalStats.totalRequests} requêtes, ${historicalStats.sessionCount} sessions`);
+      log.info(`[Worker] Historique: ${historicalStats.totalRequests} requêtes, ${historicalStats.sessionCount} sessions`);
     }
 
     WORKER_STATE.isInitialized = true;
     WORKER_STATE.isInitializing = false;
 
-    console.log('[Worker] ✅ Kernel initialisé avec succès');
+    log.info('[Worker] ✅ Kernel initialisé avec succès');
 
     sendToAllPorts(createSystemResponse('ready', { 
       version: PROTOCOL_VERSION,
@@ -96,7 +99,7 @@ async function initializeWorker(): Promise<void> {
 
   } catch (error) {
     WORKER_STATE.isInitializing = false;
-    console.error('[Worker] 💥 Erreur d\'initialisation:', error);
+    log.error('[Worker] 💥 Erreur d\'initialisation:', error);
     
     sendToAllPorts(createSystemResponse('error', {
       code: 'INIT_FAILED',
@@ -137,7 +140,7 @@ self.onconnect = (e: MessageEvent) => {
   const port = e.ports[0];
   const connectionId = generateConnectionId();
   
-  console.log(`[Worker] 🔌 Nouvelle connexion: ${connectionId}`);
+  log.info(`[Worker] 🔌 Nouvelle connexion: ${connectionId}`);
 
   try {
     const kernel = initializeKernel(port, connectionId);
@@ -167,7 +170,7 @@ self.onconnect = (e: MessageEvent) => {
 
         await kernel.handleMessage(event.data);
       } catch (error) {
-        console.error(`[Worker] Erreur non gérée:`, error);
+        log.error(`[Worker] Erreur non gérée:`, error);
         port.postMessage({
           type: 'error',
           requestId: event.data?.requestId || 'unknown',
@@ -182,7 +185,7 @@ self.onconnect = (e: MessageEvent) => {
     };
 
     port.onmessageerror = (error: MessageEvent) => {
-      console.error(`[Worker] Erreur de message pour ${connectionId}:`, error);
+      log.error(`[Worker] Erreur de message pour ${connectionId}:`, error);
       connections.delete(connectionId);
     };
 
@@ -205,10 +208,10 @@ self.onconnect = (e: MessageEvent) => {
       }
     }
 
-    console.log(`[Worker] ✅ Connexion ${connectionId} établie. Total: ${connections.size}`);
+    log.info(`[Worker] ✅ Connexion ${connectionId} établie. Total: ${connections.size}`);
 
   } catch (error) {
-    console.error(`[Worker] Erreur lors de l'initialisation:`, error);
+    log.error(`[Worker] Erreur lors de l'initialisation:`, error);
     port.postMessage(createSystemResponse('error', {
       code: 'CONNECTION_FAILED',
       message: 'Échec de l\'initialisation de la connexion',
@@ -218,7 +221,7 @@ self.onconnect = (e: MessageEvent) => {
 };
 
 self.onerror = (error: ErrorEvent) => {
-  console.error('[Worker] Erreur globale:', error);
+  log.error('[Worker] Erreur globale:', error);
   sendToAllPorts(createSystemResponse('error', {
     code: 'WORKER_ERROR',
     message: error.message || 'Erreur globale du worker'

@@ -29,6 +29,7 @@ import { ThoughtStep } from '../agents/oie/types';
 import { Project, ProjectTask } from '../agents/graph/types';
 import { TaskCompletionDetector } from '../core/oie/TaskCompletionDetector';
 import { createLogger } from '@/lib/logger';
+import type { KenshoWindow, OIEPlan, FactCheckingClaim, SemanticSearchResults } from '@/types/kensho';
 
 const log = createLogger('KenshoStore');
 
@@ -41,11 +42,11 @@ export interface Message {
     text: string;
     author: 'user' | 'kensho';
     timestamp: number;
-    plan?: any; // Plan généré par l'OIE pour affichage dans l'UI
+    plan?: OIEPlan; // Plan généré par l'OIE pour affichage dans l'UI
     thinking?: string; // Résumé du processus de pensée/réflexion (Mode Simulation)
     thoughtProcess?: ThoughtStep[]; // Étapes de pensée pour le débat interne (Sprint 6)
-    factCheckingClaims?: any[]; // Résultats de vérification (Priority 6)
-    semanticSearchResults?: any; // Résultats de recherche sémantique (Priority 6)
+    factCheckingClaims?: FactCheckingClaim[]; // Résultats de vérification (Priority 6)
+    semanticSearchResults?: SemanticSearchResults; // Résultats de recherche sémantique (Priority 6)
 }
 
 export interface WorkerError {
@@ -157,15 +158,16 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
             { type: 'module' }
         );
 
-        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
-        (window as any).__kensho_workers['MainLLMAgent'] = llmWorker;
+        const kenshoWorkers = (window as KenshoWindow).__kensho_workers || {};
+        kenshoWorkers['MainLLMAgent'] = llmWorker;
+        (window as KenshoWindow).__kensho_workers = kenshoWorkers;
 
         llmWorker.onmessage = (e) => {
             try {
                 if (!e?.data) return;
                 if (e.data.type === 'READY') {
                     log.info('✅ LLM Worker prêt');
-                    set(state => ({
+                    set((state: KenshoState) => ({
                         workersReady: { ...state.workersReady, llm: true }
                     }));
                 } else if (e.data.type === 'MODEL_PROGRESS') {
@@ -202,7 +204,7 @@ const startLLMWorker = (set: StoreApi<KenshoState>['setState']) => {
             message: error instanceof Error ? error.message : 'Impossible de démarrer le worker LLM',
             timestamp: Date.now()
         };
-        set(state => ({
+        set((state: KenshoState) => ({
             modelProgress: {
                 phase: 'error',
                 progress: 0,
@@ -249,7 +251,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             try {
                 if (e?.data?.type === 'READY') {
                     log.info('✅ OIE Worker prêt');
-                    set(state => ({
+                    set((state: KenshoState) => ({
                         workersReady: { ...state.workersReady, oie: true }
                     }));
                 }
@@ -270,7 +272,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             message: error instanceof Error ? error.message : 'Impossible de démarrer le worker OIE',
             timestamp: Date.now()
         };
-        set(state => ({
+        set((state: KenshoState) => ({
             workerErrors: [...state.workerErrors, workerError]
         }));
     }
@@ -286,7 +288,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             try {
                 if (e.data.type === 'READY') {
                     log.info('✅ Telemetry Worker prêt');
-                    set(state => ({
+                    set((state: KenshoState) => ({
                         workersReady: { ...state.workersReady, telemetry: true }
                     }));
                 }
@@ -307,7 +309,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             message: error instanceof Error ? error.message : 'Impossible de démarrer le worker Telemetry',
             timestamp: Date.now()
         };
-        set(state => ({
+        set((state: KenshoState) => ({
             workerErrors: [...state.workerErrors, workerError]
         }));
     }
@@ -318,8 +320,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             { type: 'module' }
         );
 
-        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
-        (window as any).__kensho_workers['EmbeddingAgent'] = embeddingWorker;
+        const kenshoWorkers = (window as KenshoWindow).__kensho_workers || {};
+        kenshoWorkers['EmbeddingAgent'] = embeddingWorker;
+        (window as KenshoWindow).__kensho_workers = kenshoWorkers;
 
         embeddingWorker.onmessage = (e) => {
             try {
@@ -346,8 +349,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             { type: 'module' }
         );
 
-        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
-        (window as any).__kensho_workers['IntentClassifierAgent'] = intentWorker;
+        const kenshoWorkers = (window as KenshoWindow).__kensho_workers || {};
+        kenshoWorkers['IntentClassifierAgent'] = intentWorker;
+        (window as KenshoWindow).__kensho_workers = kenshoWorkers;
 
         intentWorker.onmessage = (e) => {
             try {
@@ -375,8 +379,9 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
             { type: 'module' }
         );
 
-        (window as any).__kensho_workers = (window as any).__kensho_workers || {};
-        (window as any).__kensho_workers['GraphWorker'] = graphWorker;
+        const kenshoWorkers = (window as KenshoWindow).__kensho_workers || {};
+        kenshoWorkers['GraphWorker'] = graphWorker;
+        (window as KenshoWindow).__kensho_workers = kenshoWorkers;
 
         graphWorker.onmessage = (e) => {
             try {
@@ -398,7 +403,7 @@ const startConstellation = (set: StoreApi<KenshoState>['setState']) => {
     }
 };
 
-export const useKenshoStore = create<KenshoState>((set, get) => {
+export const useKenshoStore = create<KenshoState>((set: (partial: KenshoState | Partial<KenshoState> | ((state: KenshoState) => KenshoState | Partial<KenshoState>)) => void, get: () => KenshoState) => {
     // S'abonner aux changements des téléchargements
     const dm = DownloadManager.getInstance();
     dm.subscribe((downloads) => {
@@ -519,7 +524,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
      * - Appelle le DialoguePluginMock pour générer une réponse simulée
      * - Met à jour le placeholder au fur et à mesure du streaming
      */
-    sendMessage: async (text) => {
+    sendMessage: async (text: string) => {
         const { messages, modelProgress, mainBus } = get();
 
         if (text.trim() === '') {
@@ -718,7 +723,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
             return;
         }
         
-        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        const llmWorker = (window as KenshoWindow).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
             log.info('🚀 Demande de démarrage du téléchargement du modèle');
             llmWorker.postMessage({ type: 'START_DOWNLOAD' });
@@ -730,7 +735,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
      * Met en pause le téléchargement du modèle
      */
     pauseModelDownload: () => {
-        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        const llmWorker = (window as KenshoWindow).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
             log.info('⏸️ Mise en pause du téléchargement');
             llmWorker.postMessage({ type: 'PAUSE_DOWNLOAD' });
@@ -742,7 +747,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
      * Reprend le téléchargement du modèle
      */
     resumeModelDownload: () => {
-        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        const llmWorker = (window as KenshoWindow).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
             log.info('▶️ Reprise du téléchargement');
             llmWorker.postMessage({ type: 'RESUME_DOWNLOAD' });
@@ -774,7 +779,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
      * Annule complètement le téléchargement du modèle LLM
      */
     cancelModelDownload: () => {
-        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        const llmWorker = (window as KenshoWindow).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
             log.info('⛔ Annulation du téléchargement du modèle');
             llmWorker.postMessage({ type: 'CANCEL_DOWNLOAD' });
@@ -788,7 +793,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
     cancelAllDownloads: () => {
         const dm = DownloadManager.getInstance();
         dm.cancelAll();
-        const llmWorker = (window as any).__kensho_workers?.['MainLLMAgent'];
+        const llmWorker = (window as KenshoWindow).__kensho_workers?.['MainLLMAgent'];
         if (llmWorker) {
             llmWorker.postMessage({ type: 'CANCEL_DOWNLOAD' });
         }
@@ -813,7 +818,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         try {
             // Essayer d'abord le GraphWorker
             const { mainBus } = get();
-            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            const graphWorker = (window as KenshoWindow).__kensho_workers?.['GraphWorker'];
             
             if (mainBus && graphWorker) {
                 try {
@@ -848,7 +853,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         if (!mainBus) return;
 
         try {
-            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            const graphWorker = (window as KenshoWindow).__kensho_workers?.['GraphWorker'];
             if (!graphWorker) return;
 
             const tasks = await mainBus.request<ProjectTask[]>('GraphWorker', {
@@ -876,7 +881,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
 
         try {
             let projectId: string;
-            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            const graphWorker = (window as KenshoWindow).__kensho_workers?.['GraphWorker'];
             
             if (mainBus && graphWorker) {
                 try {
@@ -937,7 +942,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         if (!mainBus) return;
 
         try {
-            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            const graphWorker = (window as KenshoWindow).__kensho_workers?.['GraphWorker'];
             if (!graphWorker) return;
 
             await mainBus.request('GraphWorker', {
@@ -965,7 +970,7 @@ export const useKenshoStore = create<KenshoState>((set, get) => {
         if (!mainBus) return;
 
         try {
-            const graphWorker = (window as any).__kensho_workers?.['GraphWorker'];
+            const graphWorker = (window as KenshoWindow).__kensho_workers?.['GraphWorker'];
             if (!graphWorker) return;
 
             await mainBus.request('GraphWorker', {

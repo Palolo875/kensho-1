@@ -155,8 +155,8 @@ export class ModelLoader {
                 this.startTime = Date.now();
                 const cacheCheck = await this.checkModelCache(modelId);
                 
-                const config: any = {
-                    initProgressCallback: async (progress: any) => {
+                const config: webllm.EngineConfig = {
+                    initProgressCallback: async (progress: webllm.InitProgressReport) => {
                         await this.checkPause();
                         
                         const phase: ModelLoaderPhase = progress.text.includes('compiling') ? 'compiling' : 'downloading';

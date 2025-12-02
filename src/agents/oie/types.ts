@@ -1,6 +1,14 @@
 // src/agents/oie/types.ts
 // Types partagés pour le système OIE
 
+export interface ThoughtStep {
+    id: string;
+    label: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    result?: any;
+    error?: string;
+}
+
 export interface PlanStep {
   id?: string;
   agent: string;

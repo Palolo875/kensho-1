@@ -1,6 +1,7 @@
 import { IntentClassifier } from './IntentClassifier';
 import { CapacityEvaluator } from './CapacityEvaluator';
 import { getModelBySpecialization } from './ModelCatalog';
+import { MODEL_KEYS } from '../models/ModelConstants';
 import {
   IntentCategory,
   ExecutionPlan,
@@ -228,14 +229,14 @@ export class Router {
   private getModelKeyForIntent(intent: IntentCategory): string {
     switch (intent) {
       case 'CODE':
-        return 'qwen2.5-coder-1.5b';
+        return MODEL_KEYS.CODE_EXPERT;
       case 'MATH':
-        return 'qwen2.5-math-1.5b';
+        return MODEL_KEYS.MATH_EXPERT;
       case 'FACTCHECK':
       case 'DIALOGUE':
       case 'UNKNOWN':
       default:
-        return 'gemma-3-270m';
+        return MODEL_KEYS.GENERAL_DIALOGUE;
     }
   }
 
@@ -309,15 +310,15 @@ export class Router {
           );
         }
 
-        const decision = await kernelCoordinator.canLoadModel('qwen2.5-coder-1.5b');
+        const decision = await kernelCoordinator.canLoadModel(MODEL_KEYS.CODE_EXPERT);
         if (!decision.canLoad) {
           // Vérifier si le modèle est déjà dans le pool RuntimeManager
-          if (this.config.useModelPool && runtimeManager.isModelInPool('qwen2.5-coder-1.5b')) {
+          if (this.config.useModelPool && runtimeManager.isModelInPool(MODEL_KEYS.CODE_EXPERT)) {
             log.info('Modèle code trouvé dans le pool malgré la décision négative du kernel');
           } else if (this.config.fallbackToDialogue) {
             const fallbackTask: Task = {
               agentName: 'GeneralDialogue',
-              modelKey: 'gemma-3-270m',
+              modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
               priority: 'HIGH',
               timeout: 20000,
               temperature: 0.7
@@ -334,7 +335,7 @@ export class Router {
 
         const primaryTask: Task = {
           agentName: 'CodeExpert',
-          modelKey: 'qwen2.5-coder-1.5b',
+          modelKey: MODEL_KEYS.CODE_EXPERT,
           priority: 'HIGH',
           timeout: 30000,
           temperature: 0.2
@@ -342,7 +343,7 @@ export class Router {
 
         const fallbackTasks: Task[] = capacityScore >= 6 ? [{
           agentName: 'GeneralDialogue',
-          modelKey: 'gemma-3-270m',
+          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
           priority: 'LOW',
           timeout: 20000,
           temperature: 0.7
@@ -360,14 +361,14 @@ export class Router {
           );
         }
 
-        const decision = await kernelCoordinator.canLoadModel('qwen2.5-math-1.5b');
+        const decision = await kernelCoordinator.canLoadModel(MODEL_KEYS.MATH_EXPERT);
         if (!decision.canLoad) {
-          if (this.config.useModelPool && runtimeManager.isModelInPool('qwen2.5-math-1.5b')) {
+          if (this.config.useModelPool && runtimeManager.isModelInPool(MODEL_KEYS.MATH_EXPERT)) {
             log.info('Modèle math trouvé dans le pool malgré la décision négative du kernel');
           } else if (this.config.fallbackToDialogue) {
             const fallbackTask: Task = {
               agentName: 'CalculatorAgent',
-              modelKey: 'gemma-3-270m',
+              modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
               priority: 'HIGH',
               timeout: 15000,
               temperature: 0.3
@@ -384,7 +385,7 @@ export class Router {
 
         const primaryTask: Task = {
           agentName: 'MathExpert',
-          modelKey: 'qwen2.5-math-1.5b',
+          modelKey: MODEL_KEYS.MATH_EXPERT,
           priority: 'HIGH',
           timeout: 25000,
           temperature: 0.1
@@ -392,7 +393,7 @@ export class Router {
 
         const fallbackTasks: Task[] = [{
           agentName: 'CalculatorAgent',
-          modelKey: 'gemma-3-270m',
+          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
           priority: 'LOW',
           timeout: 15000,
           temperature: 0.3
@@ -404,7 +405,7 @@ export class Router {
       case 'FACTCHECK': {
         const primaryTask: Task = {
           agentName: 'FactCheckerAgent',
-          modelKey: 'gemma-3-270m',
+          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
           priority: 'HIGH',
           timeout: 35000,
           temperature: 0.3
@@ -420,7 +421,7 @@ export class Router {
       default: {
         const primaryTask: Task = {
           agentName: 'GeneralDialogue',
-          modelKey: 'gemma-3-270m',
+          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
           priority: capacityScore >= 7 ? 'HIGH' : 'LOW',
           timeout: 20000,
           temperature: 0.7

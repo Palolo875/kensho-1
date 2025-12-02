@@ -3,77 +3,138 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { rateLimiter } from '../RateLimiter';
 
 describe('RateLimiter', () => {
-  const testIdentifier = 'test-user-123';
-  
   beforeEach(() => {
-    // Reset the rate limiter for each test
-    rateLimiter.reset(testIdentifier);
+    // Reset rate limiter state before each test
+    rateLimiter.reset('test-user-123');
+    rateLimiter.reset('admin-user-456');
+    rateLimiter.reset('ip:192.168.1.1');
   });
 
   describe('isAllowed', () => {
     it('should allow requests within the limit', () => {
-      // First 10 requests should be allowed
-      for (let i = 0; i < 10; i++) {
-        const result = rateLimiter.isAllowed(testIdentifier);
+      const clientId = 'test-user-123';
+      
+      // Make 5 requests, all should be allowed
+      for (let i = 0; i < 5; i++) {
+        const result = rateLimiter.isAllowed(clientId);
         expect(result.allowed).toBe(true);
       }
     });
 
     it('should block requests exceeding the limit', () => {
-      // Allow first 10 requests
+      const clientId = 'test-user-123';
+      
+      // Use up all allowed requests
       for (let i = 0; i < 10; i++) {
-        rateLimiter.isAllowed(testIdentifier);
+        rateLimiter.isAllowed(clientId);
       }
       
-      // 11th request should be blocked
-      const result = rateLimiter.isAllowed(testIdentifier);
+      // Next request should be blocked
+      const result = rateLimiter.isAllowed(clientId);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('Rate limit exceeded');
     });
 
-    it('should allow requests again after window resets', () => {
-      // Block the user by exceeding limits
-      for (let i = 0; i < 15; i++) {
-        rateLimiter.isAllowed(testIdentifier);
+    it('should allow higher limits for authenticated users', () => {
+      const clientId = 'authenticated-user-789';
+      const context = { role: 'AUTHENTICATED' as const };
+      
+      // Make 20 requests, all should be allowed (limit is 50 for authenticated users)
+      for (let i = 0; i < 20; i++) {
+        const result = rateLimiter.isAllowed(clientId, context);
+        expect(result.allowed).toBe(true);
+      }
+    });
+
+    it('should allow very high limits for admin users', () => {
+      const clientId = 'admin-user-456';
+      const context = { role: 'ADMIN' as const };
+      
+      // Make 150 requests, all should be allowed (limit is 1000 for admin users)
+      for (let i = 0; i < 150; i++) {
+        const result = rateLimiter.isAllowed(clientId, context);
+        expect(result.allowed).toBe(true);
+      }
+    });
+
+    it('should handle IP fallback for anonymous users', () => {
+      const clientId = 'anonymous';
+      const context = { ip: '192.168.1.1' };
+      
+      // Make 5 requests, all should be allowed
+      for (let i = 0; i < 5; i++) {
+        const result = rateLimiter.isAllowed(clientId, context);
+        expect(result.allowed).toBe(true);
+      }
+    });
+
+    it('should ban entities after too many violations', () => {
+      const clientId = 'bad-user-999';
+      
+      // Exceed rate limit multiple times to trigger ban
+      for (let j = 0; j < 6; j++) {
+        // Use up all allowed requests
+        for (let i = 0; i < 10; i++) {
+          rateLimiter.isAllowed(clientId);
+        }
+        
+        // Try one more request to trigger violation counting
+        rateLimiter.isAllowed(clientId);
       }
       
-      // Check status
-      const status = rateLimiter.getStatus(testIdentifier);
-      expect(status.remaining).toBe(0);
+      // Entity should now be banned
+      const result = rateLimiter.isAllowed(clientId);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('banned');
     });
   });
 
   describe('getStatus', () => {
     it('should return correct status information', () => {
-      // Make 5 requests
-      for (let i = 0; i < 5; i++) {
-        rateLimiter.isAllowed(testIdentifier);
-      }
+      const clientId = 'test-user-123';
       
-      const status = rateLimiter.getStatus(testIdentifier);
-      expect(status.remaining).toBe(5); // 10 max - 5 used
+      // Make a few requests
+      rateLimiter.isAllowed(clientId);
+      rateLimiter.isAllowed(clientId);
+      
+      const status = rateLimiter.getStatus(clientId);
+      expect(status.remaining).toBe(8); // 10 - 2 = 8
       expect(status.isBanned).toBe(false);
       expect(status.violations).toBe(0);
+      expect(status.limit).toBe(10);
+    });
+
+    it('should return correct status for different user roles', () => {
+      const adminId = 'admin-user-456';
+      const adminContext = { role: 'ADMIN' as const };
+      
+      const status = rateLimiter.getStatus(adminId, 'ADMIN');
+      expect(status.limit).toBe(1000);
+      
+      const authStatus = rateLimiter.getStatus(adminId, 'AUTHENTICATED');
+      expect(authStatus.limit).toBe(50);
+      
+      const defaultStatus = rateLimiter.getStatus(adminId, 'PUBLIC');
+      expect(defaultStatus.limit).toBe(10);
     });
   });
 
-  describe('ban mechanism', () => {
-    it('should ban entities after too many violations', () => {
-      // Simulate many violations by repeatedly exceeding rate limits
-      for (let violation = 0; violation < 5; violation++) {
-        // Exceed rate limit
-        for (let i = 0; i < 15; i++) {
-          rateLimiter.isAllowed(testIdentifier);
-        }
-        
-        // Wait a bit to simulate time passing
-        // Note: In real implementation, we'd need to advance time
+  describe('reset', () => {
+    it('should reset rate limit for an entity', () => {
+      const clientId = 'test-user-123';
+      
+      // Use up some requests
+      for (let i = 0; i < 5; i++) {
+        rateLimiter.isAllowed(clientId);
       }
       
-      // Check that user is not banned yet (would need actual ban threshold implementation)
-      const result = rateLimiter.isAllowed(testIdentifier);
-      // For this test, we're just checking the structure works
-      expect(result).toBeDefined();
+      // Reset the rate limit
+      rateLimiter.reset(clientId);
+      
+      // Check that status is reset
+      const status = rateLimiter.getStatus(clientId);
+      expect(status.remaining).toBe(10);
+      expect(status.violations).toBe(0);
     });
   });
 });
