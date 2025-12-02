@@ -1,0 +1,81 @@
+Objectif : Construire le vrai SSEStreamer. Ce n'est pas un composant simulé. C'est le cœur de notre communication temps réel. Il doit être capable de gérer des abonnés (l'UI Bridge) et de leur diffuser des événements structurés (token, error, status, metrics).
+Philosophie : Nous utilisons la classe EventEmitter (disponible nativement dans Node.js et facilement polyfillable pour le navigateur) comme base pour un système d'événements robuste et découplé. Tous les composants du noyau (TaskExecutor, Router, etc.) enverront leurs mises à jour à ce bus central, et le UI Bridge s'y abonnera pour écouter.
+Implémentation du SSEStreamer de Production
+TypeScript
+
+// src/core/kernel/streaming/SSEStreamer.ts (VRAIE Implémentation)
+
+// Pour un environnement navigateur, un simple polyfill ou une classe custom est nécessaire.
+// Pour la simplicité de l'implémentation, nous allons en créer une version minimale.
+type Listener = (data: any) => void;
+
+console.log("📡 SSEStreamer (Production) initialisé.");
+
+export type StreamEvent = {
+  type: 'TOKEN' | 'STATUS' | 'METRICS' | 'COMPLETE' | 'ERROR';
+  payload: any;
+  timestamp: number;
+};
+
+class SSEStreamer {
+  private listeners: Map<string, Listener[]> = new Map();
+
+  /**
+   * S'abonne à un type d'événement.
+   */
+  public on(eventType: string, listener: Listener): void {
+    if (!this.listeners.has(eventType)) {
+      this.listeners.set(eventType, []);
+    }
+    this.listeners.get(eventType)!.push(listener);
+  }
+
+  /**
+   * Diffuse un événement à tous les abonnés.
+   */
+  public emit(eventType: StreamEvent['type'], payload: any): void {
+    const event: StreamEvent = {
+      type: eventType,
+      payload,
+      timestamp: Date.now(),
+    };
+
+    if (this.listeners.has(eventType)) {
+      this.listeners.get(eventType)!.forEach(listener => {
+        try {
+          listener(event);
+        } catch (error) {
+          console.error(`[SSEStreamer] Erreur dans un listener pour l'événement ${eventType}:`, error);
+        }
+      });
+    }
+  }
+
+  // Raccourcis pour les types d'événements courants
+  public streamToken(token: string): void {
+    this.emit('TOKEN', { token });
+  }
+
+  public streamStatus(status: string, details?: string): void {
+    console.log(`[Status] ${status}${details ? ` - ${details}` : ''}`);
+    this.emit('STATUS', { status, details });
+  }
+
+  public streamError(error: Error): void {
+    console.error(`[Error] ${error.message}`);
+    this.emit('ERROR', { message: error.message, name: error.name });
+  }
+  
+  public streamComplete(response: string): void {
+    this.emit('COMPLETE', { response });
+  }
+}
+
+export const sseStreamer = new SSEStreamer();
+
+Statut : Tâche #11 du Manifeste - TERMINÉE.
+Le système de communication central est en place. Il est robuste et découplé.
+
+    Le TaskExecutor pourra maintenant appeler sseStreamer.streamToken(token) à chaque fois qu'un moteur factice produit une sortie.
+    Le Router pourra appeler sseStreamer.streamStatus("Planification terminée...").
+    Le ResilienceEngine (dans le TaskExecutor) pourra appeler sseStreamer.streamStatus("Tentative de relance...") ou sseStreamer.streamError(...).

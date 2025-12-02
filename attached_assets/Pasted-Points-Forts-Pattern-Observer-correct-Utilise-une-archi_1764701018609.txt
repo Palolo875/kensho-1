@@ -1,0 +1,109 @@
+Points Forts
+
+    Pattern Observer correct : Utilise une architecture pub/sub classique avec private listeners: Map<string, Listener[]> pour découpler les composants et l'UI, base solide pour du streaming.
+
+    API simple et intuitive : Méthodes sseStreamer.on('TOKEN', callback) et sseStreamer.emit('TOKEN', data), avec raccourcis pratiques comme streamToken() et streamStatus().
+
+    Gestion d'erreurs robuste : Try/catch dans emit() qui isole les erreurs d'un listener sans faire tomber les autres (console.error pour traçabilité).
+
+Problèmes Critiques
+1. Nom Trompeur (IMPORTANT)
+
+    Ce n'est PAS du SSE : SSE = protocole HTTP spécifique (Content-Type: text/event-stream, data: JSON\n\n, EventSource client). Le code actuel est un EventEmitter JS classique.
+
+    Confusion pour les devs : Un développeur attendant du vrai SSE sera perdu.
+
+2. Bug Critique : Pas de Méthode off() (Fuite Mémoire)
+
+text
+sseStreamer.on('TOKEN', myCallback);  // OK
+// Composant se démonte → impossible de cleanup → fuite mémoire !
+
+    Solution : Utiliser Set<Listener> et retourner une fonction cleanup depuis on().
+
+3. Absence de Fonctionnalités Essentielles
+
+    Pas de Wildcard : Impossible d'écouter tous les événements (on('*', callback)).
+
+    Pas de once() : S'abonner une seule fois nécessite un cleanup manuel fastidieux.
+
+    Pas de Type Safety : emit('TOKEN', { invalid: 123 }) accepté au lieu de { token: string }.
+
+4. Manque d'Outils de Debug et Monitoring
+
+    Pas de mode debug pour tracer les émissions.
+
+    Pas de stats (listenerCounts, totalListeners) pour détecter les fuites mémoire.
+
+5. Pas de Throttling/Debouncing
+
+    1000 tokens/sec → 1000 updates UI → freeze potentiel.
+
+    Solution : emitThrottled() avec buffer et timer (50ms).
+
+Solutions Proposées (Production-Ready)
+EventBus Complet et Typé
+
+typescript
+export type EventMap = {
+  TOKEN: { token: string };
+  STATUS: { status: string; details?: string };
+  COMPLETE: { response: string };
+  ERROR: { message: string; name: string; stack?: string };
+  // etc.
+};
+
+class EventBus {
+  private listeners = new Map<keyof EventMap, Set<Listener>>();
+  private wildcardListeners = new Set<Listener>();
+
+  public on<K extends keyof EventMap>(eventType: K | '*', listener: Listener): () => void { /* ... */ }
+  public once<K extends keyof EventMap>(eventType: K, listener: Listener): () => void { /* ... */ }
+  public off<K extends keyof EventMap>(eventType: K, listener: Listener): void { /* ... */ }
+  public emit<K extends keyof EventMap>(eventType: K, payload: EventMap[K]): void { /* ... */ }
+  
+  // Debug
+  public enableDebug(): void { /* ... */ }
+  public getStats(): { listenerCounts: Record<string, number>; totalListeners: number } { /* ... */ }
+}
+
+Fonctionnalités clés :
+
+    Type safety stricte : emit('TOKEN', { invalid: 123 }) → erreur TS.
+
+    Wildcard (*) et once() natifs.
+
+    Cleanup automatique : const unsub = eventBus.on('TOKEN', cb); unsub();.
+
+    Helpers : streamToken(token), streamError(error).
+
+    Debug : Logs + stats exposées (window.eventBus en dev).
+
+Tests Recommandés
+
+    On/Off/Once : Vérifier désabonnement et exécution unique.
+
+    Wildcard : Recevoir tous les événements.
+
+    Memory leak : getStats() avant/après unsubscribe.
+
+    Type safety : Payloads invalides → erreurs compilation.
+
+Verdict Final
+
+Note actuelle : 5.5/10
+
+    ✅ Pattern observer, try/catch, API simple.
+
+    ❌ Nom trompeur, pas d'off() (CRITIQUE), pas de types/wildcard/debug.
+
+Note corrigée : 9.5/10
+Priorités URGENTES :
+
+    CRITIQUE : Ajouter off() + cleanup dans on().
+
+    IMPORTANT : Renommer EventBus, type safety EventMap.
+
+    NICE : Wildcard, once(), debug tools, throttling.
+
+Cette transformation donne un EventBus production-ready, robuste contre les fuites mémoire, typé, observable, et prêt pour des flux LLM intensifs (tokens streaming, status updates).
