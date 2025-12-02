@@ -26,7 +26,6 @@ jobs:
       
       - name: Run ESLint
         run: npm run lint
-        continue-on-error: true
 
   test-unit:
     name: Unit Tests
@@ -50,7 +49,23 @@ jobs:
       
       - name: Generate coverage report
         run: npm run test:coverage
-        continue-on-error: true
+      
+      - name: Check coverage threshold
+        run: |
+          # Check if coverage/ directory exists
+          if [ ! -d "coverage" ]; then
+            echo "Coverage directory not found"
+            exit 1
+          fi
+          
+          # Check coverage summary
+          if [ -f "coverage/coverage-summary.json" ]; then
+            echo "Coverage summary found, checking thresholds..."
+            # The coverage thresholds are now enforced by vitest config
+          else
+            echo "Coverage summary not found"
+            exit 1
+          fi
       
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -59,7 +74,6 @@ jobs:
           files: ./coverage/coverage-final.json
           flags: unittests
           name: codecov-kensho
-        continue-on-error: true
 
   build:
     name: Build TypeScript
