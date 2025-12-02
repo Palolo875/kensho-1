@@ -1,0 +1,57 @@
+Solutions et Améliorations
+1. Renommage en EventBus ou StreamEventBus
+
+Renommer le composant pour éviter toute confusion avec le protocole SSE HTTP standard. Un vrai SSE nécessite des headers HTTP spécifiques et l'utilisation de l'objet EventSource côté client.
+
+​
+2. Ajout d'une méthode off() pour désabonnement
+
+Permettre aux listeners de se désabonner et ainsi éviter les fuites mémoire, surtout dans un environnement frontend réactif où les composants se montent et se démontent continuellement.
+3. Gestion des Wildcards et des abonnements Once
+
+    Ajouter la possibilité d’abonner un listener à tous les événements via la wildcard ('*').
+
+    Permettre d'écouter un événement une seule fois avec une méthode once, pour des cas comme les réponses finales ou les états de complétion.
+
+4. Type safety stricte (TypeScript EventMap)
+
+Définir un mapping d’événements typés (EventMap) pour garantir que chaque payload envoyé correspond au type attendu, évitant ainsi les erreurs ou bugs silencieux liés à des données mal formées.
+5. Outils de debug
+
+Inclure un mode debug pour loguer toutes les émissions d’événements et exposer des stats sur le nombre d’abonnés, ce qui facilite la traque des fuites mémoire et le monitoring en dev.
+6. Throttling/Debouncing des événements fréquents
+
+Limiter ou grouper les émissions si trop d’événements sont générés (ex: 1000 tokens/sec), pour éviter de saturer le frontend et optimiser les performances.
+
+​
+Pour un vrai SSE :
+
+Si tu veux vraiment implémenter du SSE côté serveur :
+
+    Utilise le header Content-Type: text/event-stream et la connexion HTTP persistante.
+
+​
+
+Envoie les événements sous forme de textes formatés (event: et data:) :
+
+text
+event: complete
+data: {"response":"..."}
+
+Côté client, utilise new EventSource('/api/sse') avec des handlers adaptés (onmessage, addEventListener(eventType)).
+
+​
+
+Pour la robustesse : utiliser un identifiant de séquence par événement pour éviter les pertes, et prévoir une gestion de reconnexion en cas de coupure.
+
+    ​
+
+Priorités pour production
+
+    Correction urgente : méthode off(), typage strict et renommage.
+
+    Ajouts importants : wildcard, once, debug, throttling.
+
+    Optionnel mais recommandé : migrer vers du vrai SSE si besoin de broadcast du backend vers le frontend (progress streaming, updates live).
+
+Ta base est solide ; la transformation en EventBus typé et instrumenté, ou en vrai SSE, te donnera une solution moderne, maintenable, et fiable pour des usages intensifs LLM ou streaming U
