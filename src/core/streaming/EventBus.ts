@@ -16,13 +16,15 @@ const log = createLogger('EventBus');
 
 // ============ Type Definitions ============
 
-export type StreamEvent = 
+export type StreamEventVariant = 
   | { type: 'TOKEN'; payload: { token: string } }
   | { type: 'STATUS'; payload: { status: string; details?: string } }
   | { type: 'METRICS'; payload: { ttft?: number; tokensPerSec?: number; totalTokens?: number } }
   | { type: 'COMPLETE'; payload: { response: string; totalTime?: number } }
   | { type: 'ERROR'; payload: { message: string; name?: string; stack?: string; retriable?: boolean } }
   | { type: 'INFO'; payload: { message: string } };
+
+export type StreamEvent = StreamEventVariant & { timestamp: number };
 
 export type EventMap = {
   TOKEN: { token: string };
@@ -42,7 +44,7 @@ class EventBus {
   private listeners = new Map<EventType | '*', Set<Listener>>();
   private wildcardListeners = new Set<Listener>();
   private debugMode = false;
-  private eventHistory: StreamEvent[] = [];
+  private eventHistory: Array<StreamEventVariant & { timestamp: number }> = [];
   private maxHistorySize = 100;
   private throttleTimers = new Map<string, NodeJS.Timeout>();
   private throttleBuffer = new Map<string, any>();

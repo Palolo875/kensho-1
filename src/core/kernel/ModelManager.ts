@@ -47,7 +47,6 @@ export class ModelManager {
   private _ready!: Promise<void>;
   private _resolveReady!: () => void;
   private _rejectReady!: (error: Error) => void;
-  private isInitialized = false;
   private isInitializing = false;
   private currentModelKey: ModelType = 'mock';
   private downloadedModels: Set<ModelType> = new Set();
@@ -97,7 +96,6 @@ export class ModelManager {
   public async initMockMode(): Promise<void> {
     this.currentModelKey = 'mock';
     this.downloadedModels.add('mock');
-    this.isInitialized = true;
     this.isInitializing = false;
     this._resolveReady();
     log.info("Mode Simulation activé");
@@ -188,7 +186,6 @@ export class ModelManager {
 
       this.currentModelKey = 'gpt2';
       this.downloadedModels.add('gpt2');
-      this.isInitialized = true;
       this.isInitializing = false;
 
       onProgress?.({
