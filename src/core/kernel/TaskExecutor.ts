@@ -28,7 +28,7 @@ import {
 } from '../router/RouterTypes';
 import { fusioner } from './Fusioner';
 import { responseCache } from '../cache/ResponseCache';
-import { sseStreamer } from '../streaming/SSEStreamer';
+import { sseStreamer } from '../eventbus/SSEStreamerCompat';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('TaskExecutor');

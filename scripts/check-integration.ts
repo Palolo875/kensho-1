@@ -232,7 +232,8 @@ async function checkResponseCache(): Promise<void> {
 async function checkSSEStreamer(): Promise<void> {
   const start = performance.now();
   try {
-    const { sseStreamer } = await import('../src/core/streaming/SSEStreamer');
+    // Use the compatibility layer for backward compatibility
+    const { sseStreamer } = await import('../src/core/eventbus/SSEStreamerCompat');
 
     let received = false;
     const listener = () => { received = true; };

@@ -2,8 +2,8 @@ import { taskExecutor } from '../../core/kernel/TaskExecutor';
 import { modelManager } from '../../core/kernel/ModelManager';
 import { memoryManager } from '../../core/kernel/MemoryManager';
 import { responseCache } from '../../core/cache/ResponseCache';
-import { sseStreamer } from '../../core/streaming/SSEStreamer';
-import type { StreamEvent } from '../../core/streaming/SSEStreamer';
+import { sseStreamer } from '../../core/eventbus/SSEStreamerCompat';
+import type { StreamEvent } from '../../core/eventbus/SSEStreamerCompat';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('DialoguePlugin');
@@ -45,9 +45,10 @@ export class DialoguePlugin {
         if (!canLoad) {
           log.warn(`Mémoire insuffisante pour charger ${modelKey}`);
           
-          const recommendation = memoryManager.suggestModelToUnload();
-          if (recommendation) {
-            log.info(`Suggestion: décharger ${recommendation.modelKey} pour libérer ${recommendation.reclaimableVRAM.toFixed(2)}GB VRAM (${recommendation.reason})`);
+          const recommendation = memoryManager.suggestModelsToUnload(0.5); // Request 0.5GB as an example
+          if (recommendation && recommendation.length > 0) {
+            const rec = recommendation[0]; // Get the first recommendation
+            log.info(`Suggestion: décharger ${rec.modelKey} pour libérer ${rec.reclaimableVRAM.toFixed(2)}GB VRAM (${rec.reason})`);
           } else {
             log.warn(`Impossible de libérer assez de VRAM - continuation en mode dégradé`);
           }

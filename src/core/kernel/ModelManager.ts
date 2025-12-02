@@ -5,7 +5,7 @@
  */
 
 import { AutoTokenizer, AutoModelForCausalLM, env, PreTrainedTokenizer, PreTrainedModel } from '@xenova/transformers';
-import { sseStreamer } from '../streaming/SSEStreamer';
+import { sseStreamer } from '../eventbus/SSEStreamerCompat';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ModelManager');
