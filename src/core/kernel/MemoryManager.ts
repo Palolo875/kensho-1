@@ -1,38 +1,8 @@
-<<<<<<< HEAD
-/**
- * MemoryManager (Production) - Gestionnaire de Mémoire Virtuelle
- * 
- * PHILOSOPHIE "USINE VIDE":
- * - Ne décharge AUCUN vrai modèle
- * - Manipule une liste interne de loadedModels
- * - Simule les calculs de VRAM basés sur un catalogue de mocks
- * - Fournit des informations au Router pour des décisions éclairées
- * 
- * FONCTIONNALITÉS:
- * - Suivi des modèles chargés en mémoire
- * - Calcul de poids virtuel (VRAM)
- * - Vérification de capacité avant chargement
- * - Suggestion de déchargement basée sur LRU
- */
-
-import { MOCK_MODEL_CATALOG, MockModelKey } from './ModelCatalog';
-=======
 import { MODEL_CATALOG, ModelKey, ModelPriority } from './ModelCatalog';
->>>>>>> 5193e61d00f89ac6457425ba55d56a4f07171792
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('MemoryManager');
 
-<<<<<<< HEAD
-log.info('🧠 MemoryManager (Production) initialisé.');
-
-type LoadedModelInfo = {
-  key: MockModelKey;
-  vram: number;
-  loadedAt: number;
-  lastAccessed: number; // Pour LRU tracking
-};
-=======
 log.info('Initialisation du MemoryManager v2.0 (Elite - Enhanced)...');
 
 interface GPUAdapterLike {
@@ -92,204 +62,325 @@ export type ReclaimResult = {
 };
 
 class MemoryManager {
-  private loadedModels: Map<MockModelKey, LoadedModelInfo> = new Map();
-  private readonly TOTAL_VIRTUAL_VRAM_GB = 8; // Simule une machine avec 8GB de VRAM (machine moyenne)
+  private loadedModels: Map<ModelKey, LoadedModelInfo> = new Map();
+  private totalVRAM: number = 8;
+  private initialized: boolean = false;
 
-  /**
-   * Enregistre un modèle comme étant "chargé" en mémoire.
-   */
-  public registerLoaded(modelKey: MockModelKey): void {
+  constructor() {
+    this.detectGPU();
+  }
+
+  private async detectGPU(): Promise<void> {
+    try {
+      if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+        const gpu = navigator.gpu as GPULike;
+        const adapter = await gpu.requestAdapter();
+        if (adapter) {
+          const device = await adapter.requestDevice();
+          const maxBufferSize = device.limits?.maxBufferSize || 0;
+          this.totalVRAM = Math.max(4, Math.min(16, maxBufferSize / (1024 ** 3)));
+          device.destroy();
+          log.info(`GPU détecté: VRAM estimée à ${this.totalVRAM.toFixed(2)}GB`);
+        }
+      }
+    } catch (error) {
+      log.warn('GPU non détecté, utilisation de 8GB par défaut', error);
+    }
+    this.initialized = true;
+  }
+
+  public registerLoaded(modelKey: ModelKey): void {
     if (this.loadedModels.has(modelKey)) {
-      log.info(`${modelKey} est déjà chargé.`);
+      const model = this.loadedModels.get(modelKey)!;
+      model.lastAccessedAt = Date.now();
+      log.info(`${modelKey} est déjà chargé, mise à jour du timestamp.`);
       return;
     }
-    const modelInfo = MOCK_MODEL_CATALOG[modelKey];
+
+    const modelInfo = MODEL_CATALOG[modelKey];
     if (!modelInfo) {
       log.error(`Tentative de charger un modèle inconnu: ${modelKey}`);
       return;
     }
+
     this.loadedModels.set(modelKey, {
       key: modelKey,
       vram: modelInfo.virtual_vram_gb,
       loadedAt: Date.now(),
-      lastAccessed: Date.now(), // Pour LRU tracking
+      lastAccessedAt: Date.now(),
+      inferenceCount: 0,
+      totalInferenceTime: 0,
+      priority: modelInfo.priority,
+      pinned: modelInfo.pin,
     });
-    log.info(`✅ Modèle "${modelKey}" chargé (VRAM virtuelle: ${modelInfo.virtual_vram_gb}GB).`);
+
+    log.info(`✅ Modèle "${modelKey}" chargé (VRAM: ${modelInfo.virtual_vram_gb}GB, Priority: ${modelInfo.priority})`);
     this.logStats();
   }
 
-  /**
-   * Enregistre un modèle comme étant "déchargé".
-   */
-  public registerUnloaded(modelKey: MockModelKey): void {
+  public registerUnloaded(modelKey: ModelKey): void {
+    const model = this.loadedModels.get(modelKey);
+    if (!model) {
+      log.warn(`Tentative de décharger un modèle non chargé: ${modelKey}`);
+      return;
+    }
+
+    if (model.pinned) {
+      log.warn(`⚠️ Impossible de décharger le modèle épinglé: ${modelKey}`);
+      return;
+    }
+
     if (this.loadedModels.delete(modelKey)) {
       log.info(`⛔ Modèle "${modelKey}" déchargé.`);
       this.logStats();
     }
   }
 
-  /**
-   * Vérifie s'il y a assez de VRAM virtuelle pour charger un nouveau modèle.
-   */
-  public canLoadModel(modelKey: MockModelKey): boolean {
-    const modelInfo = MOCK_MODEL_CATALOG[modelKey];
+  public recordInference(modelKey: ModelKey, durationMs: number): void {
+    const model = this.loadedModels.get(modelKey);
+    if (model) {
+      model.inferenceCount++;
+      model.totalInferenceTime += durationMs;
+      model.lastAccessedAt = Date.now();
+    }
+  }
+
+  public canLoadModel(modelKey: ModelKey): boolean {
+    const modelInfo = MODEL_CATALOG[modelKey];
     if (!modelInfo) {
       log.warn(`Modèle inconnu: ${modelKey}`);
       return false;
     }
 
     const requiredVRAM = modelInfo.virtual_vram_gb;
-    const usedVRAM = this.getUsedVRAM();
-    const availableVRAM = this.TOTAL_VIRTUAL_VRAM_GB - usedVRAM;
+    const stats = this.getMemoryStats();
+    const canLoad = requiredVRAM <= stats.availableVRAM;
 
-    const canLoad = requiredVRAM <= availableVRAM;
-    
     if (!canLoad) {
       log.warn(
         `Impossible de charger ${modelKey}: ` +
-        `requis ${requiredVRAM}GB, disponible ${availableVRAM.toFixed(2)}GB`
+        `requis ${requiredVRAM}GB, disponible ${stats.availableVRAM.toFixed(2)}GB`
       );
     }
 
     return canLoad;
   }
 
-  /**
-   * Retourne la liste des modèles chargés
-   */
-  public getLoadedModels(): MockModelKey[] {
+  public getLoadedModels(): ModelKey[] {
     return Array.from(this.loadedModels.keys());
   }
 
-  /**
-   * Retourne les informations détaillées d'un modèle chargé
-   */
-  public getModelInfo(modelKey: MockModelKey): LoadedModelInfo | undefined {
+  public getModelInfo(modelKey: ModelKey): LoadedModelInfo | undefined {
     return this.loadedModels.get(modelKey);
   }
 
-  /**
-   * Met à jour le timestamp d'accès pour un modèle (pour LRU)
-   */
-  public touch(modelKey: MockModelKey): void {
+  public touch(modelKey: ModelKey): void {
     const model = this.loadedModels.get(modelKey);
     if (model) {
-      model.lastAccessed = Date.now();
+      model.lastAccessedAt = Date.now();
     }
   }
 
-  /**
-   * Calcule la VRAM totale utilisée
-   */
-  private getUsedVRAM(): number {
-    return Array.from(this.loadedModels.values()).reduce(
+  public getMemoryStats(): MemoryStats {
+    const usedVRAM = Array.from(this.loadedModels.values()).reduce(
       (sum, model) => sum + model.vram,
       0
     );
+
+    const pinnedCount = Array.from(this.loadedModels.values()).filter(
+      m => m.pinned
+    ).length;
+
+    return {
+      totalVRAM: this.totalVRAM,
+      usedVRAM,
+      availableVRAM: this.totalVRAM - usedVRAM,
+      usagePercentage: (usedVRAM / this.totalVRAM) * 100,
+      loadedModelsCount: this.loadedModels.size,
+      pinnedModelsCount: pinnedCount,
+    };
   }
 
-  /**
-   * Retourne la VRAM disponible
-   */
   public getAvailableVRAM(): number {
-    return this.TOTAL_VIRTUAL_VRAM_GB - this.getUsedVRAM();
+    return this.getMemoryStats().availableVRAM;
   }
 
-  /**
-   * Retourne la VRAM totale du système
-   */
   public getTotalVRAM(): number {
-    return this.TOTAL_VIRTUAL_VRAM_GB;
+    return this.totalVRAM;
   }
 
-  /**
-   * Suggère des modèles à décharger pour libérer de l'espace
-   * Basé sur LRU (Least Recently Used)
-   * @param requiredVRAM VRAM nécessaire en GB
-   */
-  public suggestModelsToUnload(requiredVRAM: number): MockModelKey[] {
-    const currentAvailable = this.getAvailableVRAM();
-    
-    if (currentAvailable >= requiredVRAM) {
-      return []; // Assez d'espace disponible
+  private calculateUtilityScore(model: LoadedModelInfo): number {
+    const now = Date.now();
+    const ageMinutes = (now - model.lastAccessedAt) / (1000 * 60);
+    const avgInferenceTime = model.inferenceCount > 0
+      ? model.totalInferenceTime / model.inferenceCount
+      : 0;
+
+    const priorityWeight = {
+      CRITICAL: 100,
+      HIGH: 50,
+      NORMAL: 20,
+      LOW: 5,
+    }[model.priority];
+
+    const recencyScore = Math.max(0, 100 - ageMinutes);
+    const usageScore = Math.min(100, model.inferenceCount * 10);
+    const performanceScore = avgInferenceTime > 0 ? Math.min(100, 1000 / avgInferenceTime) : 0;
+
+    return (
+      priorityWeight * 0.4 +
+      recencyScore * 0.3 +
+      usageScore * 0.2 +
+      performanceScore * 0.1
+    );
+  }
+
+  public getUtilityScores(): ModelUtilityScore[] {
+    const now = Date.now();
+    return Array.from(this.loadedModels.values()).map(model => ({
+      key: model.key,
+      score: this.calculateUtilityScore(model),
+      inferenceCount: model.inferenceCount,
+      timeSinceLastAccess: now - model.lastAccessedAt,
+      avgInferenceTime: model.inferenceCount > 0
+        ? model.totalInferenceTime / model.inferenceCount
+        : 0,
+    }));
+  }
+
+  public suggestModelsToUnload(requiredVRAM: number): UnloadRecommendation[] {
+    const stats = this.getMemoryStats();
+
+    if (stats.availableVRAM >= requiredVRAM) {
+      return [];
     }
 
-    const needToFree = requiredVRAM - currentAvailable;
-    const toUnload: MockModelKey[] = [];
-    let freedVRAM = 0;
+    const needToFree = requiredVRAM - stats.availableVRAM;
+    const recommendations: UnloadRecommendation[] = [];
+    let totalReclaimable = 0;
 
-    // Trier par ordre d'accès (les moins récents en premier - vrai LRU)
-    const sorted = Array.from(this.loadedModels.values())
-      .sort((a, b) => a.lastAccessed - b.lastAccessed);
+    const unloadablModels = Array.from(this.loadedModels.values())
+      .filter(model => !model.pinned)
+      .map(model => ({
+        model,
+        utilityScore: this.calculateUtilityScore(model),
+      }))
+      .sort((a, b) => a.utilityScore - b.utilityScore);
 
-    for (const model of sorted) {
-      if (freedVRAM >= needToFree) break;
-      toUnload.push(model.key);
-      freedVRAM += model.vram;
+    for (const { model, utilityScore } of unloadablModels) {
+      if (totalReclaimable >= needToFree) break;
+
+      recommendations.push({
+        modelKey: model.key,
+        reason: `Score d'utilité faible (${utilityScore.toFixed(2)})`,
+        priority: model.priority,
+        utilityScore,
+        reclaimableVRAM: model.vram,
+      });
+
+      totalReclaimable += model.vram;
     }
 
     log.info(
-      `Suggestion de déchargement: ${toUnload.join(', ')} ` +
-      `(libèrera ${freedVRAM.toFixed(2)}GB sur ${needToFree.toFixed(2)}GB nécessaires)`
+      `Suggestions de déchargement: ${recommendations.map(r => r.modelKey).join(', ')} ` +
+      `(libèrera ${totalReclaimable.toFixed(2)}GB sur ${needToFree.toFixed(2)}GB nécessaires)`
     );
 
-    return toUnload;
+    return recommendations;
   }
 
-  /**
-   * Affiche les statistiques de mémoire
-   */
+  public async reclaimMemory(requiredVRAM: number): Promise<ReclaimResult> {
+    const recommendations = this.suggestModelsToUnload(requiredVRAM);
+    const unloadedModels: ModelKey[] = [];
+    const errors: string[] = [];
+    let reclaimedVRAM = 0;
+
+    for (const rec of recommendations) {
+      try {
+        const model = this.loadedModels.get(rec.modelKey);
+        if (model && !model.pinned) {
+          this.registerUnloaded(rec.modelKey);
+          unloadedModels.push(rec.modelKey);
+          reclaimedVRAM += rec.reclaimableVRAM;
+        }
+      } catch (error) {
+        const errorMsg = `Erreur lors du déchargement de ${rec.modelKey}: ${error}`;
+        errors.push(errorMsg);
+        log.error(errorMsg);
+      }
+    }
+
+    const success = reclaimedVRAM >= requiredVRAM;
+    return {
+      success,
+      reclaimedVRAM,
+      unloadedModels,
+      errors,
+    };
+  }
+
   public logStats(): void {
-    const usedVRAM = this.getUsedVRAM();
-    const percentage = ((usedVRAM / this.TOTAL_VIRTUAL_VRAM_GB) * 100).toFixed(1);
-    
+    const stats = this.getMemoryStats();
     log.info(
-      `Stats: ${this.loadedModels.size} modèles chargés, ` +
-      `${usedVRAM.toFixed(2)}/${this.TOTAL_VIRTUAL_VRAM_GB}GB VRAM utilisée (${percentage}%).`
+      `Stats: ${stats.loadedModelsCount} modèles chargés (${stats.pinnedModelsCount} épinglés), ` +
+      `${stats.usedVRAM.toFixed(2)}/${stats.totalVRAM}GB VRAM utilisée (${stats.usagePercentage.toFixed(1)}%).`
     );
   }
 
-  /**
-   * Retourne un rapport détaillé de l'état de la mémoire
-   */
   public getMemoryReport(): {
-    totalVRAM: number;
-    usedVRAM: number;
-    availableVRAM: number;
-    usagePercentage: number;
-    loadedModelsCount: number;
-    loadedModels: Array<{
-      key: MockModelKey;
+    stats: MemoryStats;
+    models: Array<{
+      key: ModelKey;
       vram: number;
       loadedAt: number;
       ageMs: number;
+      inferenceCount: number;
+      avgInferenceTime: number;
+      priority: ModelPriority;
+      pinned: boolean;
+      utilityScore: number;
     }>;
   } {
-    const usedVRAM = this.getUsedVRAM();
     const now = Date.now();
+    const stats = this.getMemoryStats();
 
     return {
-      totalVRAM: this.TOTAL_VIRTUAL_VRAM_GB,
-      usedVRAM,
-      availableVRAM: this.getAvailableVRAM(),
-      usagePercentage: (usedVRAM / this.TOTAL_VIRTUAL_VRAM_GB) * 100,
-      loadedModelsCount: this.loadedModels.size,
-      loadedModels: Array.from(this.loadedModels.values()).map(model => ({
+      stats,
+      models: Array.from(this.loadedModels.values()).map(model => ({
         key: model.key,
         vram: model.vram,
         loadedAt: model.loadedAt,
         ageMs: now - model.loadedAt,
+        inferenceCount: model.inferenceCount,
+        avgInferenceTime: model.inferenceCount > 0
+          ? model.totalInferenceTime / model.inferenceCount
+          : 0,
+        priority: model.priority,
+        pinned: model.pinned,
+        utilityScore: this.calculateUtilityScore(model),
       })),
     };
   }
 
-  /**
-   * Réinitialise complètement le gestionnaire (décharge tous les modèles)
-   */
   public reset(): void {
+    const pinnedModels = Array.from(this.loadedModels.entries())
+      .filter(([_, model]) => model.pinned);
+
     this.loadedModels.clear();
-    log.info('🗑️ MemoryManager réinitialisé, tous les modèles déchargés.');
+
+    for (const [key, model] of pinnedModels) {
+      this.loadedModels.set(key, model);
+    }
+
+    log.info(
+      `🗑️ MemoryManager réinitialisé. ` +
+      `Modèles épinglés conservés: ${pinnedModels.length}`
+    );
     this.logStats();
+  }
+
+  public isInitialized(): boolean {
+    return this.initialized;
   }
 }
 

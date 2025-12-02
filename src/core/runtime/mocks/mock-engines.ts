@@ -84,6 +84,21 @@ abstract class BaseMockEngine implements IInferenceEngine {
       throw new Error(`[${this.name}] Aucun modèle chargé`);
     }
 
+    // Simuler une panne une fois sur trois (robustesse)
+    let requestCount = (this as any).requestCount ?? 0;
+    (this as any).requestCount = requestCount + 1;
+
+    if ((this as any).requestCount % 3 === 0) {
+      log.warn(`[${this.name}] Simulation panne CUDA: erreur GPU simulée`);
+      throw new Error(`[${this.name}] Erreur GPU simulée : Surcharge du kernel CUDA.`);
+    }
+
+    // Simuler une tâche très lente une fois sur cinq (timeout test)
+    if ((this as any).requestCount % 5 === 0) {
+      log.warn(`[${this.name}] Tâche lente simulée (5 secondes)...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+
     // Simuler un échec aléatoire si configuré
     if (this.config.failureRate && Math.random() < this.config.failureRate) {
       throw new Error(`[${this.name}] Échec aléatoire simulé de l'inférence`);

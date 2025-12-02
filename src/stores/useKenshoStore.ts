@@ -27,7 +27,6 @@ import { toast } from 'sonner';
 import { appConfig } from '../config/app.config';
 import { ThoughtStep } from '../agents/oie/types';
 import { Project, ProjectTask } from '../agents/graph/types';
-import { TaskCompletionDetector } from '../core/oie/TaskCompletionDetector';
 import { createLogger } from '@/lib/logger';
 import type { KenshoWindow, OIEPlan, FactCheckingClaim, SemanticSearchResults } from '@/types/kensho';
 
@@ -525,7 +524,7 @@ export const useKenshoStore = create<KenshoState>((set: (partial: KenshoState | 
      * - Met à jour le placeholder au fur et à mesure du streaming
      */
     sendMessage: async (text: string) => {
-        const { messages, modelProgress, mainBus } = get();
+        const { messages, modelProgress } = get();
 
         if (text.trim() === '') {
             return;
