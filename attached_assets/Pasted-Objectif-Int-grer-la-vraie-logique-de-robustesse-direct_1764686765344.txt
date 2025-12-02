@@ -1,0 +1,120 @@
+Objectif : Intégrer la vraie logique de robustesse directement dans notre TaskExecutor. Nous allons le rendre capable de survivre à des échecs de tâches (simulées) et de gérer des délais excessifs.
+Philosophie "Usine Vide" : Nous allons modifier notre moteur factice pour qu'il puisse simuler des pannes. Par exemple, une tâche sur trois échouera, et une sur cinq sera extrêmement lente. Notre TaskExecutor devra gérer ces scénarios sans s'effondrer.
+Étape 1 : Mise à jour du Moteur Factice pour simuler des pannes
+TypeScript
+
+// src/core/runtime/mocks/mock-engines.ts (Mise à jour)
+
+let requestCount = 0;
+
+export const mockWebLLMEngine = {
+  name: "MockWebLLM",
+  type: "GPU",
+  async generate(prompt: string, options?: { signal?: AbortSignal }): Promise<string> {
+    requestCount++;
+    console.log(`[Mock WebLLM] Génération (Requête #${requestCount})...`);
+
+    // Simuler une panne une fois sur trois
+    if (requestCount % 3 === 0) {
+      await new Promise(r => setTimeout(r, 50));
+      throw new Error("Erreur GPU simulée : Surcharge du kernel CUDA.");
+    }
+
+    // Simuler une tâche lente une fois sur cinq
+    if (requestCount % 5 === 0) {
+      console.log("[Mock WebLLM] Tâche lente simulée (5 secondes)...");
+      await new Promise(r => setTimeout(r, 5000));
+    }
+
+    // Gérer l'annulation par timeout
+    if (options?.signal?.aborted) {
+      throw new Error("Opération annulée par timeout.");
+    }
+
+    await new Promise(r => setTimeout(r, 150));
+    return `Réponse simulée (rapide, via GPU) pour : "${prompt}"`;
+  },
+  // ...
+};
+
+Étape 2 : Implémentation du ResilienceEngine dans le TaskExecutor
+Nous ne créons pas une nouvelle classe, nous intégrons ces capacités directement dans le TaskExecutor.
+TypeScript
+
+// src/core/kernel/TaskExecutor.ts (Mise à jour majeure)
+
+import { runtimeManager } from './RuntimeManager';
+import { ExecutionPlan, Task } from './ExecutionPlan';
+import pLimit from 'p-limit';
+
+console.log("👷 TaskExecutor v3.1 (avec ResilienceEngine) initialisé.");
+
+const TASK_TIMEOUT_MS = 3000; // Timeout de 3 secondes par tâche
+const MAX_RETRIES = 2; // 2 tentatives de plus (total 3)
+const RETRY_DELAY_MS = 200; // Délai initial avant la première tentative
+
+class TaskExecutor {
+  private limit: any;
+
+  constructor() {
+    this.limit = pLimit(2);
+  }
+
+  public async executePlan(plan: ExecutionPlan): Promise<any[]> {
+    const engine = await runtimeManager.getEngine();
+
+    const taskPromises = plan.tasks.map(task => {
+      const taskFn = () => this.executeTaskWithResilience(task, engine);
+      
+      if (plan.strategy === 'PARALLEL_LIMITED') {
+        return this.limit(taskFn);
+      }
+      return taskFn();
+    });
+    
+    // ... (logique SERIAL vs PARALLEL inchangée)
+    // ...
+  }
+
+  /**
+   * Exécute une seule tâche avec timeout et retry.
+   */
+  private async executeTaskWithResilience(task: Task, engine: any): Promise<any> {
+    for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+      try {
+        console.log(`[TaskExecutor] Lancement tâche "${task.model}" (Essai ${attempt})...`);
+        
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), TASK_TIMEOUT_MS);
+
+        const result = await engine.generate(task.prompt, { signal: abortController.signal });
+        
+        clearTimeout(timeoutId); // Annuler le timeout si la tâche réussit
+        return { expert: task.model, result, status: 'success' };
+
+      } catch (error) {
+        const err = error as Error;
+        console.warn(`[TaskExecutor] ⚠️ Erreur sur "${task.model}" (Essai ${attempt}): ${err.message}`);
+
+        if (attempt > MAX_RETRIES) {
+          console.error(`[TaskExecutor] ❌ Échec final pour "${task.model}" après ${attempt} essais.`);
+          return { expert: task.model, error: err.message, status: 'error' };
+        }
+
+        // Attendre avant la prochaine tentative (backoff exponentiel simple)
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+        console.log(`[TaskExecutor] Prochaine tentative dans ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+}
+
+export const taskExecutor = new TaskExecutor();
+
+Statut : Tâche #10 du Manifeste - TERMINÉE.
+Notre TaskExecutor n'est plus un simple chef de chantier. C'est un vétéran aguerri.
+
+    Il est patient : Il sait attendre et réessayer si une tâche échoue.
+    Il est pragmatique : Il sait abandonner une tâche si elle prend trop de temps (timeout).
+    Il est résilient : Une panne sur un "ouvrier" (un modèle) ne fait plus s'effondrer toute la chaîne de production.
