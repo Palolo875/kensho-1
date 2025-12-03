@@ -1,0 +1,118 @@
+L'analyse évalue l'orchestrateur central qui coordonne les 8 étapes du pipeline LLM (validation → cache → plan → exécution → fusion → output → cache → réponse), noté 7.5/10 actuellement (potentiellement 9.5/10 corrigé) pour son excellente architecture mais bugs critiques de cache et robustesse.
+Points Forts
+
+    Orchestration claire et linéaire : Pipeline 8 étapes bien définies avec responsabilités uniques et ordre optimal (cache avant exécution lourde).
+
+    Intégration complète : Relie proprement Router, TaskExecutor, Fusioner, ResponseCache, SSEStreamer, InputFilter, OutputGuard – pure orchestration sans logique métier.
+
+    Communication d'état : sseStreamer.streamStatus() pour UX transparente (feedback en temps réel sur chaque étape).
+
+Bugs Critiques
+1. Cache Key Incorrecte (BUG MAJEUR)
+
+text
+Problème : cache.get(prompt, defaultModel) vs cache.set(prompt, defaultModel)
+// Mais Router peut choisir ['code-qwen', 'math-bitnet'] → incohérence !
+
+Scénario fatal :
+
+    Requête 1 : Router → ['code-qwen'] → cache("prompt::dialogue-gemma")
+
+    Requête 2 : Même prompt → Cache HIT (mauvaise réponse)
+
+    Requête 3 : Router → ['math-bitnet'] → Cache MISS + mauvais cache
+
+Solution : cacheKey = hash(prompt + plan.experts.sort().join(',')) – créer plan AVANT cache check.
+2. Gestion d'Erreur Incomplète
+
+text
+try { pipeline } catch { sseStreamer.streamError() } // ❌ Pas de cleanup
+
+Problèmes : Pas de libération ressources, monitoring non notifié, cache non rollbacké.
+
+Solution : try/catch/finally + cleanup(planId) + monitoring error emit + Sentry reporting.
+Manques Importants
+3. Pas de Support Streaming
+
+    Attend taskExecutor.executePlan() complet → UX bloqué 5-10s sans feedback.
+
+    Solution : processStreaming() + forward tokens temps réel + fusion asynchrone.
+
+4. Pas de Gestion Cancellation
+
+    Bouton "Stop" impossible → utilisateur bloqué.
+
+    Solution : AbortController par requestId + propagation vers TaskExecutor.
+
+5. Pas de Retry Logic Orchestration
+
+    Échec total sans retry (contrairement à ResilienceEngine).
+
+    Solution : Retry 2x avec backoff exponentiel sur erreurs retriables (timeout/503/429).
+
+6. Pas de Métriques Performance
+
+    Invisible : temps validation/planning/exécution/fusion/output/caching.
+
+    Solution : PipelineMetrics breakdown + % par étape + bottlenecks auto-détectés.
+
+Solutions Proposées (Production-Ready)
+Pipeline Corrigé
+
+typescript
+process(prompt) {
+  1. inputFilter.validate()                    // 0. Validation
+  2. plan = router.createPlan(prompt)          // 1. Planification
+  3. cacheKey = hash(prompt + plan.experts)    // 2. Cache (plan-aware)
+  4. if cacheHit → streamComplete(cached)
+  5. emit START_EXECUTION(plan.id)             // 3. Monitoring
+  6. results = taskExecutor.executePlan(plan)  // 4. Exécution
+  7. fused = fusioner.fuse(results)            // 5. Fusion
+  8. sanitized = outputGuard.sanitize(fused)   // 6. Output
+  9. cache.set(cacheKey, sanitized)            // 7. Cache update
+  10.streamComplete(sanitized)                 // 8. Réponse
+}
+
+Fonctionnalités Avancées
+
+    Streaming : processStreaming() + token forward temps réel.
+
+    Cancellation : AbortController + cancel(requestId).
+
+    Retry : 2 tentatives backoff sur erreurs réseau/503/429.
+
+    Metrics : Breakdown temps par étape + emit PIPELINE_METRICS.
+
+    Error handling : try/finally + cleanup + monitoring + Sentry.
+
+Tests Implicites
+
+    Cache cohérence : même prompt/même plan → HIT.
+
+    Cancellation : abort() → TASK_TIMEOUT + cleanup.
+
+    Retry : 503 → nouvelle tentative après backoff.
+
+    Metrics : execution: 80% total time → goulot détecté.
+
+Verdict Final
+
+Note actuelle : 7.5/10
+
+    ✅ Architecture excellente, intégration complète, UX states.
+
+    ❌ Cache BUG CRITIQUE, pas de streaming/cancellation/retry/metrics.
+
+Note corrigée : 9.5/10
+Priorités URGENTES :
+
+    CRITIQUE : Cache key plan-aware.
+
+    CRITIQUE : AbortController + cleanup.
+
+    IMPORTANT : Streaming + retry orchestration.
+
+    NICE : Performance breakdown.
+
+Impact : Passe d'un orchestrateur naïf à un système production-ready avec UX fluide, résilience 99.9% et observabilité fine.
+​

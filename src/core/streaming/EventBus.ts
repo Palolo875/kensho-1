@@ -22,7 +22,8 @@ export type StreamEventVariant =
   | { type: 'METRICS'; payload: { ttft?: number; tokensPerSec?: number; totalTokens?: number } }
   | { type: 'COMPLETE'; payload: { response: string; totalTime?: number } }
   | { type: 'ERROR'; payload: { message: string; name?: string; stack?: string; retriable?: boolean } }
-  | { type: 'INFO'; payload: { message: string } };
+  | { type: 'INFO'; payload: { message: string } }
+  | { type: 'START_EXECUTION'; payload: { planId: string; expertsUsed?: string[]; cacheHit?: boolean } };
 
 export type StreamEvent = StreamEventVariant & { timestamp: number };
 
@@ -33,6 +34,7 @@ export type EventMap = {
   COMPLETE: { response: string; totalTime?: number };
   ERROR: { message: string; name?: string; stack?: string; retriable?: boolean };
   INFO: { message: string };
+  START_EXECUTION: { planId: string; expertsUsed?: string[]; cacheHit?: boolean };
 };
 
 export type EventType = keyof EventMap;

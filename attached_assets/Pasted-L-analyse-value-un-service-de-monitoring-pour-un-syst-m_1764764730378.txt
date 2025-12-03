@@ -1,0 +1,119 @@
+L'analyse évalue un service de monitoring pour un système LLM qui tracke des métriques clés (TTFT, totalTime, tokens/sec) via écoute d'événements SSEStreamer, mais souffre de bugs critiques de concurrence et d'implémentation incomplète, noté 6/10 (potentiellement 9.5/10 corrigé).
+
+​
+Points Forts
+
+    Métriques pertinentes et UX-focused : TTFT (Time To First Token, critère de réactivité perçue), totalTime, tokenCount, tokensPerSecond – métriques essentielles pour benchmark et optimisation LLM.
+
+    Pattern d'écoute découplé : Utilise sseStreamer.on('TOKEN', 'COMPLETE') pour observer sans interférer le flux principal, extensible et modulaire.
+
+    Reset automatique : Appel à this.reset() sur 'COMPLETE' pour préparation de la prochaine exécution.
+
+Bugs Critiques
+1. Race Condition sur startTime (CRITIQUE)
+
+text
+Scénario fatal :
+1. START_EXECUTION #1 → startTime=1000
+2. TOKEN #1 arrive → OK (startTime=1000)
+3. COMPLETE #1 → reset() → startTime=0
+4. START_EXECUTION #2 → startTime=2000
+5. TOKEN #1 tardif arrive → if(startTime===0) return FAUX → TTFT erroné pour #2 !
+
+Solution : Isolation par planId avec Map<string, ExecutionMetrics> au lieu d'un état global partagé.
+
+​
+2. Pas de Timeout pour Exécutions Zombies (Fuite Mémoire)
+
+    Si 'COMPLETE' jamais reçu (crash, réseau), métriques restent en mémoire indéfiniment.
+
+    Solution : setTimeout(60s) par planId, annulation sur 'COMPLETE', émission 'METRICS' avec status 'timeout'.
+
+    ​
+
+Manques Importants
+3. Métriques Incomplètes
+
+    Manquent : modelLoadTime, expertsUsed, cacheHit, memoryUsage (before/after/peak), errors[].
+
+    Événements à tracker : 'MODEL_LOADING', 'TASK_STARTED', 'ERROR', performance.memory (si disponible).
+
+4. Pas d'Agrégation Historique
+
+    Impossible de voir tendances, moyennes, taux d'erreur, comparaison experts.
+
+    Solution : history[] (limité 100), getAggregatedStats() (avg TTFT, errorRate%, expertUsage).
+
+5. Pas d'Export/Dashboard
+
+    Métriques bloquées en console, pas d'API pour UI temps réel.
+
+    Solution : getCurrentMetrics(planId), exportMetrics() (current/history/aggregated), exportToJSON(), IndexedDB persistence.
+
+6. Pas de Détection d'Anomalies
+
+    Pas d'alertes sur TTFT>2s, errorRate>10%, memory>4GB, throughput<5 tokens/s.
+
+    Solution : checkForAnomalies() avec seuils configurables, émission 'ALERT'.
+
+Solutions Proposées (Production-Ready)
+Architecture Corrigée
+
+typescript
+class MonitoringService {
+  private activeExecutions = new Map<string, ExecutionMetrics>();  // Par planId
+  private timeoutTimers = new Map<string, number>();
+  private history: ExecutionMetrics[] = [];  // MAX_HISTORY=100
+  
+  listenToEvents() {
+    // START: init + timeout
+    // TOKEN: TTFT + count (par planId)
+    // COMPLETE: finaliser + cleanup timeout + history + emit METRICS
+    // ERROR/MODEL_LOADING/TASK_STARTED: enrichir metrics
+  }
+}
+
+ExecutionMetrics étendu :
+
+typescript
+{
+  planId: string;
+  startTime: number;
+  firstTokenTime?: number;
+  tokenCount: number;
+  status: 'running'|'completed'|'error'|'timeout';
+  modelLoadTime?: number;
+  expertsUsed: string[];
+  cacheHit: boolean;
+  memoryUsage?: {beforeMB: number, afterMB: number, peakMB: number};
+  errors: Array<{timestamp: number, message: string, expert?: string}>;
+  ttft?: number; totalTime?: number; tokensPerSecond?: number;
+}
+
+Agrégation : avg TTFT/totalTime/tokensPerSec, errorRate%, timeoutRate%, cacheHitRate%, expertUsage{}.
+Tests et Observabilité
+
+    API UI : exportMetrics() pour dashboard temps réel (current/history/aggregated).
+
+    Anomalies : seuils configurables → console.warn + emit 'ALERT'.
+
+    Persistance : IndexedDB pour historique longue durée.
+
+Verdict Final
+
+Note actuelle : 6/10
+
+    ✅ Métriques clés, pattern découplé.
+
+    ❌ Race condition CRITIQUE, fuites zombies, incomplet.
+
+Note corrigée : 9.5/10
+Priorités URGENTES :
+
+    CRITIQUE : Map<planId, Metrics> (fix race).
+
+    CRITIQUE : Timeout 60s par exécution.
+
+    IMPORTANT : Historique/agrégation/export.
+
+    NICE : Anomalies, memory tracking.

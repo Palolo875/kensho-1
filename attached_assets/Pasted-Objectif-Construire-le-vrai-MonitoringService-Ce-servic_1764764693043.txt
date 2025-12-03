@@ -1,0 +1,93 @@
+Objectif : Construire le vrai MonitoringService. Ce service s'abonnera à notre SSEStreamer pour écouter les événements clés et calculera des métriques de performance en temps réel.
+Philosophie "Usine Vide" : Le service est celui de production. Il calculera des métriques réelles (temps écoulé, etc.) basées sur les événements de notre flux simulé. Pour l'instant, il affichera ses résultats dans la console. Plus tard, ces données pourront alimenter un véritable dashboard dans l'UI.
+Implémentation du MonitoringService de Production
+TypeScript
+
+// src/core/kernel/monitoring/MonitoringService.ts (VRAIE Implémentation)
+
+import { sseStreamer, StreamEvent } from '../streaming/SSEStreamer';
+
+console.log("📊 MonitoringService (Production) initialisé.");
+
+class MonitoringService {
+  private startTime: number = 0;
+  private firstTokenTime: number | null = null;
+  private tokenCount: number = 0;
+  private currentPlanId: string | null = null;
+
+  constructor() {
+    this.listenToEvents();
+  }
+
+  /**
+   * S'abonne aux événements du SSEStreamer pour collecter des métriques.
+   */
+  private listenToEvents(): void {
+    // Écoute un événement 'START_EXECUTION' qui sera émis par le DialoguePlugin
+    sseStreamer.on('START_EXECUTION', (event: StreamEvent) => {
+      this.reset(event.payload.planId);
+      console.log(`[Monitor] 📈 Nouvelle exécution démarrée: ${this.currentPlanId}`);
+    });
+
+    sseStreamer.on('TOKEN', (event: StreamEvent) => {
+      if (this.startTime === 0) return; // Ne fait rien si l'exécution n'a pas démarré
+
+      if (this.firstTokenTime === null) {
+        this.firstTokenTime = Date.now();
+        const ttft = this.firstTokenTime - this.startTime;
+        console.log(`[Monitor] ⚡ Time To First Token (TTFT): ${ttft}ms`);
+      }
+      this.tokenCount++;
+    });
+
+    sseStreamer.on('COMPLETE', (event: StreamEvent) => {
+      if (this.startTime === 0) return;
+
+      const totalTime = Date.now() - this.startTime;
+      const tokensPerSec = this.tokenCount > 0 ? (this.tokenCount / totalTime * 1000) : 0;
+
+      const finalMetrics = {
+        planId: this.currentPlanId,
+        ttft: this.firstTokenTime ? this.firstTokenTime - this.startTime : totalTime,
+        totalTime,
+        tokenCount: this.tokenCount,
+        tokensPerSecond: parseFloat(tokensPerSec.toFixed(2)),
+      };
+
+      console.log('[Monitor] 📊 Métriques Finales:', finalMetrics);
+      
+      // Émet un événement de métriques pour que d'autres services (ou l'UI) puissent l'utiliser
+      sseStreamer.emit('METRICS', finalMetrics);
+      
+      this.reset(); // Réinitialise pour la prochaine exécution
+    });
+
+    sseStreamer.on('ERROR', (event: StreamEvent) => {
+      console.error('[Monitor] 📉 Erreur détectée pendant l\'exécution.', event.payload);
+      this.reset();
+    });
+  }
+
+  /**
+   * Réinitialise les compteurs pour une nouvelle exécution.
+   */
+  private reset(planId: string | null = null): void {
+    this.startTime = planId ? Date.now() : 0;
+    this.firstTokenTime = null;
+    this.tokenCount = 0;
+    this.currentPlanId = planId;
+  }
+}
+
+// Initialise le service pour qu'il commence à écouter immédiatement.
+export const monitoringService = new MonitoringService();
+
+Statut : Tâche #12 du Manifeste - TERMINÉE.
+Le MonitoringService est en place et à l'écoute. Il est comme une équipe d'analystes qui regarde les écrans de contrôle de l'usine 24h/24.
+
+    Il sait quand une nouvelle "commande" (ExecutionPlan) arrive.
+    Il mesure le temps nécessaire pour obtenir le premier "produit" (token).
+    Il calcule la cadence de production (tokens/seconde).
+    Il publie un rapport final à la fin de chaque commande.
+
+Notre usine n'est plus seulement résiliente et sécurisée, elle est maintenant observable. Nous avons les outils pour mesurer et optimiser sa performance.
