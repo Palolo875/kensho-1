@@ -2,7 +2,6 @@
 import { runAgent } from '../../core/agent-system/defineAgent';
 import { AgentRuntime, AgentStreamEmitter } from '../../core/agent-system/AgentRuntime';
 import { LLMPlanner } from './planner';
-import { TaskExecutor } from './executor';
 import { GraphWorker } from '../graph';
 import { MemoryRetriever } from '../graph/MemoryRetriever';
 import type { Intent } from '../intent-classifier';
@@ -197,15 +196,6 @@ runAgent({
 
                     log.info('Début de l\'exécution du plan...');
                     runtime.log('info', 'Exécution du plan avec TaskExecutor...');
-                    
-                    const executionContext = {
-                        originalQuery: query,
-                        attachedFile: attachedFile ? {
-                            buffer: attachedFile.buffer,
-                            type: attachedFile.type,
-                            name: attachedFile.name
-                        } : undefined
-                    };
 
                     // Use the kernel's TaskExecutor with guardrails for processing
                     const guardedExecutor = new GuardedTaskExecutor(kernelTaskExecutor);
