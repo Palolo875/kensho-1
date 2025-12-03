@@ -4,11 +4,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Activity, TrendingUp, Clock, Zap, BarChart3 } from 'lucide-react';
+import { Activity, TrendingUp, Clock, Zap, BarChart3, Cpu, Database, AlertTriangle } from 'lucide-react';
+import { runtimeManager } from '@/core/kernel/RuntimeManager';
+import { taskExecutor } from '@/core/kernel/TaskExecutor';
+import { memoryManager } from '@/core/kernel/MemoryManager';
 
 interface QueueStats {
   queueName: string;
@@ -26,6 +29,13 @@ interface PerformanceMetrics {
   totalRequests: number;
 }
 
+interface DetailedMetrics {
+  runtime: any;
+  executor: any;
+  memory: any;
+  queue: any;
+}
+
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export const PerformanceDashboard = () => {
@@ -35,6 +45,13 @@ export const PerformanceDashboard = () => {
     averageQueueTime: 0,
     peakConcurrency: 0,
     totalRequests: 0
+  });
+  
+  const [detailedMetrics, setDetailedMetrics] = useState<DetailedMetrics>({
+    runtime: null,
+    executor: null,
+    memory: null,
+    queue: null
   });
 
   const [queueStats] = useState<QueueStats[]>([
@@ -51,6 +68,25 @@ export const PerformanceDashboard = () => {
     }));
     setMetrics(prev => ({ ...prev, responseTime: data }));
   }, []);
+  
+  // Fetch detailed metrics
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const runtimeMetrics = runtimeManager.getPerformanceMetrics();
+      const executorStats = taskExecutor.getStats();
+      const queueStatus = taskExecutor.getQueueStatus();
+      const memoryReport = memoryManager.getMemoryReport();
+      
+      setDetailedMetrics({
+        runtime: runtimeMetrics,
+        executor: executorStats,
+        memory: memoryReport,
+        queue: queueStatus
+      });
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const successCount = 105;
   const failureCount = 3;
@@ -58,6 +94,12 @@ export const PerformanceDashboard = () => {
     { name: 'Success', value: successCount },
     { name: 'Failed', value: failureCount }
   ];
+  
+  // Prepare memory usage data for chart
+  const memoryData = detailedMetrics.memory ? [
+    { name: 'Utilisée', value: detailedMetrics.memory.stats.usedVRAM },
+    { name: 'Disponible', value: detailedMetrics.memory.stats.totalVRAM - detailedMetrics.memory.stats.usedVRAM }
+  ] : [];
 
   return (
     <div className="w-full space-y-4 sm:space-y-6">
@@ -71,7 +113,7 @@ export const PerformanceDashboard = () => {
       </div>
 
       {/* Key Metrics - MASTERPROMPT Cards - Responsive */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
         <Card className="bg-card border border-border/40 shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
             <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Total</CardTitle>
@@ -124,7 +166,7 @@ export const PerformanceDashboard = () => {
 
       {/* Detailed Tabs - MASTERPROMPT Style - Responsive */}
       <Tabs defaultValue="response-time" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-background border border-border/40 h-auto">
+        <TabsList className="grid w-full grid-cols-4 bg-background border border-border/40 h-auto">
           <TabsTrigger value="response-time" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-light py-2 sm:py-3">
             <Clock className="h-3 sm:h-4 w-3 sm:w-4" />
             <span className="hidden sm:inline">Response Time</span>
@@ -139,6 +181,11 @@ export const PerformanceDashboard = () => {
             <TrendingUp className="h-3 sm:h-4 w-3 sm:w-4" />
             <span className="hidden sm:inline">Success Rate</span>
             <span className="sm:hidden">Success</span>
+          </TabsTrigger>
+          <TabsTrigger value="system-health" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-light py-2 sm:py-3">
+            <Cpu className="h-3 sm:h-4 w-3 sm:w-4" />
+            <span className="hidden sm:inline">System Health</span>
+            <span className="sm:hidden">Health</span>
           </TabsTrigger>
         </TabsList>
 
@@ -223,6 +270,180 @@ export const PerformanceDashboard = () => {
               </ResponsiveContainer>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* System Health */}
+        <TabsContent value="system-health" className="space-y-2 sm:space-y-4 mt-3 sm:mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Runtime Metrics */}
+            {detailedMetrics.runtime && (
+              <Card className="bg-card border border-border/40 shadow-sm">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                    <Cpu className="h-4 w-4 text-blue-500" />
+                    Runtime Performance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Successful Inferences:</span>
+                      <span className="font-medium">{detailedMetrics.runtime.successfulInferences}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Error Rate:</span>
+                      <span className="font-medium">{(detailedMetrics.runtime.errorRate * 100).toFixed(2)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Avg Latency:</span>
+                      <span className="font-medium">{detailedMetrics.runtime.averageLatencyMs.toFixed(0)}ms</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tokens/sec:</span>
+                      <span className="font-medium">{detailedMetrics.runtime.averageTokensPerSecond}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Memory Usage */}
+            {detailedMetrics.memory && (
+              <Card className="bg-card border border-border/40 shadow-sm">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                    <Database className="h-4 w-4 text-green-500" />
+                    Memory Usage
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">VRAM Used:</span>
+                      <span className="font-medium">{detailedMetrics.memory.stats.usedVRAM.toFixed(2)}GB / {detailedMetrics.memory.stats.totalVRAM.toFixed(2)}GB</span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2.5">
+                      <div 
+                        className="bg-green-600 h-2.5 rounded-full" 
+                        style={{ width: `${detailedMetrics.memory.stats.usagePercentage}%` }}
+                      ></div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {detailedMetrics.memory.stats.loadedModelsCount} models loaded ({detailedMetrics.memory.stats.pinnedModelsCount} pinned)
+                    </div>
+                  </div>
+                  
+                  {memoryData.length > 0 && (
+                    <div className="mt-4 h-32">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={memoryData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={30}
+                            outerRadius={50}
+                            fill="#8884d8"
+                            paddingAngle={2}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          >
+                            <Cell key="used" fill="#10b981" />
+                            <Cell key="available" fill="#94a3b8" />
+                          </Pie>
+                          <Tooltip formatter={(value) => `${value}GB`} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Task Executor Stats */}
+            {detailedMetrics.executor && (
+              <Card className="bg-card border border-border/40 shadow-sm">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                    <Zap className="h-4 w-4 text-purple-500" />
+                    Task Executor
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Successful Executions:</span>
+                      <span className="font-medium">{detailedMetrics.executor.successfulExecutions}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Failed Executions:</span>
+                      <span className="font-medium">{detailedMetrics.executor.failedExecutions}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Avg Execution Time:</span>
+                      <span className="font-medium">{detailedMetrics.executor.averageExecutionTime.toFixed(0)}ms</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Cache Hits:</span>
+                      <span className="font-medium">{detailedMetrics.executor.cacheHits}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Queue Status */}
+            {detailedMetrics.queue && (
+              <Card className="bg-card border border-border/40 shadow-sm">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                    <Activity className="h-4 w-4 text-orange-500" />
+                    Queue Status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-muted-foreground">Serial Queue</span>
+                        <span className="font-medium">{detailedMetrics.queue.serial.pending} pending</span>
+                      </div>
+                      <div className="w-full bg-secondary rounded-full h-2">
+                        <div 
+                          className="bg-blue-500 h-2 rounded-full" 
+                          style={{ width: `${Math.min(100, detailedMetrics.queue.serial.pending * 20)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-muted-foreground">Parallel Limited</span>
+                        <span className="font-medium">{detailedMetrics.queue.limited.pending} pending</span>
+                      </div>
+                      <div className="w-full bg-secondary rounded-full h-2">
+                        <div 
+                          className="bg-purple-500 h-2 rounded-full" 
+                          style={{ width: `${Math.min(100, detailedMetrics.queue.limited.pending * 10)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-muted-foreground">Parallel Full</span>
+                        <span className="font-medium">{detailedMetrics.queue.full.pending} pending</span>
+                      </div>
+                      <div className="w-full bg-secondary rounded-full h-2">
+                        <div 
+                          className="bg-green-500 h-2 rounded-full" 
+                          style={{ width: `${Math.min(100, detailedMetrics.queue.full.pending * 5)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

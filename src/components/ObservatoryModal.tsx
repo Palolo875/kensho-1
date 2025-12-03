@@ -5,10 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Activity, AlertCircle } from "lucide-react";
+import { Activity, AlertCircle, Cpu, Database, BarChart3 } from "lucide-react";
 import { CustomCrownIcon, JournalIcon, LightbulbIcon, WarningIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { SAMPLE_JOURNAL } from "@/utils/sampleJournal";
+import { runtimeManager } from "@/core/kernel/RuntimeManager";
+import { taskExecutor } from "@/core/kernel/TaskExecutor";
+import { memoryManager } from "@/core/kernel/MemoryManager";
 
 export interface WorkerStatus {
     name: string;
@@ -74,6 +77,12 @@ export function ObservatoryModal({
         }
     };
 
+    // Get performance metrics
+    const performanceMetrics = runtimeManager.getPerformanceMetrics();
+    const executorStats = taskExecutor.getStats();
+    const queueStatus = taskExecutor.getQueueStatus();
+    const memoryReport = memoryManager.getMemoryReport();
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="w-full max-w-2xl sm:max-w-4xl lg:max-w-6xl max-h-[85vh] sm:max-h-[90vh] bg-background/95 border border-border/40 backdrop-blur-md p-3 sm:p-6 flex flex-col">
@@ -91,10 +100,11 @@ export function ObservatoryModal({
                 </DialogHeader>
 
                 <Tabs defaultValue="journal" className="w-full mt-3 sm:mt-6">
-                    <TabsList className="grid w-full grid-cols-3 bg-background border border-border/40 h-auto">
+                    <TabsList className="grid w-full grid-cols-4 bg-background border border-border/40 h-auto">
                         <TabsTrigger value="journal" className="text-xs sm:text-sm font-light py-2 sm:py-3">Journal</TabsTrigger>
                         <TabsTrigger value="constellation" className="text-xs sm:text-sm font-light py-2 sm:py-3">Agents</TabsTrigger>
                         <TabsTrigger value="logs" className="text-xs sm:text-sm font-light py-2 sm:py-3">Logs</TabsTrigger>
+                        <TabsTrigger value="metrics" className="text-xs sm:text-sm font-light py-2 sm:py-3">Métriques</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="journal" className="space-y-2 sm:space-y-4 mt-3 sm:mt-4">
@@ -266,6 +276,176 @@ export function ObservatoryModal({
                                 </ScrollArea>
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    <TabsContent value="metrics" className="space-y-2 sm:space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Performance Metrics */}
+                            <Card className="bg-card border border-border/40 shadow-sm">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <BarChart3 className="h-4 w-4 text-blue-500" />
+                                        Performance du Runtime
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Inférences réussies:</span>
+                                            <span className="font-medium">{performanceMetrics.successfulInferences}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Inférences échouées:</span>
+                                            <span className="font-medium">{performanceMetrics.failedInferences}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Taux d'erreur:</span>
+                                            <span className="font-medium">{(performanceMetrics.errorRate * 100).toFixed(2)}%</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Latence moyenne:</span>
+                                            <span className="font-medium">{performanceMetrics.averageLatencyMs.toFixed(0)}ms</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Tokens par seconde:</span>
+                                            <span className="font-medium">{performanceMetrics.averageTokensPerSecond}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Retries:</span>
+                                            <span className="font-medium">{performanceMetrics.totalRetries}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Task Executor Stats */}
+                            <Card className="bg-card border border-border/40 shadow-sm">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <Cpu className="h-4 w-4 text-purple-500" />
+                                        Statistiques d'Exécution
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Exécutions réussies:</span>
+                                            <span className="font-medium">{executorStats.successfulExecutions}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Exécutions échouées:</span>
+                                            <span className="font-medium">{executorStats.failedExecutions}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Temps moyen:</span>
+                                            <span className="font-medium">{executorStats.averageExecutionTime.toFixed(0)}ms</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Cache hits:</span>
+                                            <span className="font-medium">{executorStats.cacheHits}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Tentatives:</span>
+                                            <span className="font-medium">{executorStats.totalRetries}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Queue Status */}
+                            <Card className="bg-card border border-border/40 shadow-sm">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <Activity className="h-4 w-4 text-green-500" />
+                                        Statut des Queues
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="text-muted-foreground">Série (1)</span>
+                                                <span className="font-medium">{queueStatus.serial.pending} en attente</span>
+                                            </div>
+                                            <div className="w-full bg-secondary rounded-full h-2">
+                                                <div 
+                                                    className="bg-blue-500 h-2 rounded-full" 
+                                                    style={{ width: `${Math.min(100, queueStatus.serial.pending * 20)}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="text-muted-foreground">Parallèle limité (2)</span>
+                                                <span className="font-medium">{queueStatus.limited.pending} en attente</span>
+                                            </div>
+                                            <div className="w-full bg-secondary rounded-full h-2">
+                                                <div 
+                                                    className="bg-purple-500 h-2 rounded-full" 
+                                                    style={{ width: `${Math.min(100, queueStatus.limited.pending * 10)}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="text-muted-foreground">Parallèle complet (4)</span>
+                                                <span className="font-medium">{queueStatus.full.pending} en attente</span>
+                                            </div>
+                                            <div className="w-full bg-secondary rounded-full h-2">
+                                                <div 
+                                                    className="bg-green-500 h-2 rounded-full" 
+                                                    style={{ width: `${Math.min(100, queueStatus.full.pending * 5)}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Memory Report */}
+                            <Card className="bg-card border border-border/40 shadow-sm">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <Database className="h-4 w-4 text-orange-500" />
+                                        Utilisation Mémoire
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">VRAM Totale:</span>
+                                            <span className="font-medium">{memoryReport.stats.totalVRAM.toFixed(2)}GB</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">VRAM Utilisée:</span>
+                                            <span className="font-medium">{memoryReport.stats.usedVRAM.toFixed(2)}GB</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Pourcentage:</span>
+                                            <span className="font-medium">{memoryReport.stats.usagePercentage.toFixed(1)}%</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Modèles chargés:</span>
+                                            <span className="font-medium">{memoryReport.stats.loadedModelsCount}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    {memoryReport.models.length > 0 && (
+                                        <div className="mt-3 pt-2 border-t border-border/30">
+                                            <p className="text-xs text-muted-foreground mb-1">Modèles chargés:</p>
+                                            <div className="max-h-24 overflow-y-auto">
+                                                {memoryReport.models.map((model: any) => (
+                                                    <div key={model.key} className="flex justify-between text-xs py-1">
+                                                        <span className="text-foreground truncate mr-2">{model.key}</span>
+                                                        <span className="text-muted-foreground">{model.vram.toFixed(2)}GB</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
                     </TabsContent>
                 </Tabs>
             </DialogContent>
