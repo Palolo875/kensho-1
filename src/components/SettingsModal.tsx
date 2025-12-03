@@ -12,12 +12,14 @@ import ThemeToggle from "./ThemeToggle";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
 import { useNavigate } from "react-router-dom";
-import { Download, X, Save, Cpu, Database, BarChart3, Activity } from "lucide-react";
+import { Download, X, Save, Cpu, Database, BarChart3, Activity, Battery, Wifi, Zap, HardDrive, Thermometer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useObservatory } from "@/contexts/ObservatoryContext";
 import { runtimeManager } from "@/core/kernel/RuntimeManager";
 import { taskExecutor } from "@/core/kernel/TaskExecutor";
 import { memoryManager } from "@/core/kernel/MemoryManager";
+import { resourceManager } from "@/core/kernel/ResourceManager";
+import { monitoringService } from "@/core/kernel/monitoring/MonitoringService";
 
 interface SettingsModalProps {
   open: boolean;
@@ -46,6 +48,8 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
   const [performanceMetrics, setPerformanceMetrics] = useState<any>(null);
   const [executorStats, setExecutorStats] = useState<any>(null);
   const [memoryReport, setMemoryReport] = useState<any>(null);
+  const [resourceStatus, setResourceStatus] = useState<any>(null);
+  const [monitoringStats, setMonitoringStats] = useState<any>(null);
 
   // Fetch performance data when transparency tab is opened
   useEffect(() => {
@@ -61,6 +65,15 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
       // Get memory report
       const memory = memoryManager.getMemoryReport();
       setMemoryReport(memory);
+      
+      // Get resource status
+      resourceManager.getStatus().then(status => {
+        setResourceStatus(status);
+      });
+      
+      // Get monitoring stats
+      const monitoring = monitoringService.getAggregatedStats();
+      setMonitoringStats(monitoring);
     }
   }, [activeTab]);
 
@@ -381,6 +394,125 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                 </div>
               </div>
 
+              {/* Real-time System Health Indicators */}
+              <div className="space-y-3 mb-6">
+                <div className="p-3 rounded-lg bg-card border border-border/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Thermometer className="h-4 w-4 text-red-500" />
+                    <span className="text-sm font-medium text-foreground">Santé Système en Temps Réel</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Memory Usage */}
+                    <div className="p-2 rounded bg-blue-500/10 border border-blue-500/20">
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-1">
+                          <Database className="h-3 w-3 text-blue-500" />
+                          <span className="text-xs font-medium text-foreground">Mémoire</span>
+                        </div>
+                        {memoryReport && (
+                          <span className="text-xs font-medium text-foreground">
+                            {memoryReport.stats.usagePercentage.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                      {memoryReport && (
+                        <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500 rounded-full"
+                            style={{ width: `${memoryReport.stats.usagePercentage}%` }}
+                          ></div>
+                        </div>
+                      )}
+                      {memoryReport && (
+                        <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                          <span>{memoryReport.stats.usedVRAM.toFixed(2)}GB</span>
+                          <span>{memoryReport.stats.totalVRAM.toFixed(2)}GB</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* CPU/Execution Load */}
+                    <div className="p-2 rounded bg-purple-500/10 border border-purple-500/20">
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-1">
+                          <Cpu className="h-3 w-3 text-purple-500" />
+                          <span className="text-xs font-medium text-foreground">Charge</span>
+                        </div>
+                        {executorStats && (
+                          <span className="text-xs font-medium text-foreground">
+                            {Math.min(100, (executorStats.averageExecutionTime / 100)).toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                      {executorStats && (
+                        <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-purple-500 rounded-full"
+                            style={{ 
+                              width: `${Math.min(100, executorStats.averageExecutionTime > 0 ? executorStats.averageExecutionTime / 100 : 0)}%` 
+                            }}
+                          ></div>
+                        </div>
+                      )}
+                      {executorStats && (
+                        <div className="text-[10px] text-muted-foreground mt-1 truncate">
+                          {executorStats.averageExecutionTime.toFixed(0)}ms avg
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Network Status */}
+                    <div className="p-2 rounded bg-green-500/10 border border-green-500/20">
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-1">
+                          <Wifi className="h-3 w-3 text-green-500" />
+                          <span className="text-xs font-medium text-foreground">Réseau</span>
+                        </div>
+                        {resourceStatus && (
+                          <span className={`text-xs font-medium ${resourceStatus.network.isOnline ? 'text-green-500' : 'text-red-500'}`}>
+                            {resourceStatus.network.isOnline ? 'En Ligne' : 'Hors Ligne'}
+                          </span>
+                        )}
+                      </div>
+                      {resourceStatus && (
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {resourceStatus.network.effectiveType}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Battery Status */}
+                    <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/20">
+                      <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-1">
+                          <Battery className="h-3 w-3 text-yellow-500" />
+                          <span className="text-xs font-medium text-foreground">Batterie</span>
+                        </div>
+                        {resourceStatus && resourceStatus.battery && (
+                          <span className="text-xs font-medium text-foreground">
+                            {(resourceStatus.battery.level * 100).toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                      {resourceStatus && resourceStatus.battery && (
+                        <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-yellow-500 rounded-full"
+                            style={{ width: `${resourceStatus.battery.level * 100}%` }}
+                          ></div>
+                        </div>
+                      )}
+                      {resourceStatus && resourceStatus.battery && (
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          {resourceStatus.battery.isCharging ? 'En Charge' : 'Décharge'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Performance Metrics */}
               {performanceMetrics && (
                 <div className="space-y-3 mb-6">
@@ -416,7 +548,7 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                 <div className="space-y-3 mb-6">
                   <div className="p-3 rounded-lg bg-card border border-border/30">
                     <div className="flex items-center gap-2 mb-2">
-                      <Cpu className="h-4 w-4 text-purple-500" />
+                      <Zap className="h-4 w-4 text-purple-500" />
                       <span className="text-sm font-medium text-foreground">Statistiques Exécution</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
@@ -436,6 +568,16 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                         <span className="text-muted-foreground">Tentatives:</span>
                         <span className="text-foreground">{executorStats.totalRetries}</span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Cache hits:</span>
+                        <span className="text-foreground">{executorStats.cacheHits}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Stratégies:</span>
+                        <span className="text-foreground">
+                          {Object.values(executorStats.tasksByStrategy).reduce((a: any, b: any) => a + b, 0)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -443,10 +585,10 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
 
               {/* Memory Report */}
               {memoryReport && (
-                <div className="space-y-3">
+                <div className="space-y-3 mb-6">
                   <div className="p-3 rounded-lg bg-card border border-border/30">
                     <div className="flex items-center gap-2 mb-2">
-                      <Database className="h-4 w-4 text-green-500" />
+                      <HardDrive className="h-4 w-4 text-green-500" />
                       <span className="text-sm font-medium text-foreground">Utilisation Mémoire</span>
                     </div>
                     <div className="space-y-2 text-xs">
@@ -466,6 +608,10 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                         <span className="text-muted-foreground">Modèles chargés:</span>
                         <span className="text-foreground">{memoryReport.stats.loadedModelsCount}</span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Modèles épinglés:</span>
+                        <span className="text-foreground">{memoryReport.stats.pinnedModelsCount}</span>
+                      </div>
                     </div>
                     
                     {memoryReport.models.length > 0 && (
@@ -481,6 +627,48 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Monitoring Service Stats */}
+              {monitoringStats && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-card border border-border/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BarChart3 className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm font-medium text-foreground">Statistiques de Surveillance</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Exécutions totales:</span>
+                        <span className="text-foreground">{monitoringStats.totalExecutions}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">TTFT moyen:</span>
+                        <span className="text-foreground">{monitoringStats.avgTtft}ms</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Temps total moyen:</span>
+                        <span className="text-foreground">{monitoringStats.avgTotalTime}ms</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tokens/sec moyen:</span>
+                        <span className="text-foreground">{monitoringStats.avgTokensPerSecond}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Taux d'erreur:</span>
+                        <span className="text-foreground">{(monitoringStats.errorRate * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Taux timeout:</span>
+                        <span className="text-foreground">{(monitoringStats.timeoutRate * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Taux cache hit:</span>
+                        <span className="text-foreground">{(monitoringStats.cacheHitRate * 100).toFixed(1)}%</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

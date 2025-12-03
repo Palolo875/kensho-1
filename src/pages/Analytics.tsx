@@ -6,6 +6,7 @@
 import Sidebar from '@/components/Sidebar';
 import { PerformanceDashboard } from '@/components/PerformanceDashboard';
 import { ExecutionTraceVisualization } from '@/components/ExecutionTraceVisualization';
+import { SystemDiagnosticsPanel } from '@/components/SystemDiagnosticsPanel';
 import { useObservatory } from '@/contexts/ObservatoryContext';
 import { useKenshoStore } from '@/stores/useKenshoStore';
 import SettingsModal from '@/components/SettingsModal';
@@ -15,7 +16,7 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
-import { Menu } from 'lucide-react';
+import { Menu, BarChart3, Activity } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Analytics = () => {
@@ -25,6 +26,7 @@ const Analytics = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showObservatory, setShowObservatory] = useState(false);
+  const [activeTab, setActiveTab] = useState<'performance' | 'execution' | 'diagnostics'>('performance');
   const { journal, workers, leader, epoch, logs, isEnabled, startObservatory, killWorker } = useObservatory();
   const clearMessages = useKenshoStore(state => state.clearMessages);
 

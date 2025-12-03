@@ -101,6 +101,14 @@ export const PerformanceDashboard = () => {
     { name: 'Disponible', value: detailedMetrics.memory.stats.totalVRAM - detailedMetrics.memory.stats.usedVRAM }
   ] : [];
 
+  // Prepare resource utilization data
+  const resourceData = detailedMetrics.memory && detailedMetrics.executor ? [
+    { name: 'Mémoire', value: detailedMetrics.memory.stats.usagePercentage },
+    { name: 'CPU', value: detailedMetrics.executor.averageExecutionTime > 0 ? Math.min(100, detailedMetrics.executor.averageExecutionTime / 100) : 0 },
+    { name: 'Disque', value: 0 }, // Placeholder for disk usage
+    { name: 'Réseau', value: 0 }  // Placeholder for network usage
+  ] : [];
+
   return (
     <div className="w-full space-y-4 sm:space-y-6">
       {/* Header - MASTERPROMPT Style - Responsive */}
@@ -166,7 +174,7 @@ export const PerformanceDashboard = () => {
 
       {/* Detailed Tabs - MASTERPROMPT Style - Responsive */}
       <Tabs defaultValue="response-time" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 bg-background border border-border/40 h-auto">
+        <TabsList className="grid w-full grid-cols-5 bg-background border border-border/40 h-auto">
           <TabsTrigger value="response-time" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-light py-2 sm:py-3">
             <Clock className="h-3 sm:h-4 w-3 sm:w-4" />
             <span className="hidden sm:inline">Response Time</span>
@@ -186,6 +194,11 @@ export const PerformanceDashboard = () => {
             <Cpu className="h-3 sm:h-4 w-3 sm:w-4" />
             <span className="hidden sm:inline">System Health</span>
             <span className="sm:hidden">Health</span>
+          </TabsTrigger>
+          <TabsTrigger value="resource-utilization" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-light py-2 sm:py-3">
+            <Database className="h-3 sm:h-4 w-3 sm:w-4" />
+            <span className="hidden sm:inline">Resources</span>
+            <span className="sm:hidden">Res</span>
           </TabsTrigger>
         </TabsList>
 
@@ -231,10 +244,10 @@ export const PerformanceDashboard = () => {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="completed" stackId="a" fill="#10b981" />
-                  <Bar dataKey="active" stackId="a" fill="#3b82f6" />
-                  <Bar dataKey="pending" stackId="a" fill="#f59e0b" />
-                  <Bar dataKey="failed" stackId="a" fill="#ef4444" />
+                  <Bar dataKey="pending" fill="#f59e0b" name="Pending" />
+                  <Bar dataKey="active" fill="#3b82f6" name="Active" />
+                  <Bar dataKey="completed" fill="#10b981" name="Completed" />
+                  <Bar dataKey="failed" fill="#ef4444" name="Failed" />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -245,8 +258,8 @@ export const PerformanceDashboard = () => {
         <TabsContent value="success-rate" className="space-y-2 sm:space-y-4 mt-3 sm:mt-4">
           <Card className="bg-card border border-border/40 shadow-sm">
             <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
-              <CardTitle className="text-sm sm:text-base">Success vs Failure</CardTitle>
-              <CardDescription className="text-xs">{successCount + failureCount} total requests</CardDescription>
+              <CardTitle className="text-sm sm:text-base">Success Rate Distribution</CardTitle>
+              <CardDescription className="text-xs">Success vs failed requests</CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center px-2 sm:px-6 py-2 sm:py-4">
               <ResponsiveContainer width="100%" height={200}>
@@ -301,6 +314,14 @@ export const PerformanceDashboard = () => {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Tokens/sec:</span>
                       <span className="font-medium">{detailedMetrics.runtime.averageTokensPerSecond}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Retries:</span>
+                      <span className="font-medium">{detailedMetrics.runtime.totalRetries}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Fallbacks:</span>
+                      <span className="font-medium">{detailedMetrics.runtime.fallbacksTriggered}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -387,6 +408,14 @@ export const PerformanceDashboard = () => {
                       <span className="text-muted-foreground">Cache Hits:</span>
                       <span className="font-medium">{detailedMetrics.executor.cacheHits}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Cache Misses:</span>
+                      <span className="font-medium">{detailedMetrics.executor.cacheMisses}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Retries:</span>
+                      <span className="font-medium">{detailedMetrics.executor.totalRetries}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -445,6 +474,146 @@ export const PerformanceDashboard = () => {
             )}
           </div>
         </TabsContent>
+
+        {/* Resource Utilization */}
+        <TabsContent value="resource-utilization" className="space-y-2 sm:space-y-4 mt-3 sm:mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Resource Utilization Chart */}
+            <Card className="bg-card border border-border/40 shadow-sm">
+              <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                  <BarChart3 className="h-4 w-4 text-blue-500" />
+                  Resource Utilization
+                </CardTitle>
+                <CardDescription className="text-xs">Percentage of resource usage</CardDescription>
+              </CardHeader>
+              <CardContent className="px-2 sm:px-6 py-2 sm:py-4">
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={resourceData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip formatter={(value) => `${value}%`} />
+                    <Bar dataKey="value" name="Utilization %">
+                      {resourceData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Detailed Resource Metrics */}
+            {detailedMetrics.memory && detailedMetrics.executor && (
+              <Card className="bg-card border border-border/40 shadow-sm">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                    <Activity className="h-4 w-4 text-green-500" />
+                    Detailed Resource Metrics
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Memory Usage:</span>
+                      <span className="font-medium">{detailedMetrics.memory.stats.usagePercentage.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2">
+                      <div 
+                        className="bg-green-600 h-2 rounded-full" 
+                        style={{ width: `${detailedMetrics.memory.stats.usagePercentage}%` }}
+                      ></div>
+                    </div>
+                    
+                    <div className="flex justify-between text-sm mt-3">
+                      <span className="text-muted-foreground">Execution Load:</span>
+                      <span className="font-medium">
+                        {detailedMetrics.executor.averageExecutionTime > 0 
+                          ? Math.min(100, (detailedMetrics.executor.averageExecutionTime / 100)).toFixed(1) 
+                          : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full" 
+                        style={{ 
+                          width: `${Math.min(100, detailedMetrics.executor.averageExecutionTime > 0 ? detailedMetrics.executor.averageExecutionTime / 100 : 0)}%` 
+                        }}
+                      ></div>
+                    </div>
+                    
+                    <div className="flex justify-between text-sm mt-3">
+                      <span className="text-muted-foreground">Cache Efficiency:</span>
+                      <span className="font-medium">
+                        {detailedMetrics.executor.cacheHits + detailedMetrics.executor.cacheMisses > 0
+                          ? ((detailedMetrics.executor.cacheHits / (detailedMetrics.executor.cacheHits + detailedMetrics.executor.cacheMisses)) * 100).toFixed(1)
+                          : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2">
+                      <div 
+                        className="bg-purple-600 h-2 rounded-full" 
+                        style={{ 
+                          width: `${
+                            detailedMetrics.executor.cacheHits + detailedMetrics.executor.cacheMisses > 0
+                              ? (detailedMetrics.executor.cacheHits / (detailedMetrics.executor.cacheHits + detailedMetrics.executor.cacheMisses)) * 100
+                              : 0
+                          }%` 
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Model Loading Status */}
+            {detailedMetrics.memory && detailedMetrics.memory.models.length > 0 && (
+              <Card className="bg-card border border-border/40 shadow-sm md:col-span-2">
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-4">
+                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                    <Database className="h-4 w-4 text-orange-500" />
+                    Loaded Models
+                  </CardTitle>
+                  <CardDescription className="text-xs">Currently loaded AI models and their VRAM usage</CardDescription>
+                </CardHeader>
+                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {detailedMetrics.memory.models.map((model: any) => (
+                      <div key={model.key} className="p-3 border rounded-lg bg-secondary/30">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-medium text-sm truncate">{model.key}</h4>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {model.vram.toFixed(2)}GB VRAM
+                            </p>
+                          </div>
+                          <Badge 
+                            variant={model.pinned ? "default" : "secondary"} 
+                            className="text-[8px]"
+                          >
+                            {model.pinned ? "Pinned" : "Loaded"}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 w-full bg-secondary rounded-full h-1.5">
+                          <div 
+                            className="bg-blue-500 h-1.5 rounded-full" 
+                            style={{ width: `${Math.min(100, (model.vram / detailedMetrics.memory.stats.totalVRAM) * 100)}%` }}
+                          ></div>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                          <span>Utilization</span>
+                          <span>{((model.vram / detailedMetrics.memory.stats.totalVRAM) * 100).toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* Queue Details */}
@@ -471,7 +640,9 @@ export const PerformanceDashboard = () => {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold">
-                    {((queue.completed / (queue.completed + queue.failed)) * 100).toFixed(0)}%
+                    {queue.completed + queue.failed > 0 
+                      ? ((queue.completed / (queue.completed + queue.failed)) * 100).toFixed(0)
+                      : 0}%
                   </div>
                   <p className="text-xs text-muted-foreground">success</p>
                 </div>

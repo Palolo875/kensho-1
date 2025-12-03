@@ -1,4 +1,5 @@
 // src/components/ObservatoryModal.tsx
+import React, { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,8 @@ import { SAMPLE_JOURNAL } from "@/utils/sampleJournal";
 import { runtimeManager } from "@/core/kernel/RuntimeManager";
 import { taskExecutor } from "@/core/kernel/TaskExecutor";
 import { memoryManager } from "@/core/kernel/MemoryManager";
+import { resourceManager } from "@/core/kernel/ResourceManager";
+import { monitoringService } from "@/core/kernel/monitoring/MonitoringService";
 
 export interface WorkerStatus {
     name: string;
@@ -82,6 +85,23 @@ export function ObservatoryModal({
     const executorStats = taskExecutor.getStats();
     const queueStatus = taskExecutor.getQueueStatus();
     const memoryReport = memoryManager.getMemoryReport();
+    
+    // Get resource manager status
+    const [resourceStatus, setResourceStatus] = useState<any>(null);
+    const [monitoringStats, setMonitoringStats] = useState<any>(null);
+    
+    useEffect(() => {
+        if (open) {
+            // Get resource status
+            resourceManager.getStatus().then(status => {
+                setResourceStatus(status);
+            });
+            
+            // Get monitoring stats
+            const stats = monitoringService.getAggregatedStats();
+            setMonitoringStats(stats);
+        }
+    }, [open]);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -100,11 +120,12 @@ export function ObservatoryModal({
                 </DialogHeader>
 
                 <Tabs defaultValue="journal" className="w-full mt-3 sm:mt-6">
-                    <TabsList className="grid w-full grid-cols-4 bg-background border border-border/40 h-auto">
+                    <TabsList className="grid w-full grid-cols-5 bg-background border border-border/40 h-auto">
                         <TabsTrigger value="journal" className="text-xs sm:text-sm font-light py-2 sm:py-3">Journal</TabsTrigger>
                         <TabsTrigger value="constellation" className="text-xs sm:text-sm font-light py-2 sm:py-3">Agents</TabsTrigger>
                         <TabsTrigger value="logs" className="text-xs sm:text-sm font-light py-2 sm:py-3">Logs</TabsTrigger>
                         <TabsTrigger value="metrics" className="text-xs sm:text-sm font-light py-2 sm:py-3">Métriques</TabsTrigger>
+                        <TabsTrigger value="system" className="text-xs sm:text-sm font-light py-2 sm:py-3">Système</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="journal" className="space-y-2 sm:space-y-4 mt-3 sm:mt-4">
@@ -446,6 +467,239 @@ export function ObservatoryModal({
                                 </CardContent>
                             </Card>
                         </div>
+                    </TabsContent>
+
+                    <TabsContent value="system" className="space-y-2 sm:space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Resource Manager Status */}
+                            {resourceStatus && (
+                                <Card className="bg-card border border-border/40 shadow-sm">
+                                    <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                        <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                            <Cpu className="h-4 w-4 text-blue-500" />
+                                            Statut des Ressources
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Mémoire JS Heap:</span>
+                                                <span className="font-medium">{resourceStatus.memory.jsHeapUsed.toFixed(2)} MB</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Utilisation Mémoire:</span>
+                                                <span className="font-medium">{(resourceStatus.memory.usageRatio * 100).toFixed(1)}%</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Tendance:</span>
+                                                <span className="font-medium capitalize">{resourceStatus.memory.trend}</span>
+                                            </div>
+                                            {resourceStatus.battery && (
+                                                <>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Niveau Batterie:</span>
+                                                        <span className="font-medium">{(resourceStatus.battery.level * 100).toFixed(0)}%</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">En Charge:</span>
+                                                        <span className="font-medium">{resourceStatus.battery.isCharging ? 'Oui' : 'Non'}</span>
+                                                    </div>
+                                                </>
+                                            )}
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Connexion Réseau:</span>
+                                                <span className="font-medium">{resourceStatus.network.isOnline ? 'En Ligne' : 'Hors Ligne'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Type de Connexion:</span>
+                                                <span className="font-medium">{resourceStatus.network.effectiveType}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Mode Économie:</span>
+                                                <span className="font-medium">{resourceStatus.powerSaveMode ? 'Activé' : 'Désactivé'}</span>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* Monitoring Service Stats */}
+                            {monitoringStats && (
+                                <Card className="bg-card border border-border/40 shadow-sm">
+                                    <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                        <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                            <BarChart3 className="h-4 w-4 text-green-500" />
+                                            Statistiques de Surveillance
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Exécutions Totales:</span>
+                                                <span className="font-medium">{monitoringStats.totalExecutions}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">TTFT Moyen:</span>
+                                                <span className="font-medium">{monitoringStats.avgTtft}ms</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Temps Total Moyen:</span>
+                                                <span className="font-medium">{monitoringStats.avgTotalTime}ms</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Tokens/sec Moyen:</span>
+                                                <span className="font-medium">{monitoringStats.avgTokensPerSecond}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Taux d'Erreur:</span>
+                                                <span className="font-medium">{(monitoringStats.errorRate * 100).toFixed(2)}%</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Taux Timeout:</span>
+                                                <span className="font-medium">{(monitoringStats.timeoutRate * 100).toFixed(2)}%</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Taux Cache Hit:</span>
+                                                <span className="font-medium">{(monitoringStats.cacheHitRate * 100).toFixed(2)}%</span>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* Advanced Memory Information */}
+                            <Card className="bg-card border border-border/40 shadow-sm">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <Database className="h-4 w-4 text-purple-500" />
+                                        Informations Mémoire Avancées
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">VRAM Totale:</span>
+                                            <span className="font-medium">{memoryReport.stats.totalVRAM.toFixed(2)}GB</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">VRAM Utilisée:</span>
+                                            <span className="font-medium">{memoryReport.stats.usedVRAM.toFixed(2)}GB</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">VRAM Disponible:</span>
+                                            <span className="font-medium">{memoryReport.stats.availableVRAM.toFixed(2)}GB</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Pourcentage Utilisation:</span>
+                                            <span className="font-medium">{memoryReport.stats.usagePercentage.toFixed(1)}%</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Modèles Chargés:</span>
+                                            <span className="font-medium">{memoryReport.stats.loadedModelsCount}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Modèles Épinglés:</span>
+                                            <span className="font-medium">{memoryReport.stats.pinnedModelsCount}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Execution History Summary */}
+                            <Card className="bg-card border border-border/40 shadow-sm">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <Activity className="h-4 w-4 text-orange-500" />
+                                        Historique d'Exécution
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Exécutions Réussies:</span>
+                                            <span className="font-medium">{executorStats.successfulExecutions}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Exécutions Échouées:</span>
+                                            <span className="font-medium">{executorStats.failedExecutions}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Tentatives Totales:</span>
+                                            <span className="font-medium">{executorStats.totalRetries}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Temps Moyen:</span>
+                                            <span className="font-medium">{executorStats.averageExecutionTime.toFixed(0)}ms</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Cache Hits:</span>
+                                            <span className="font-medium">{executorStats.cacheHits}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Cache Misses:</span>
+                                            <span className="font-medium">{executorStats.cacheMisses}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        {/* Strategy Distribution Chart */}
+                        <Card className="bg-card border border-border/40 shadow-sm mt-4">
+                            <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                    <BarChart3 className="h-4 w-4 text-blue-500" />
+                                    Distribution par Stratégie
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div className="text-blue-800 font-semibold text-center">SERIAL</div>
+                                        <div className="text-2xl font-bold text-center text-blue-600">
+                                            {executorStats.tasksByStrategy.SERIAL || 0}
+                                        </div>
+                                        <div className="text-xs text-blue-600 text-center mt-1">Exécutions</div>
+                                    </div>
+                                    <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                        <div className="text-purple-800 font-semibold text-center">PARALLEL_LIMITED</div>
+                                        <div className="text-2xl font-bold text-center text-purple-600">
+                                            {executorStats.tasksByStrategy.PARALLEL_LIMITED || 0}
+                                        </div>
+                                        <div className="text-xs text-purple-600 text-center mt-1">Exécutions</div>
+                                    </div>
+                                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                                        <div className="text-green-800 font-semibold text-center">PARALLEL_FULL</div>
+                                        <div className="text-2xl font-bold text-center text-green-600">
+                                            {executorStats.tasksByStrategy.PARALLEL_FULL || 0}
+                                        </div>
+                                        <div className="text-xs text-green-600 text-center mt-1">Exécutions</div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Error Distribution */}
+                        {Object.keys(executorStats.errorsByType).length > 0 && (
+                            <Card className="bg-card border border-border/40 shadow-sm mt-4">
+                                <CardHeader className="pb-2 sm:pb-4 px-3 sm:px-6 py-3 sm:py-4 border-b border-border/30">
+                                    <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                                        <AlertCircle className="h-4 w-4 text-red-500" />
+                                        Distribution des Erreurs
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="px-3 sm:px-6 py-3 sm:py-4">
+                                    <div className="max-h-40 overflow-y-auto">
+                                        {Object.entries(executorStats.errorsByType).map(([errorType, count]) => (
+                                            <div key={errorType} className="flex justify-between py-1 text-sm">
+                                                <span className="text-muted-foreground truncate mr-2">{errorType}</span>
+                                                <span className="font-medium">{count as number}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
                     </TabsContent>
                 </Tabs>
             </DialogContent>
