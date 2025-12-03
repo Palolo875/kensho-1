@@ -8,14 +8,14 @@ const log = createLogger('Main');
 
 // Global error handlers for unhandled exceptions
 if (typeof window !== 'undefined') {
-  window.addEventListener('error', (event) => {
+  window.addEventListener('error', (event: ErrorEvent) => {
     console.error('[Global Error Handler]', event.error || event);
     if (event.error && event.error instanceof Error) {
       log.error('Unhandled error:', event.error.message, event.error.stack);
     }
   });
 
-  window.addEventListener('unhandledrejection', (event) => {
+  window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
     console.error('[Unhandled Promise Rejection]', event.reason);
     log.error('Unhandled promise rejection:', event.reason);
   });
