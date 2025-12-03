@@ -1,0 +1,90 @@
+Objectif : Construire la vraie façade DialoguePlugin. C'est le chef d'orchestre final, le point d'entrée unique pour l'UI. Il doit utiliser tous les services que nous avons construits : ResponseCache, Router, TaskExecutor, Fusioner, et communiquer son état via le SSEStreamer.
+Philosophie "Usine Vide" : C'est la tâche d'intégration la plus importante. Elle connecte tous nos composants (qui utilisent des mocks de bas niveau) en un flux de travail cohérent et complet.
+Implémentation du DialoguePlugin de Production
+TypeScript
+
+// src/core/plugins/DialoguePlugin.ts (VRAIE Implémentation)
+
+import { router } from '../kernel/Router';
+import { taskExecutor } from '../kernel/TaskExecutor';
+import { fusioner, TaskResult } from '../kernel/Fusioner';
+import { responseCache } from '../kernel/ResponseCache';
+import { sseStreamer } from '../kernel/streaming/SSEStreamer';
+import { inputFilter } from '../kernel/guardrails/InputFilter';
+import { outputGuard } from '../kernel/guardrails/OutputGuard';
+
+console.log("🔌 DialoguePlugin (Production) initialisé.");
+
+class DialoguePlugin {
+  /**
+   * Traite une requête utilisateur de bout en bout.
+   * C'est la méthode principale appelée par l'UI.
+   */
+  public async process(prompt: string): Promise<void> {
+    try {
+      // 0. Valider l'entrée
+      const validation = inputFilter.validate(prompt);
+      if (!validation.safe) {
+        throw new Error(validation.reason || "Prompt invalide.");
+      }
+
+      // 1. Démarrer le monitoring
+      // Le planId sera généré par le router, on le passe au monitoring
+      // Pour l'instant, on signale juste le début.
+      sseStreamer.streamStatus("Début de l'exécution...");
+
+      // 2. Vérifier le cache
+      // Pour la simulation, on suppose un modèle de dialogue par défaut
+      const defaultDialogueModel = "dialogue-gemma-mock";
+      const cachedResponse = responseCache.get(prompt, defaultDialogueModel);
+      if (cachedResponse) {
+        sseStreamer.streamStatus("Réponse trouvée dans le cache.");
+        sseStreamer.streamComplete(cachedResponse);
+        return;
+      }
+
+      // 3. Créer un plan d'exécution
+      sseStreamer.streamStatus("Planification en cours...");
+      const plan = await router.createPlan(prompt);
+      
+      // On peut maintenant démarrer le monitoring avec l'ID du plan
+      sseStreamer.emit('START_EXECUTION', { planId: plan.id });
+
+      // 4. Exécuter le plan
+      sseStreamer.streamStatus(`Exécution du plan (${plan.strategy})...`);
+      const results: TaskResult[] = await taskExecutor.executePlan(plan);
+
+      // 5. Fusionner les résultats
+      sseStreamer.streamStatus("Fusion des résultats...");
+      // On suppose que la première tâche est la primaire
+      const primaryResult = results[0];
+      const expertResults = results.slice(1);
+      const fusedResponse = fusioner.fuse(primaryResult, expertResults);
+
+      // 6. Valider la sortie
+      const sanitizedResponse = outputGuard.sanitize(fusedResponse);
+
+      // 7. Envoyer la réponse finale
+      sseStreamer.streamStatus("Exécution terminée.");
+      sseStreamer.streamComplete(sanitizedResponse);
+
+      // 8. Mettre en cache la réponse finale
+      responseCache.set(prompt, defaultDialogueModel, sanitizedResponse);
+
+    } catch (error) {
+      const err = error as Error;
+      console.error("[DialoguePlugin] Erreur dans le pipeline:", err);
+      sseStreamer.streamError(err);
+    }
+  }
+}
+
+export const dialoguePlugin = new DialoguePlugin();
+
+Statut : Tâche #13 du Manifeste - TERMINÉE.
+Le DialoguePlugin est assemblé. C'est la pièce maîtresse qui connecte tout.
+Regardez la beauté de cette architecture :
+
+    Le DialoguePlugin est simple. Il ne contient aucune logique métier complexe.
+    Il agit comme un chef d'orchestre, appelant chaque service spécialisé dans le bon ordre.
+    Chaque étape est observable via le SSEStreamer.

@@ -6,6 +6,27 @@ Kensho is an advanced AI debate orchestration system designed for reliable, tran
 ## User Preferences
 I prefer detailed explanations and transparency in the AI's operations. I want to see the cognitive process and verification steps clearly. I value robust error handling and graceful degradation in system responses. I prefer a modular and extensible architecture. I would like the agent to prioritize reliability and factual accuracy. I prefer that the agent asks before making major changes to the system architecture. I prefer to keep good solutions if they already exist. I want natural, organic color palettes in dark mode with noir doux instead of brown/walnut tones. I want mobile-responsive designs with smaller, optimized sizing for small screens.
 
+## Recent Changes (Dec 3, 2025)
+- **MonitoringService v2.0 Production-Ready:**
+  - **Map-Based Isolation:** Uses `Map<planId, ExecutionMetrics>` to prevent race conditions between concurrent executions
+  - **Zombie Execution Detection:** 60-second timeout timers auto-cleanup stale executions
+  - **Extended Metrics:** Tracks TTFT, tokens, tokensPerSecond, modelLoadTime, expertsUsed, cacheHit, memoryUsage
+  - **History & Aggregation:** Maintains execution history (max 100) with aggregated stats
+  - **Anomaly Detection:** Configurable thresholds for TTFT, error rate, memory, tokensPerSecond
+  - **EventBus Integration:** Listens to START_EXECUTION, TOKEN, COMPLETE, ERROR, METRICS events
+  - **Cleanup Handlers:** Proper cleanup callbacks for all event subscriptions
+
+- **DialoguePlugin v2.0 Enhanced:**
+  - **Plan-Aware Cache Keys:** Uses `generateModelKey(experts)` for cache separation by expert composition
+  - **AbortController Integration:** Proper cancellation with abort signal propagation
+  - **Retry Logic:** Exponential backoff with configurable maxRetries and retryDelayMs
+  - **8-Step Pipeline Tracking:** Metrics for validation, planning, execution, fusion, outputGuard, caching, total
+  - **Error Categories:** Classifies errors as NETWORK, TIMEOUT, VALIDATION, MODEL, INTERNAL
+  - **Consistent Caching:** Both `process()` and `processStream()` use same cache approach
+
+- **EventBus v2.1 Enhanced:**
+  - **New START_EXECUTION Event:** Typed payload with planId, expertsUsed, cacheHit
+
 ## Recent Changes (Dec 1, 2025 - Afternoon)
 - **Worker Architecture v1.5 "Production-Ready":** Major enhancements for stability and monitoring
   - **Protocol Versioning (v1.0):** Explicit version in all messages for compatibility tracking
@@ -85,7 +106,8 @@ Kensho's core is a **multi-agent debate system** (Optimist, Critic, MetaCritic) 
 *   **ModelManager (v3.1):** Memory-aware model switching with transparent status updates via SSEStreamer.
 *   **ResponseCache (v2.0):** LRU cache with TTL, SHA-256 hashing, and deterministic keys.
 *   **SSEStreamer (v1.0):** Central EventEmitter-based real-time event bus for UI updates, delivering tokens, complete messages, errors, and metrics.
-*   **DialoguePlugin (v1.0):** Orchestrates caching, VRAM checks, streaming, and metrics.
+*   **DialoguePlugin (v2.0):** Plan-aware caching, AbortController cancellation, retry logic, 8-step pipeline metrics.
+*   **MonitoringService (v2.0):** Map-based execution isolation, zombie timeout handling, extended metrics, history/aggregation, anomaly detection.
 *   **OPFSPersistence (v1.0):** Cross-session metrics storage with session tracking and automatic aggregation.
 *   **Fact-Checking System:** Integrated into the chat interface, providing status (VERIFIED, CONTRADICTED, AMBIGUOUS, UNKNOWN), evidence, and confidence scores using semantic search and a knowledge graph.
 *   **Production Hardening:** Includes `Fusioner v3.0`, `ExecutionTraceContext`, type-safe error handling, and retry logic.
