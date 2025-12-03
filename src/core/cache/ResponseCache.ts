@@ -1,5 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { createLogger } from '../../lib/logger';
+import { ExecutionPlan } from '../router/RouterTypes';
 
 const log = createLogger('ResponseCache');
 
@@ -12,31 +13,6 @@ type CachedResponse = {
   tokens?: number;
   promptHash?: string;
 };
-
-/**
- * SHA-256 hash using Web Crypto API
- * Fallback to simple hash for environments without Web Crypto
- */
-async function hashPrompt(prompt: string): Promise<string> {
-  try {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(prompt);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hashBuffer))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('')
-      .substring(0, 16); // Use first 16 chars for shorter keys
-  } catch {
-    // Fallback: simple hash if Web Crypto not available
-    let hash = 0;
-    for (let i = 0; i < prompt.length; i++) {
-      const char = prompt.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return Math.abs(hash).toString(16).padStart(8, '0');
-  }
-}
 
 class ResponseCache {
   private cache: LRUCache<string, CachedResponse>;
@@ -244,6 +220,113 @@ class ResponseCache {
   public get hitRate(): number {
     const total = this.hits + this.misses;
     return total > 0 ? (this.hits / total) * 100 : 0;
+  }
+
+  /**
+   * SHA-256 hash using Web Crypto API
+   * Fallback to simple hash for environments without Web Crypto
+   */
+  private async hashPrompt(prompt: string): Promise<string> {
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(prompt);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+        .substring(0, 16); // Use first 16 chars for shorter keys
+    } catch {
+      // Fallback: simple hash if Web Crypto not available
+      let hash = 0;
+      for (let i = 0; i < prompt.length; i++) {
+        const char = prompt.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      return Math.abs(hash).toString(16).padStart(8, '0');
+    }
+  }
+
+  /**
+   * Generate plan-aware cache key using SHA-256 hash
+   * This fixes the cache inconsistency issue by including the execution plan in the cache key
+   */
+  public async generatePlanAwareCacheKey(prompt: string, plan: ExecutionPlan): Promise<string> {
+    // Create a deterministic hash based on prompt and plan details
+    // Include primary task and fallback tasks in a consistent order
+    const planDetails = {
+      primaryTask: {
+        agentName: plan.primaryTask.agentName,
+        modelKey: plan.primaryTask.modelKey,
+        priority: plan.primaryTask.priority,
+        temperature: plan.primaryTask.temperature
+      },
+      fallbackTasks: plan.fallbackTasks.map(task => ({
+        agentName: task.agentName,
+        modelKey: task.modelKey,
+        priority: task.priority,
+        temperature: task.temperature
+      })).sort((a, b) => a.modelKey.localeCompare(b.modelKey)), // Sort for consistency
+      strategy: plan.strategy,
+      capacityScore: plan.capacityScore
+    };
+
+    const planString = JSON.stringify(planDetails);
+    const combinedString = `${prompt}::${planString}`;
+    
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(combinedString);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      return `plan-cache-${hashHex.substring(0, 32)}`;
+    } catch (error) {
+      // Fallback to simple hash if Web Crypto is not available
+      let hash = 0;
+      for (let i = 0; i < combinedString.length; i++) {
+        const char = combinedString.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      return `plan-cache-${Math.abs(hash).toString(16).padStart(8, '0')}`;
+    }
+  }
+
+  /**
+   * Get cached response using plan-aware cache key
+   */
+  public async getWithPlan(prompt: string, plan: ExecutionPlan): Promise<CachedResponse | null> {
+    const key = await this.generatePlanAwareCacheKey(prompt, plan);
+    const cached = this.cache.get(key);
+
+    if (cached) {
+      this.hits++;
+      const hitRate = ((this.hits / (this.hits + this.misses)) * 100).toFixed(1);
+      log.info(`HIT! (Taux de succès: ${hitRate}%)`);
+      return cached;
+    }
+
+    this.misses++;
+    log.debug('MISS.');
+    return null;
+  }
+
+  /**
+   * Set cached response using plan-aware cache key
+   */
+  public async setWithPlan(prompt: string, plan: ExecutionPlan, response: string, tokens?: number): Promise<void> {
+    const key = await this.generatePlanAwareCacheKey(prompt, plan);
+    const promptHash = await this.hashPrompt(prompt); // Access private method
+    
+    this.cache.set(key, {
+      response,
+      modelUsed: plan.primaryTask.modelKey,
+      timestamp: Date.now(),
+      tokens,
+      promptHash,
+    });
+    log.info(`Réponse pour plan sauvegardée (key: ${key.substring(0, 16)}...)`);
   }
 }
 

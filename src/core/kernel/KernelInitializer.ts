@@ -1,5 +1,5 @@
-import { taskExecutor } from './TaskExecutor';
-import { responseCache } from '../cache/ResponseCache';
+import { dialoguePlugin } from '../../plugins/dialogue/DialoguePlugin';
+import { eventBus } from '../eventbus/EventBus';
 import { 
   KenshoMessage, 
   KenshoResponse, 
@@ -34,6 +34,16 @@ export function initializeKernel(
   const activeTasks = new Map<string, ActiveTask>();
   const startTime = Date.now();
 
+  // UI Bridge subscribes to streamer events
+  const uiListener = (event: any) => {
+    port.postMessage(event);
+  };
+  eventBus.on('TOKEN', uiListener);
+  eventBus.on('STATUS', uiListener);
+  eventBus.on('METRICS', uiListener);
+  eventBus.on('COMPLETE', uiListener);
+  eventBus.on('ERROR', uiListener);
+
   function sendResponse(response: KenshoResponse): void {
     try {
       port.postMessage(response);
@@ -53,59 +63,16 @@ export function initializeKernel(
     message: Extract<KenshoMessage, { type: 'process-prompt' }>
   ): Promise<void> {
     const { requestId, payload } = message;
-    const { prompt, options } = payload;
+    const { prompt } = payload;
     
-    const abortController = new AbortController();
-    activeTasks.set(requestId, {
-      requestId,
-      abortController,
-      startTime: Date.now(),
-    });
-
-    sendResponse(createResponse('processing-started', requestId, { progress: 0 }));
-
+    // Delegate entirely to the DialoguePlugin
     try {
-      if (abortController.signal.aborted) {
-        sendResponse(createResponse('task-cancelled', requestId));
-        return;
-      }
-
-      if (options?.streaming) {
-        for await (const chunk of taskExecutor.processStream(prompt)) {
-          if (abortController.signal.aborted) {
-            sendResponse(createResponse('task-cancelled', requestId));
-            return;
-          }
-
-          if (chunk.type === 'primary' && chunk.content) {
-            sendResponse(createResponse('stream-chunk', requestId, { 
-              chunk: chunk.content 
-            }));
-          } else if (chunk.type === 'fusion' && chunk.content) {
-            sendResponse(createResponse('final-response', requestId, { 
-              response: chunk.content
-            }));
-          }
-        }
-      } else {
-        const response = await taskExecutor.process(prompt);
-        
-        if (abortController.signal.aborted) {
-          sendResponse(createResponse('task-cancelled', requestId));
-          return;
-        }
-
-        sendResponse(createResponse('final-response', requestId, { 
-          response
-        }));
-      }
+      await dialoguePlugin.process(prompt);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       const errorStack = error instanceof Error ? error.stack : undefined;
       console.error(`[Kernel] Erreur lors du traitement:`, error);
       sendError(requestId, errorMessage, errorStack);
-    } finally {
-      activeTasks.delete(requestId);
     }
   }
 
@@ -129,7 +96,6 @@ export function initializeKernel(
   function handleClearCache(
     message: Extract<KenshoMessage, { type: 'clear-cache' }>
   ): void {
-    responseCache.clear();
     sendResponse(createResponse('cache-cleared', message.requestId));
     console.log('[Kernel] Cache vidé');
   }
@@ -140,7 +106,7 @@ export function initializeKernel(
     const status = {
       activeConnections: 1,
       activeTasks: activeTasks.size,
-      cacheSize: responseCache.size,
+      cacheSize: 0,
       uptime: Date.now() - startTime,
     };
     sendResponse(createResponse('status', message.requestId, { status }));
@@ -210,7 +176,7 @@ export function initializeKernel(
 
     getStatus: (): KernelInstanceStatus => ({
       activeTasks: activeTasks.size,
-      cacheSize: responseCache.size,
+      cacheSize: 0,
       uptime: Date.now() - startTime,
     }),
   };
