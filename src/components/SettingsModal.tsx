@@ -55,8 +55,8 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
       // Map simple metrics to the existing state structure
       setPerformanceMetrics({
         successfulInferences: 0, // Not available in simple metrics
-        errorRate: simpleMetrics.monitoring.errorRate,
-        averageLatencyMs: simpleMetrics.monitoring.avgTtft,
+        errorRate: simpleMetrics.monitoring.errorRate || 0,
+        averageLatencyMs: simpleMetrics.monitoring.avgTtft || 0,
         averageTokensPerSecond: 0, // Not available in simple metrics
         totalRetries: 0, // Not available in simple metrics
         fallbacksTriggered: 0 // Not available in simple metrics
@@ -65,21 +65,19 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
       setExecutorStats({
         successfulExecutions: 0, // Not available in simple metrics
         failedExecutions: 0, // Not available in simple metrics
-        averageExecutionTime: simpleMetrics.cpu.averageExecutionTime,
+        averageExecutionTime: simpleMetrics.cpu.averageExecutionTime || 0,
         cacheHits: 0, // Not available in simple metrics
         cacheMisses: 0, // Not available in simple metrics
         totalRetries: 0, // Not available in simple metrics
         tasksByStrategy: {}, // Not available in simple metrics
-        errorsByType: {}, // Not available in simple metrics
-        // Add default values to prevent undefined errors
-        toString: () => 'executorStats'
+        errorsByType: {} // Not available in simple metrics
       });
       
       setMemoryReport({
         stats: {
-          totalVRAM: simpleMetrics.memory.totalVRAM,
-          usedVRAM: simpleMetrics.memory.usedVRAM,
-          usagePercentage: simpleMetrics.memory.usagePercentage,
+          totalVRAM: simpleMetrics.memory.totalVRAM || 0,
+          usedVRAM: simpleMetrics.memory.usedVRAM || 0,
+          usagePercentage: simpleMetrics.memory.usagePercentage || 0,
           loadedModelsCount: 0, // Not available in simple metrics
           pinnedModelsCount: 0 // Not available in simple metrics
         },
@@ -88,7 +86,7 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
       
       setResourceStatus({
         memory: {
-          usageRatio: simpleMetrics.memory.usagePercentage / 100,
+          usageRatio: (simpleMetrics.memory.usagePercentage || 0) / 100,
           jsHeapUsed: 0, // Not available in simple metrics
           trend: 'stable' // Not available in simple metrics
         },
@@ -98,7 +96,10 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
       });
       
       setMonitoringStats({
-        ...simpleMetrics.monitoring,
+        avgTtft: simpleMetrics.monitoring.avgTtft || 0,
+        avgTotalTime: simpleMetrics.monitoring.avgTotalTime || 0,
+        errorRate: simpleMetrics.monitoring.errorRate || 0,
+        cacheHitRate: simpleMetrics.monitoring.cacheHitRate || 0,
         totalExecutions: 0, // Not available in simple metrics
         avgTokensPerSecond: 0, // Not available in simple metrics
         timeoutRate: 0, // Not available in simple metrics
@@ -605,7 +606,7 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Stratégies:</span>
                         <span className="text-foreground">
-                          {Object.values(executorStats.tasksByStrategy).reduce((a: any, b: any) => a + b, 0)}
+                          {Object.values(executorStats.tasksByStrategy || {}).reduce((a: number, b: number) => a + b, 0)}
                         </span>
                       </div>
                     </div>
