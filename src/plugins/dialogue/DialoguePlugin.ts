@@ -66,17 +66,8 @@ class DialoguePlugin {
     return `req-${Date.now()}-${++this.requestCounter}`;
   }
 
-  private generateCacheKey(prompt: string, experts: string[]): string {
-    const sortedExperts = [...experts].sort().join(',');
-    const combined = `${prompt}::${sortedExperts}`;
-    
-    let hash = 0;
-    for (let i = 0; i < combined.length; i++) {
-      const char = combined.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return `cache-${Math.abs(hash).toString(36)}`;
+  private generateModelKey(experts: string[]): string {
+    return [...experts].sort().join('|');
   }
 
   private async delay(ms: number): Promise<void> {
@@ -134,20 +125,21 @@ class DialoguePlugin {
 
       eventBus.streamStatus(`Plan créé: ${plan.strategy}`);
 
-      const cacheKey = this.generateCacheKey(prompt, [
+      const expertsList = [
         plan.primaryTask.agentName,
         ...plan.fallbackTasks.map(t => t.agentName)
-      ]);
+      ];
+      const modelKey = this.generateModelKey(expertsList);
 
       const cacheStart = Date.now();
-      const cachedResponse = await responseCache.get(prompt, cacheKey);
+      const cachedResponse = await responseCache.get(prompt, modelKey);
       
       if (cachedResponse) {
         metrics.cachingTimeMs = Date.now() - cacheStart;
         metrics.fromCache = true;
         metrics.totalTimeMs = Date.now() - startTime;
         
-        log.info(`[DialoguePlugin] Cache HIT pour ${cacheKey}`);
+        log.info(`[DialoguePlugin] Cache HIT pour ${modelKey}`);
         eventBus.streamStatus('Réponse trouvée dans le cache');
         eventBus.streamComplete(cachedResponse.response);
         
@@ -220,7 +212,7 @@ class DialoguePlugin {
       eventBus.streamComplete(sanitizedResponse);
 
       const cacheSetStart = Date.now();
-      responseCache.set(prompt, cacheKey, sanitizedResponse);
+      responseCache.set(prompt, modelKey, sanitizedResponse);
       metrics.cachingTimeMs += Date.now() - cacheSetStart;
 
       metrics.totalTimeMs = Date.now() - startTime;
@@ -418,12 +410,13 @@ class DialoguePlugin {
         timestamp: Date.now()
       };
 
-      const cacheKey = this.generateCacheKey(prompt, [
+      const expertsList = [
         plan.primaryTask.agentName,
         ...plan.fallbackTasks.map(t => t.agentName)
-      ]);
+      ];
+      const modelKey = this.generateModelKey(expertsList);
 
-      const cachedResponse = await responseCache.get(prompt, cacheKey);
+      const cachedResponse = await responseCache.get(prompt, modelKey);
       if (cachedResponse) {
         yield {
           type: 'complete',
@@ -472,7 +465,7 @@ class DialoguePlugin {
           const sanitizationResult = outputGuard.sanitize(chunk.content || fullResponse);
           const sanitizedResponse = sanitizationResult.sanitized;
           
-          responseCache.set(prompt, cacheKey, sanitizedResponse, tokenCount);
+          responseCache.set(prompt, modelKey, sanitizedResponse, tokenCount);
 
           const totalTime = Date.now() - startTime;
           const tokensPerSecond = tokenCount > 0 ? (tokenCount / totalTime) * 1000 : 0;
