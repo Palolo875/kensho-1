@@ -603,12 +603,12 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
                         <span className="text-muted-foreground">Cache hits:</span>
                         <span className="text-foreground">{executorStats.cacheHits}</span>
                       </div>
-                      <div className="flex justify-between">
+                      {/* <div className="flex justify-between">
                         <span className="text-muted-foreground">Stratégies:</span>
                         <span className="text-foreground">
-                          {Object.values(executorStats.tasksByStrategy || {}).reduce((a: number, b: number) => a + b, 0)}
+                          {Object.keys(executorStats.tasksByStrategy || {}).length}
                         </span>
-                      </div>
+                      </div> */}
                     </div>
                   </div>
                 </div>
