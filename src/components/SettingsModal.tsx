@@ -15,11 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { Download, X, Save, Cpu, Database, BarChart3, Activity, Battery, Wifi, Zap, HardDrive, Thermometer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useObservatory } from "@/contexts/ObservatoryContext";
-import { runtimeManager } from "@/core/kernel/RuntimeManager";
-import { taskExecutor } from "@/core/kernel/TaskExecutor";
-import { memoryManager } from "@/core/kernel/MemoryManager";
-import { resourceManager } from "@/core/kernel/ResourceManager";
-import { monitoringService } from "@/core/kernel/monitoring/MonitoringService";
+import { useSimpleSystemMetrics } from "@/hooks/useSimpleSystemMetrics";
 
 interface SettingsModalProps {
   open: boolean;
@@ -52,30 +48,64 @@ const SettingsModal = ({ open, onOpenChange, onOpenObservatory, onOpenModelSelec
   const [monitoringStats, setMonitoringStats] = useState<any>(null);
 
   // Fetch performance data when transparency tab is opened
+  const { metrics: simpleMetrics, loading: metricsLoading } = useSimpleSystemMetrics(5000);
+  
   useEffect(() => {
-    if (activeTab === "transparency") {
-      // Get runtime manager metrics
-      const metrics = runtimeManager.getPerformanceMetrics();
-      setPerformanceMetrics(metrics);
-      
-      // Get task executor stats
-      const stats = taskExecutor.getStats();
-      setExecutorStats(stats);
-      
-      // Get memory report
-      const memory = memoryManager.getMemoryReport();
-      setMemoryReport(memory);
-      
-      // Get resource status
-      resourceManager.getStatus().then(status => {
-        setResourceStatus(status);
+    if (activeTab === "transparency" && simpleMetrics) {
+      // Map simple metrics to the existing state structure
+      setPerformanceMetrics({
+        successfulInferences: 0, // Not available in simple metrics
+        errorRate: simpleMetrics.monitoring.errorRate,
+        averageLatencyMs: simpleMetrics.monitoring.avgTtft,
+        averageTokensPerSecond: 0, // Not available in simple metrics
+        totalRetries: 0, // Not available in simple metrics
+        fallbacksTriggered: 0 // Not available in simple metrics
       });
       
-      // Get monitoring stats
-      const monitoring = monitoringService.getAggregatedStats();
-      setMonitoringStats(monitoring);
+      setExecutorStats({
+        successfulExecutions: 0, // Not available in simple metrics
+        failedExecutions: 0, // Not available in simple metrics
+        averageExecutionTime: simpleMetrics.cpu.averageExecutionTime,
+        cacheHits: 0, // Not available in simple metrics
+        cacheMisses: 0, // Not available in simple metrics
+        totalRetries: 0, // Not available in simple metrics
+        tasksByStrategy: {}, // Not available in simple metrics
+        errorsByType: {}, // Not available in simple metrics
+        // Add default values to prevent undefined errors
+        toString: () => 'executorStats'
+      });
+      
+      setMemoryReport({
+        stats: {
+          totalVRAM: simpleMetrics.memory.totalVRAM,
+          usedVRAM: simpleMetrics.memory.usedVRAM,
+          usagePercentage: simpleMetrics.memory.usagePercentage,
+          loadedModelsCount: 0, // Not available in simple metrics
+          pinnedModelsCount: 0 // Not available in simple metrics
+        },
+        models: [] // Not available in simple metrics
+      });
+      
+      setResourceStatus({
+        memory: {
+          usageRatio: simpleMetrics.memory.usagePercentage / 100,
+          jsHeapUsed: 0, // Not available in simple metrics
+          trend: 'stable' // Not available in simple metrics
+        },
+        battery: simpleMetrics.resources.battery,
+        network: simpleMetrics.resources.network,
+        powerSaveMode: simpleMetrics.resources.powerSaveMode
+      });
+      
+      setMonitoringStats({
+        ...simpleMetrics.monitoring,
+        totalExecutions: 0, // Not available in simple metrics
+        avgTokensPerSecond: 0, // Not available in simple metrics
+        timeoutRate: 0, // Not available in simple metrics
+        expertUsage: {} // Not available in simple metrics
+      });
     }
-  }, [activeTab]);
+  }, [activeTab, simpleMetrics]);
 
   const tabs = [
     { id: "settings" as TabType, label: "Paramètres" },

@@ -118,21 +118,54 @@ const Analytics = () => {
             <p className="text-xs sm:text-sm text-muted-foreground">Monitor multi-agent system performance and execution traces</p>
           </div>
 
+          {/* Tab Navigation */}
+          <div className="px-3 sm:px-6 py-4 border-b border-border/40">
+            <div className="flex space-x-4">
+              <button
+                onClick={() => setActiveTab('performance')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${activeTab === 'performance' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                <BarChart3 className="h-4 w-4" />
+                <span>Performance</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('execution')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${activeTab === 'execution' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                <Activity className="h-4 w-4" />
+                <span>Traces d'Exécution</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('diagnostics')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${activeTab === 'diagnostics' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                <Activity className="h-4 w-4" />
+                <span>Diagnostics Système</span>
+              </button>
+            </div>
+          </div>
+
           {/* Content - MASTERPROMPT spacing - Responsive */}
           <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6 sm:space-y-8">
-            {/* Performance Dashboard */}
-            <section className="space-y-4">
-              <PerformanceDashboard />
-            </section>
+            {activeTab === 'performance' && (
+              <section className="space-y-4">
+                <PerformanceDashboard />
+              </section>
+            )}
 
-            {/* Execution Trace (if available) */}
-            {mockTrace && (
+            {activeTab === 'execution' && mockTrace && (
               <section className="space-y-4">
                 <div>
                   <h2 className="text-2xl font-semibold text-foreground mb-2">Dernière exécution</h2>
                   <p className="text-sm text-muted-foreground">Trace de l'exécution complète du système</p>
                 </div>
                 <ExecutionTraceVisualization trace={mockTrace} expanded={false} />
+              </section>
+            )}
+
+            {activeTab === 'diagnostics' && (
+              <section className="space-y-4">
+                <SystemDiagnosticsPanel />
               </section>
             )}
           </div>

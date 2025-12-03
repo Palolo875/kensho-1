@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { kenshoBridge } from '@/core/bridge/ui-bridge';
 import { opfsPersistence } from '@/core/kernel/OPFSPersistence';
 import { createLogger } from '@/lib/logger';
+import { SystemHealthWidget } from '@/components/SystemHealthWidget';
 
 const log = createLogger('Dashboard');
 
@@ -97,23 +98,30 @@ export default function Dashboard() {
           Kensho Dashboard
         </h1>
 
-        {/* Connection Status */}
-        <div className="mb-8 p-6 bg-white dark:bg-slate-800 rounded-lg shadow-md border-l-4 border-blue-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-2">
-                Connection Status
-              </h2>
-              <p className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                connectionState === 'ready' 
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                  : connectionState === 'connecting' 
-                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-              }`}>
-                {connectionState.toUpperCase()}
-              </p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Connection Status */}
+          <div className="lg:col-span-2 p-6 bg-white dark:bg-slate-800 rounded-lg shadow-md border-l-4 border-blue-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-2">
+                  Connection Status
+                </h2>
+                <p className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                  connectionState === 'ready' 
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : connectionState === 'connecting' 
+                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                }`}>
+                  {connectionState.toUpperCase()}
+                </p>
+              </div>
             </div>
+          </div>
+
+          {/* System Health Widget */}
+          <div className="lg:col-span-1">
+            <SystemHealthWidget />
           </div>
         </div>
 

@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -13,11 +12,7 @@ import {
   HardDrive,
   Thermometer
 } from "lucide-react";
-import { runtimeManager } from "@/core/kernel/RuntimeManager";
-import { taskExecutor } from "@/core/kernel/TaskExecutor";
-import { memoryManager } from "@/core/kernel/MemoryManager";
-import { resourceManager } from "@/core/kernel/ResourceManager";
-import { monitoringService } from "@/core/kernel/monitoring/MonitoringService";
+import { useSystemMetrics } from "@/hooks/useSystemMetrics";
 
 interface SystemMetrics {
   runtime: any;
@@ -28,41 +23,9 @@ interface SystemMetrics {
 }
 
 export const SystemDiagnosticsPanel = () => {
-  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { metrics, loading, error } = useSystemMetrics(2000);
 
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      try {
-        const runtimeMetrics = runtimeManager.getPerformanceMetrics();
-        const executorStats = taskExecutor.getStats();
-        const memoryReport = memoryManager.getMemoryReport();
-        const resourceStatus = await resourceManager.getStatus();
-        const monitoringStats = monitoringService.getAggregatedStats();
-        
-        setMetrics({
-          runtime: runtimeMetrics,
-          executor: executorStats,
-          memory: memoryReport,
-          resources: resourceStatus,
-          monitoring: monitoringStats
-        });
-      } catch (error) {
-        console.error("Error fetching system metrics:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchMetrics();
-    
-    // Poll for updates every 2 seconds
-    const interval = setInterval(fetchMetrics, 2000);
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -73,7 +36,7 @@ export const SystemDiagnosticsPanel = () => {
     );
   }
 
-  if (!metrics) {
+  if (error || !metrics) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

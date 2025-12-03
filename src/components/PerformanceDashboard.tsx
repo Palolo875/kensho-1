@@ -12,6 +12,7 @@ import { Activity, TrendingUp, Clock, Zap, BarChart3, Cpu, Database, AlertTriang
 import { runtimeManager } from '@/core/kernel/RuntimeManager';
 import { taskExecutor } from '@/core/kernel/TaskExecutor';
 import { memoryManager } from '@/core/kernel/MemoryManager';
+import { ResourceUtilizationChart } from '@/components/ResourceUtilizationChart';
 
 interface QueueStats {
   queueName: string;
@@ -121,55 +122,60 @@ export const PerformanceDashboard = () => {
       </div>
 
       {/* Key Metrics - MASTERPROMPT Cards - Responsive */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
-        <Card className="bg-card border border-border/40 shadow-sm hover:shadow-md transition-shadow">
-          <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
-            <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Total</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
-            <div className="text-2xl sm:text-3xl font-bold text-foreground">{successCount + failureCount}</div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">24h</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4">
+          <Card className="bg-card border border-border/40 shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
+              <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Total</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">{successCount + failureCount}</div>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">24h</p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
-            <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Success</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
-            <div className="text-2xl sm:text-3xl font-bold text-foreground">
-              {((successCount / (successCount + failureCount)) * 100).toFixed(0)}%
-            </div>
-            <Badge variant="outline" className="mt-1 sm:mt-3 text-[8px] sm:text-xs">✓ Good</Badge>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
+              <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Success</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">
+                {((successCount / (successCount + failureCount)) * 100).toFixed(0)}%
+              </div>
+              <Badge variant="outline" className="mt-1 sm:mt-3 text-[8px] sm:text-xs">✓ Good</Badge>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
-            <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Avg Response</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
-            <div className="text-2xl sm:text-3xl font-bold text-foreground">
-              {metrics.responseTime.length > 0
-                ? Math.round(metrics.responseTime.reduce((sum, d) => sum + d.duration, 0) / metrics.responseTime.length)
-                : 0
-              }ms
-            </div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Latest</p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
+              <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Avg Response</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">
+                {metrics.responseTime.length > 0
+                  ? Math.round(metrics.responseTime.reduce((sum, d) => sum + d.duration, 0) / metrics.responseTime.length)
+                  : 0
+                }ms
+              </div>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Latest</p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
-            <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Active</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
-            <div className="text-2xl sm:text-3xl font-bold text-foreground">
-              {queueStats.reduce((sum, q) => sum + q.active, 0)}
-            </div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Tasks</p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-4 py-2 sm:py-3 border-b border-border/30">
+              <CardTitle className="text-[10px] sm:text-xs font-light text-muted-foreground uppercase tracking-wider">Active</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2 sm:pt-4 px-3 sm:px-4 py-3 sm:py-4">
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">
+                {queueStats.reduce((sum, q) => sum + q.active, 0)}
+              </div>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Tasks</p>
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Resource Utilization Chart */}
+        <ResourceUtilizationChart />
       </div>
 
       {/* Detailed Tabs - MASTERPROMPT Style - Responsive */}
