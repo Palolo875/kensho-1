@@ -95,6 +95,29 @@ export interface StreamOptions {
 export type StreamChunkCallback = (chunk: Uint8Array, loaded: number, total: number) => void;
 
 /**
+ * Interface pour les graphes pré-compilés (simulation WebGPU shader compilation)
+ * Utilisé par le RuntimeManager pour un démarrage quasi-instantané
+ */
+export interface CompiledGraph {
+  id: string;
+  version: string; // Ex: '1.0' - bump quand le format change
+  schemaHash: string; // Hash pour validation d'intégrité
+  compiledAt: number; // Timestamp de compilation
+  compilationTimeMs: number; // Durée de la compilation originale
+  metadata: {
+    modelName: string;
+    backend: string;
+    optimizationLevel: 'fast' | 'balanced' | 'quality';
+  };
+}
+
+/**
+ * Version actuelle du format de graphe compilé
+ * Incrémentez cette valeur pour forcer la recompilation de tous les graphes
+ */
+export const COMPILED_GRAPH_VERSION = '1.0';
+
+/**
  * Cache LRU générique pour le StorageManager
  */
 class LRUCache<T> {
@@ -1108,6 +1131,182 @@ class StorageManager {
 
     log.info(`Préchargement: ${success.length} succès, ${failed.length} échecs`);
     return { success, failed };
+  }
+
+  // ============================================================================
+  // COMPILED GRAPHS MANAGEMENT (Pré-compilation pour démarrage instantané)
+  // ============================================================================
+
+  /**
+   * Récupère un graphe pré-compilé depuis l'OPFS avec validation de version
+   * @returns Le graphe si valide, null si inexistant ou obsolète
+   */
+  public async getCompiledGraph(modelKey: string): Promise<CompiledGraph | null> {
+    try {
+      const graphPath = `graphs/${modelKey}.json`;
+      const handle = await this.getFileHandle(graphPath);
+
+      if (!handle) {
+        log.debug(`[Graphs] Aucun graphe trouvé pour ${modelKey}`);
+        return null;
+      }
+
+      const file = await handle.getFile();
+      const content = await file.text();
+      const graph = JSON.parse(content) as CompiledGraph;
+
+      // Validation de version
+      if (graph.version !== COMPILED_GRAPH_VERSION) {
+        log.warn(
+          `[Graphs] Graphe obsolète pour ${modelKey} (v${graph.version} != v${COMPILED_GRAPH_VERSION}), recompilation nécessaire.`
+        );
+        return null;
+      }
+
+      log.info(`[Graphs] ✅ Graphe pré-compilé valide trouvé pour ${modelKey} (compilé il y a ${this.formatAge(graph.compiledAt)})`);
+      return graph;
+    } catch (error) {
+      // Erreur de lecture ou parsing - graceful degradation
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.warn(`[Graphs] Erreur lecture graphe ${modelKey}: ${err.message}`);
+      return null; // Fallback vers recompilation
+    }
+  }
+
+  /**
+   * Sauvegarde un graphe pré-compilé dans l'OPFS
+   */
+  public async saveCompiledGraph(modelKey: string, graphData: CompiledGraph): Promise<boolean> {
+    try {
+      if (!(await this.ensureReady()) || !this.root) {
+        log.warn('[Graphs] OPFS non disponible, graphe non sauvegardé');
+        return false;
+      }
+
+      // S'assurer que le répertoire graphs existe
+      await this.root.getDirectoryHandle('graphs', { create: true });
+
+      const graphPath = `graphs/${modelKey}.json`;
+      const success = await this.writeFile(graphPath, JSON.stringify(graphData, null, 2));
+
+      if (success) {
+        log.info(`[Graphs] ✅ Graphe pré-compilé sauvegardé pour ${modelKey}`);
+      }
+
+      return success;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.error(`[Graphs] Erreur sauvegarde graphe ${modelKey}: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Nettoie les graphes obsolètes (version différente ou trop anciens)
+   * Appelé au boot pour libérer l'espace
+   */
+  public async cleanupObsoleteGraphs(maxAgeDays: number = 30): Promise<{ deleted: number; kept: number }> {
+    const stats = { deleted: 0, kept: 0 };
+
+    try {
+      if (!(await this.ensureReady()) || !this.root) {
+        return stats;
+      }
+
+      const graphsDir = await this.getDirectoryHandle('graphs');
+      if (!graphsDir) {
+        return stats;
+      }
+
+      const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      for await (const [name, handle] of (graphsDir as any).entries()) {
+        if (handle.kind !== 'file' || !name.endsWith('.json')) continue;
+
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          const content = await file.text();
+          const graph = JSON.parse(content) as CompiledGraph;
+
+          const isObsolete =
+            graph.version !== COMPILED_GRAPH_VERSION || now - graph.compiledAt > maxAgeMs;
+
+          if (isObsolete) {
+            await graphsDir.removeEntry(name);
+            log.debug(`[Graphs] Graphe obsolète supprimé: ${name}`);
+            stats.deleted++;
+          } else {
+            stats.kept++;
+          }
+        } catch (e) {
+          // Fichier corrompu, on le supprime
+          try {
+            await graphsDir.removeEntry(name);
+            stats.deleted++;
+          } catch {
+            // Ignore
+          }
+        }
+      }
+
+      if (stats.deleted > 0) {
+        log.info(`[Graphs] Nettoyage terminé: ${stats.deleted} supprimés, ${stats.kept} conservés`);
+      }
+
+      return stats;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.warn(`[Graphs] Erreur nettoyage graphes: ${err.message}`);
+      return stats;
+    }
+  }
+
+  /**
+   * Liste tous les graphes compilés disponibles
+   */
+  public async listCompiledGraphs(): Promise<Array<{ modelKey: string; graph: CompiledGraph }>> {
+    const graphs: Array<{ modelKey: string; graph: CompiledGraph }> = [];
+
+    try {
+      const graphsDir = await this.getDirectoryHandle('graphs');
+      if (!graphsDir) {
+        return graphs;
+      }
+
+      for await (const [name, handle] of (graphsDir as any).entries()) {
+        if (handle.kind !== 'file' || !name.endsWith('.json')) continue;
+
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          const content = await file.text();
+          const graph = JSON.parse(content) as CompiledGraph;
+          const modelKey = name.replace('.json', '');
+          graphs.push({ modelKey, graph });
+        } catch {
+          // Fichier corrompu, on l'ignore
+        }
+      }
+
+      return graphs;
+    } catch {
+      return graphs;
+    }
+  }
+
+  /**
+   * Utilitaire: formate l'âge d'un timestamp en texte lisible
+   */
+  private formatAge(timestamp: number): string {
+    const ageMs = Date.now() - timestamp;
+    const minutes = Math.floor(ageMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days} jour${days > 1 ? 's' : ''}`;
+    if (hours > 0) return `${hours} heure${hours > 1 ? 's' : ''}`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    return 'quelques secondes';
   }
 }
 
