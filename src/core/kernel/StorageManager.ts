@@ -42,161 +42,22 @@ export interface StorageStats {
 export type StorageQuota = StorageStats;
 
 /**
- * Interface pour les entrées du cache LRU
+ * Interface pour les graphes compilés
  */
-interface LRUCacheEntry<T> {
-  key: string;
-  value: T;
-  size: number;
-  lastAccessed: number;
+export interface CompiledGraphHeader {
+  version: string;           // Version du format du graphe
+  modelName: string;         // Nom du modèle
+  schemaHash: string;        // Hash du schéma pour validation
+  generatedAt: number;       // Timestamp de génération
 }
 
-/**
- * Interface pour les métriques d'utilisation
- */
-export interface StorageMetrics {
-  totalReads: number;
-  totalWrites: number;
-  totalDeletes: number;
-  cacheHits: number;
-  cacheMisses: number;
-  cacheHitRate: number;
-  bytesRead: number;
-  bytesWritten: number;
-  averageReadTime: number;
-  averageWriteTime: number;
-  operationHistory: OperationRecord[];
+export interface CompiledGraph extends CompiledGraphHeader {
+  // Données du graphe compilé
+  [key: string]: any;
 }
 
-/**
- * Interface pour l'historique des opérations
- */
-interface OperationRecord {
-  type: 'read' | 'write' | 'delete' | 'stream';
-  path: string;
-  size: number;
-  duration: number;
-  timestamp: number;
-  success: boolean;
-}
-
-/**
- * Options pour le streaming
- */
-export interface StreamOptions {
-  chunkSize?: number;
-  onProgress?: (loaded: number, total: number) => void;
-  signal?: AbortSignal;
-}
-
-/**
- * Callback pour les chunks de streaming
- */
-export type StreamChunkCallback = (chunk: Uint8Array, loaded: number, total: number) => void;
-
-/**
- * Cache LRU générique pour le StorageManager
- */
-class LRUCache<T> {
-  private cache: Map<string, LRUCacheEntry<T>> = new Map();
-  private maxSize: number;
-  private currentSize: number = 0;
-
-  constructor(maxSizeBytes: number = 50 * 1024 * 1024) { // 50MB par défaut
-    this.maxSize = maxSizeBytes;
-  }
-
-  get(key: string): T | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    // Mettre à jour le timestamp d'accès
-    entry.lastAccessed = Date.now();
-    return entry.value;
-  }
-
-  set(key: string, value: T, size: number): void {
-    // Supprimer l'ancienne entrée si elle existe
-    if (this.cache.has(key)) {
-      const oldEntry = this.cache.get(key)!;
-      this.currentSize -= oldEntry.size;
-      this.cache.delete(key);
-    }
-
-    // Éviction si nécessaire
-    while (this.currentSize + size > this.maxSize && this.cache.size > 0) {
-      this.evictLRU();
-    }
-
-    // Ne pas mettre en cache si la taille dépasse le max
-    if (size > this.maxSize) {
-      log.debug(`Fichier trop gros pour le cache: ${size} bytes`);
-      return;
-    }
-
-    this.cache.set(key, {
-      key,
-      value,
-      size,
-      lastAccessed: Date.now(),
-    });
-    this.currentSize += size;
-  }
-
-  delete(key: string): boolean {
-    const entry = this.cache.get(key);
-    if (entry) {
-      this.currentSize -= entry.size;
-      this.cache.delete(key);
-      return true;
-    }
-    return false;
-  }
-
-  has(key: string): boolean {
-    return this.cache.has(key);
-  }
-
-  clear(): void {
-    this.cache.clear();
-    this.currentSize = 0;
-  }
-
-  private evictLRU(): void {
-    let oldest: LRUCacheEntry<T> | null = null;
-    let oldestKey: string | null = null;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (!oldest || entry.lastAccessed < oldest.lastAccessed) {
-        oldest = entry;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey && oldest) {
-      this.currentSize -= oldest.size;
-      this.cache.delete(oldestKey);
-      log.debug(`Cache LRU: éviction de ${oldestKey}`);
-    }
-  }
-
-  getStats(): { entries: number; size: number; maxSize: number; usagePercent: number } {
-    return {
-      entries: this.cache.size,
-      size: this.currentSize,
-      maxSize: this.maxSize,
-      usagePercent: (this.currentSize / this.maxSize) * 100,
-    };
-  }
-
-  setMaxSize(maxSizeBytes: number): void {
-    this.maxSize = maxSizeBytes;
-    // Éviction si nécessaire après changement de taille
-    while (this.currentSize > this.maxSize && this.cache.size > 0) {
-      this.evictLRU();
-    }
-  }
-}
+// Version des graphes compilés
+const GRAPH_VERSION = '2.0'; // Bump quand le format change
 
 /**
  * StorageManager - Gestionnaire de stockage utilisant l'Origin Private File System (OPFS)
@@ -1109,6 +970,73 @@ class StorageManager {
     log.info(`Préchargement: ${success.length} succès, ${failed.length} échecs`);
     return { success, failed };
   }
+
+  // Version des graphes compilés
+  private readonly GRAPH_VERSION = '2.0'; // Bump quand le format change
+
+  /**
+   * Récupère un graphe compilé depuis l'OPFS
+   */
+  public async getCompiledGraph(modelKey: string): Promise<CompiledGraph | null> {
+    try {
+      const handle = await this.getFileHandle(`graphs/${modelKey}.json`);
+      if (!handle) return null;
+      const file = await handle.getFile();
+      const content = await file.text();
+      const graph: CompiledGraph = JSON.parse(content);
+      
+      // Vérification de version pour invalider les anciens graphes
+      if (graph?.version !== this.GRAPH_VERSION) {
+        log.info(`[StorageManager] Graphe obsolète (v${graph?.version}), recompilation nécessaire.`);
+        return null; // Force la recompilation
+      }
+      
+      log.info(`[StorageManager] Graphe pré-compilé trouvé pour ${modelKey}.`);
+      return graph;
+    } catch (error) {
+      log.warn(`[StorageManager] Erreur lecture graphe ${modelKey}:`, error);
+      return null; // Fallback gracieux
+    }
+  }
+
+  /**
+   * Sauvegarde un graphe compilé dans l'OPFS
+   */
+  public async saveCompiledGraph(modelKey: string, graphData: any): Promise<void> {
+    if (!(await this.ensureReady()) || !this.root) return;
+    
+    try {
+      // Créer le répertoire graphs s'il n'existe pas
+      await this.createDirectory('graphs');
+      
+      // Ajout des métadonnées standardisées
+      const graphWithMetadata: CompiledGraph = {
+        ...graphData,
+        version: this.GRAPH_VERSION,
+        modelName: modelKey,
+        schemaHash: this.computeSchemaHash(),
+        generatedAt: Date.now()
+      };
+      
+      const handle = await this.root.getFileHandle(`graphs/${modelKey}.json`, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(JSON.stringify(graphWithMetadata));
+      await writable.close();
+      log.info(`[StorageManager] Graphe pré-compilé pour ${modelKey} sauvegardé.`);
+    } catch (error) {
+      log.error(`[StorageManager] Erreur sauvegarde graphe ${modelKey}:`, error);
+      // Ne pas lancer d'exception pour ne pas bloquer l'UX
+    }
+  }
+
+  /**
+   * Calcule un hash du schéma (implémentation simplifiée)
+   */
+  private computeSchemaHash(): string {
+    // Implémentation simplifiée d'un hash du schéma
+    return 'schema-hash-placeholder';
+  }
+
 }
 
 // Export du singleton

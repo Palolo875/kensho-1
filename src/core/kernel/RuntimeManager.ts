@@ -19,7 +19,6 @@
 import { createLogger } from '../../lib/logger';
 import { storageManager } from './StorageManager';
 import { resourceManager } from './ResourceManager';
-import { memoryManager } from './MemoryManager';
 import {
   MockWebLLMEngine,
   MockTransformersJSEngine,
@@ -71,11 +70,25 @@ export interface InferenceResult {
   finishReason: 'stop' | 'length' | 'error';
 }
 
+/**
+ * Interface pour les événements de progression
+ */
+interface ProgressEvent {
+  modelKey: string;
+  stage: string;
+  progress: number;
+}
+
+/**
+ * Interface pour les callbacks de progression
+ */
 export interface ProgressCallback {
   (progress: { phase: string; progress: number; text: string }): void;
 }
 
-// Interface pour l'injection de dépendances (permet les mocks)
+/**
+ * Interface pour l'injection de dépendances (permet les mocks)
+ */
 export interface IInferenceEngine {
   load(modelId: string, onProgress?: ProgressCallback): Promise<void>;
   generate(prompt: string, options?: InferenceOptions): Promise<InferenceResult>;
@@ -832,6 +845,169 @@ class RuntimeManager {
     } catch (error) {
       log.error(`Erreur de préchargement du modèle ${modelId}:`, error as Error);
       return false;
+    }
+  }
+
+  /**
+   * Cache des graphes compilés en mémoire
+   */
+  private loadedCompiledGraphs: Map<string, any> = new Map();
+  private readonly MAX_CACHED_GRAPHS = 3;
+
+  // Statistiques du cache pour monitoring
+  private cacheStats = {
+    hits: 0,
+    misses: 0,
+    currentSize: 0
+  };
+
+  // Événements pour le feedback utilisateur
+  private eventListeners: Map<string, Function[]> = new Map();
+
+  /**
+   * Éviction du graphe le plus ancien (LRU)
+   */
+  private evictOldestGraph(): void {
+    if (this.loadedCompiledGraphs.size >= this.MAX_CACHED_GRAPHS) {
+      const keys = Array.from(this.loadedCompiledGraphs.keys());
+      if (keys.length > 0) {
+        const oldest = keys[0];
+        this.loadedCompiledGraphs.delete(oldest);
+        this.cacheStats.currentSize = this.loadedCompiledGraphs.size;
+        log.info(`[RuntimeManager] Éviction du graphe ${oldest} (LRU)`);
+      }
+    }
+  }
+
+  /**
+   * Obtient les statistiques du cache
+   */
+  public getCacheStats(): { hits: number; misses: number; currentSize: number } {
+    return { ...this.cacheStats };
+  }
+
+  /**
+   * Charge un modèle avec la logique de cache
+   */
+  public async loadModel(modelKey: string, isUserRequested: boolean = true): Promise<void> {
+    // 1. Vérifier si le graphe est déjà en mémoire vive
+    if (this.loadedCompiledGraphs.has(modelKey)) {
+      log.info(`[RuntimeManager] Le graphe pour ${modelKey} est déjà en VRAM (simulé).`);
+      this.cacheStats.hits++;
+      return;
+    } else {
+      this.cacheStats.misses++;
+    }
+
+    // 2. Vérifier si le graphe est dans le stockage persistant (OPFS)
+    const cachedGraph = await storageManager.getCompiledGraph(modelKey);
+    if (cachedGraph) {
+      log.info(`[RuntimeManager] Chargement du graphe pré-compilé pour ${modelKey} depuis l'OPFS...`);
+      // Simule un chargement ultra-rapide depuis le stockage vers la VRAM
+      await new Promise(r => setTimeout(r, 200)); // <200ms
+      this.loadedCompiledGraphs.set(modelKey, cachedGraph);
+      this.cacheStats.currentSize = this.loadedCompiledGraphs.size;
+      log.info(`[RuntimeManager] ✅ ${modelKey} prêt (démarrage à froid évité).`);
+      return;
+    }
+
+    // 3. Si aucun graphe n'existe, simuler la compilation longue
+    log.info(`[RuntimeManager] ⚠️ Aucun graphe pré-compilé pour ${modelKey}. Lancement de la compilation...`);
+    
+    // Timeline simulée déterministe pour une progression cohérente
+    const compilationStages = [
+      { stage: 'parsing', duration: 800, progress: 0.2 },
+      { stage: 'linking', duration: 600, progress: 0.4 },
+      { stage: 'optimizing', duration: 1000, progress: 0.7 },
+      { stage: 'compiling', duration: 600, progress: 0.9 },
+      { stage: 'finalizing', duration: 200, progress: 1.0 }
+    ];
+    
+    // Émettre des événements de progression pendant la compilation
+    this.emit('compilation-progress', { modelKey, stage: 'initializing', progress: 0.0 });
+    
+    // Simule une compilation longue et coûteuse (shaders, etc.)
+    for (const { stage, duration, progress } of compilationStages) {
+      await new Promise(r => setTimeout(r, duration));
+      this.emit('compilation-progress', { modelKey, stage, progress });
+    }
+    
+    const newGraph = { 
+      id: modelKey, 
+      compiledAt: Date.now(), 
+      version: '2.0',
+      schemaVersion: '1.0' // Pour permettre des migrations futures
+    };
+    
+    // Sauvegarde le nouveau graphe dans l'OPFS et en mémoire
+    await storageManager.saveCompiledGraph(modelKey, newGraph);
+    
+    // Gestion du cache mémoire avec eviction LRU
+    this.evictOldestGraph();
+    this.loadedCompiledGraphs.set(modelKey, newGraph);
+    this.cacheStats.currentSize = this.loadedCompiledGraphs.size;
+    log.info(`[RuntimeManager] ✅ ${modelKey} compilé et prêt.`);
+  }
+
+  /**
+   * Pré-charge les modèles en arrière-plan
+   */
+  public async warmupModels(modelKeys: string[]): Promise<void> {
+    log.info(`[RuntimeManager] Warming up ${modelKeys.length} models in background...`);
+    
+    // Utiliser requestIdleCallback si disponible pour un warming à faible priorité
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(async () => {
+        await this.performWarmup(modelKeys);
+      }, { timeout: 5000 }); // Timeout de 5 secondes
+    } else {
+      // Fallback pour les navigateurs qui ne supportent pas requestIdleCallback
+      setTimeout(async () => {
+        await this.performWarmup(modelKeys);
+      }, 0);
+    }
+  }
+
+  /**
+   * Effectue le warming des modèles
+   */
+  private async performWarmup(modelKeys: string[]): Promise<void> {
+    // Charger les modèles en parallèle en arrière-plan
+    const warmupPromises = modelKeys.map(async (modelKey) => {
+      try {
+        // Appeler la même pipeline que loadModel, mais en mode "silent/background"
+        await this.loadModel(modelKey, false); // isUserRequested = false pour le warming
+        log.info(`[RuntimeManager] ✅ ${modelKey} warmed up successfully`);
+      } catch (error) {
+        log.warn(`[RuntimeManager] ⚠️ Failed to warm up ${modelKey}:`, error);
+        // Ne jamais bloquer l'UI en cas d'erreur de warming
+      }
+    });
+    
+    // Attendre que tous les warmups soient terminés sans bloquer l'UI
+    await Promise.all(warmupPromises);
+    log.info(`[RuntimeManager] Warmup phase complete.`);
+  }
+
+  /**
+   * Ajoute un écouteur d'événements
+   */
+  public addEventListener(event: string, callback: Function): void {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, []);
+    }
+    this.eventListeners.get(event)!.push(callback);
+  }
+
+  /**
+   * Émet un événement
+   */
+  private emit(event: string, data: any): void {
+    const callbacks = this.eventListeners.get(event);
+    if (callbacks) {
+      for (const callback of callbacks) {
+        callback(data);
+      }
     }
   }
 
