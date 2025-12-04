@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "minClientVersion": "5.0.0",
+  "timestamp": 1733356800000,
+  "files": [
+    {
+      "path": "models/dialogue-gemma3-270m-mock.bin",
+      "hash": "sha256-de-ce-fichier-factice-1",
+      "size": 300000000,
+      "version": "1.2.0",
+      "required": true,
+      "changelog": "Optimisations de performance",
+      "chunks": [
+        { "offset": 0, "size": 33554432, "hash": "sha256-aabb..." },
+        { "offset": 33554432, "size": 33554432, "hash": "sha256-ccdd..." }
+      ]
+    },
+    {
+      "path": "models/code-qwen2.5-coder-1.5b-mock.bin",
+      "hash": "sha256-de-ce-fichier-factice-2",
+      "size": 1000000000,
+      "version": "1.1.0",
+      "required": true,
+      "changelog": "Améliorations de génération de code"
+    },
+    {
+      "path": "workers/plugin.worker.js",
+      "hash": "sha256-du-worker-compile",
+      "size": 50000,
+      "version": "2.0.0",
+      "required": true,
+      "changelog": "Support des nouveaux modèles"
+    }
+  ]
+}

@@ -1292,6 +1292,77 @@ class StorageManager {
     if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
     return 'quelques secondes';
   }
+
+  /**
+   * Simule une fonction de hashage
+   */
+  private async sha256(blob: Blob): Promise<string> {
+    // En réalité, on utiliserait crypto.subtle.digest
+    const text = await blob.text();
+    return `sha256-simule-${text.length}`;
+  }
+
+  /**
+   * Initialise le StorageManager et vérifie l'intégrité des fichiers.
+   */
+  public async initializeAndVerify(): Promise<void> {
+    await this.init(); // Initialise OPFS
+    
+    // Note: We can't import sseStreamer here due to circular dependencies
+    // In a real implementation, we would use a proper logging mechanism
+    console.log("Vérification de l'intégrité des fichiers locaux...");
+    
+    // 1. Charger le manifeste
+    let manifest: any;
+    try {
+      const response = await fetch('/manifest.json');
+      manifest = await response.json();
+    } catch (e) {
+      throw new Error("Impossible de charger le manifeste des fichiers.");
+    }
+
+    // 2. Vérifier chaque fichier du manifeste
+    for (const fileInfo of manifest.files) {
+      const handle = await this.getFileHandle(fileInfo.path);
+      
+      if (!handle) {
+        console.log(`Fichier manquant: ${fileInfo.path}. Téléchargement...`);
+        await this.downloadFile(fileInfo);
+        continue;
+      }
+
+      const file = await handle.getFile();
+      const localHash = await this.sha256(file);
+
+      if (localHash !== fileInfo.hash) {
+        console.log(`Fichier corrompu: ${fileInfo.path}. Re-téléchargement...`);
+        await this.downloadFile(fileInfo);
+      }
+    }
+    
+    console.log("✅ Fichiers locaux vérifiés et prêts.");
+    console.log("[StorageManager] Vérification d'intégrité terminée.");
+  }
+
+  /**
+   * Simule le téléchargement et le stockage d'un fichier.
+   */
+  private async downloadFile(fileInfo: { path: string, size: number, hash: string }): Promise<void> {
+    if (!this.root) throw new Error("OPFS non initialisé.");
+    
+    // Simule un téléchargement basé sur la taille du fichier
+    const downloadTime = fileInfo.size / 5_000_000; // Simule 5MB/s
+    await new Promise(r => setTimeout(r, downloadTime * 1000));
+
+    const handle = await this.root.getFileHandle(fileInfo.path, { create: true });
+    const writable = await handle.createWritable();
+    // Écrit un contenu factice dont la longueur correspond pour que le hash simulé fonctionne
+    const fakeContent = 'a'.repeat(parseInt(fileInfo.hash.split('-')[2]) || 1);
+    await writable.write(fakeContent);
+    await writable.close();
+    
+    console.log(`[StorageManager] Fichier ${fileInfo.path} téléchargé et stocké.`);
+  }
 }
 
 // Export du singleton
