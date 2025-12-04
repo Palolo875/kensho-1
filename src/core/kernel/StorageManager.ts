@@ -42,6 +42,32 @@ export interface StorageStats {
 export type StorageQuota = StorageStats;
 
 /**
+ * Interface pour l'historique des opérations
+ */
+interface OperationRecord {
+  type: 'read' | 'write' | 'delete' | 'stream';
+  path: string;
+  size: number;
+  duration: number;
+  timestamp: number;
+  success: boolean;
+}
+
+/**
+ * Options pour le streaming
+ */
+export interface StreamOptions {
+  chunkSize?: number;
+  onProgress?: (loaded: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Callback pour les chunks de streaming
+ */
+export type StreamChunkCallback = (chunk: Uint8Array, loaded: number, total: number) => void;
+
+/**
  * Interface pour les graphes compilés
  */
 export interface CompiledGraphHeader {
@@ -56,8 +82,125 @@ export interface CompiledGraph extends CompiledGraphHeader {
   [key: string]: any;
 }
 
-// Version des graphes compilés
-const GRAPH_VERSION = '2.0'; // Bump quand le format change
+/**
+ * Version actuelle du format de graphe compilé
+ * Incrémentez cette valeur pour forcer la recompilation de tous les graphes
+ */
+export const COMPILED_GRAPH_VERSION = '1.0';
+
+/**
+ * Interface pour les entrées du cache LRU
+ */
+interface LRUCacheEntry<T> {
+  key: string;
+  value: T;
+  size: number;
+  lastAccessed: number;
+}
+
+/**
+ * Cache LRU générique pour le StorageManager
+ */
+class LRUCache<T> {
+  private cache: Map<string, LRUCacheEntry<T>> = new Map();
+  private maxSize: number;
+  private currentSize: number = 0;
+
+  constructor(maxSizeBytes: number = 50 * 1024 * 1024) { // 50MB par défaut
+    this.maxSize = maxSizeBytes;
+  }
+
+  get(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    // Mettre à jour le timestamp d'accès
+    entry.lastAccessed = Date.now();
+    return entry.value;
+  }
+
+  set(key: string, value: T, size: number): void {
+    // Supprimer l'ancienne entrée si elle existe
+    if (this.cache.has(key)) {
+      const oldEntry = this.cache.get(key)!;
+      this.currentSize -= oldEntry.size;
+      this.cache.delete(key);
+    }
+
+    // Éviction si nécessaire
+    while (this.currentSize + size > this.maxSize && this.cache.size > 0) {
+      this.evictLRU();
+    }
+
+    // Ne pas mettre en cache si la taille dépasse le max
+    if (size > this.maxSize) {
+      log.debug(`Fichier trop gros pour le cache: ${size} bytes`);
+      return;
+    }
+
+    this.cache.set(key, {
+      key,
+      value,
+      size,
+      lastAccessed: Date.now(),
+    });
+    this.currentSize += size;
+  }
+
+  delete(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (entry) {
+      this.currentSize -= entry.size;
+      this.cache.delete(key);
+      return true;
+    }
+    return false;
+  }
+
+  has(key: string): boolean {
+    return this.cache.has(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.currentSize = 0;
+  }
+
+  private evictLRU(): void {
+    let oldest: LRUCacheEntry<T> | null = null;
+    let oldestKey: string | null = null;
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (!oldest || entry.lastAccessed < oldest.lastAccessed) {
+        oldest = entry;
+        oldestKey = key;
+      }
+    }
+
+    if (oldestKey && oldest) {
+      this.currentSize -= oldest.size;
+      this.cache.delete(oldestKey);
+      log.debug(`Cache LRU: éviction de ${oldestKey}`);
+    }
+  }
+
+  getStats(): { entries: number; size: number; maxSize: number; usagePercent: number } {
+    return {
+      entries: this.cache.size,
+      size: this.currentSize,
+      maxSize: this.maxSize,
+      usagePercent: (this.currentSize / this.maxSize) * 100,
+    };
+  }
+
+  setMaxSize(maxSizeBytes: number): void {
+    this.maxSize = maxSizeBytes;
+    // Éviction si nécessaire après changement de taille
+    while (this.currentSize > this.maxSize && this.cache.size > 0) {
+      this.evictLRU();
+    }
+  }
+}
 
 /**
  * StorageManager - Gestionnaire de stockage utilisant l'Origin Private File System (OPFS)
@@ -971,72 +1114,184 @@ class StorageManager {
     return { success, failed };
   }
 
+  // ============================================================================
+  // COMPILED GRAPHS MANAGEMENT (Pré-compilation pour démarrage instantané)
+  // ============================================================================
+
   // Version des graphes compilés
   private readonly GRAPH_VERSION = '2.0'; // Bump quand le format change
 
   /**
-   * Récupère un graphe compilé depuis l'OPFS
+   * Récupère un graphe pré-compilé depuis l'OPFS avec validation de version
+   * @returns Le graphe si valide, null si inexistant ou obsolète
    */
   public async getCompiledGraph(modelKey: string): Promise<CompiledGraph | null> {
     try {
-      const handle = await this.getFileHandle(`graphs/${modelKey}.json`);
-      if (!handle) return null;
+      const graphPath = `graphs/${modelKey}.json`;
+      const handle = await this.getFileHandle(graphPath);
+
+      if (!handle) {
+        log.debug(`[Graphs] Aucun graphe trouvé pour ${modelKey}`);
+        return null;
+      }
+
       const file = await handle.getFile();
       const content = await file.text();
-      const graph: CompiledGraph = JSON.parse(content);
-      
-      // Vérification de version pour invalider les anciens graphes
-      if (graph?.version !== this.GRAPH_VERSION) {
-        log.info(`[StorageManager] Graphe obsolète (v${graph?.version}), recompilation nécessaire.`);
-        return null; // Force la recompilation
+      const graph = JSON.parse(content) as CompiledGraph;
+
+      // Validation de version
+      if (graph.version !== COMPILED_GRAPH_VERSION) {
+        log.warn(
+          `[Graphs] Graphe obsolète pour ${modelKey} (v${graph.version} != v${COMPILED_GRAPH_VERSION}), recompilation nécessaire.`
+        );
+        return null;
       }
-      
-      log.info(`[StorageManager] Graphe pré-compilé trouvé pour ${modelKey}.`);
+
+      log.info(`[Graphs] ✅ Graphe pré-compilé valide trouvé pour ${modelKey} (compilé il y a ${this.formatAge(graph.generatedAt)})`);
       return graph;
     } catch (error) {
-      log.warn(`[StorageManager] Erreur lecture graphe ${modelKey}:`, error);
-      return null; // Fallback gracieux
+      // Erreur de lecture ou parsing - graceful degradation
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.warn(`[Graphs] Erreur lecture graphe ${modelKey}: ${err.message}`);
+      return null; // Fallback vers recompilation
     }
   }
 
   /**
-   * Sauvegarde un graphe compilé dans l'OPFS
+   * Sauvegarde un graphe pré-compilé dans l'OPFS
    */
-  public async saveCompiledGraph(modelKey: string, graphData: any): Promise<void> {
-    if (!(await this.ensureReady()) || !this.root) return;
-    
+  public async saveCompiledGraph(modelKey: string, graphData: CompiledGraph): Promise<boolean> {
     try {
-      // Créer le répertoire graphs s'il n'existe pas
-      await this.createDirectory('graphs');
-      
-      // Ajout des métadonnées standardisées
-      const graphWithMetadata: CompiledGraph = {
-        ...graphData,
-        version: this.GRAPH_VERSION,
-        modelName: modelKey,
-        schemaHash: this.computeSchemaHash(),
-        generatedAt: Date.now()
-      };
-      
-      const handle = await this.root.getFileHandle(`graphs/${modelKey}.json`, { create: true });
-      const writable = await handle.createWritable();
-      await writable.write(JSON.stringify(graphWithMetadata));
-      await writable.close();
-      log.info(`[StorageManager] Graphe pré-compilé pour ${modelKey} sauvegardé.`);
+      if (!(await this.ensureReady()) || !this.root) {
+        log.warn('[Graphs] OPFS non disponible, graphe non sauvegardé');
+        return false;
+      }
+
+      // S'assurer que le répertoire graphs existe
+      await this.root.getDirectoryHandle('graphs', { create: true });
+
+      const graphPath = `graphs/${modelKey}.json`;
+      const success = await this.writeFile(graphPath, JSON.stringify(graphData, null, 2));
+
+      if (success) {
+        log.info(`[Graphs] ✅ Graphe pré-compilé sauvegardé pour ${modelKey}`);
+      }
+
+      return success;
     } catch (error) {
-      log.error(`[StorageManager] Erreur sauvegarde graphe ${modelKey}:`, error);
-      // Ne pas lancer d'exception pour ne pas bloquer l'UX
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.error(`[Graphs] Erreur sauvegarde graphe ${modelKey}: ${err.message}`);
+      return false;
     }
   }
 
   /**
-   * Calcule un hash du schéma (implémentation simplifiée)
+   * Nettoie les graphes obsolètes (version différente ou trop anciens)
+   * Appelé au boot pour libérer l'espace
    */
-  private computeSchemaHash(): string {
-    // Implémentation simplifiée d'un hash du schéma
-    return 'schema-hash-placeholder';
+  public async cleanupObsoleteGraphs(maxAgeDays: number = 30): Promise<{ deleted: number; kept: number }> {
+    const stats = { deleted: 0, kept: 0 };
+
+    try {
+      if (!(await this.ensureReady()) || !this.root) {
+        return stats;
+      }
+
+      const graphsDir = await this.getDirectoryHandle('graphs');
+      if (!graphsDir) {
+        return stats;
+      }
+
+      const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      for await (const [name, handle] of (graphsDir as any).entries()) {
+        if (handle.kind !== 'file' || !name.endsWith('.json')) continue;
+
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          const content = await file.text();
+          const graph = JSON.parse(content) as CompiledGraph;
+
+          const isObsolete =
+            graph.version !== COMPILED_GRAPH_VERSION || now - graph.generatedAt > maxAgeMs;
+
+          if (isObsolete) {
+            await graphsDir.removeEntry(name);
+            log.debug(`[Graphs] Graphe obsolète supprimé: ${name}`);
+            stats.deleted++;
+          } else {
+            stats.kept++;
+          }
+        } catch (e) {
+          // Fichier corrompu, on le supprime
+          try {
+            await graphsDir.removeEntry(name);
+            stats.deleted++;
+          } catch {
+            // Ignore
+          }
+        }
+      }
+
+      if (stats.deleted > 0) {
+        log.info(`[Graphs] Nettoyage terminé: ${stats.deleted} supprimés, ${stats.kept} conservés`);
+      }
+
+      return stats;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.warn(`[Graphs] Erreur nettoyage graphes: ${err.message}`);
+      return stats;
+    }
   }
 
+  /**
+   * Liste tous les graphes compilés disponibles
+   */
+  public async listCompiledGraphs(): Promise<Array<{ modelKey: string; graph: CompiledGraph }>> {
+    const graphs: Array<{ modelKey: string; graph: CompiledGraph }> = [];
+
+    try {
+      const graphsDir = await this.getDirectoryHandle('graphs');
+      if (!graphsDir) {
+        return graphs;
+      }
+
+      for await (const [name, handle] of (graphsDir as any).entries()) {
+        if (handle.kind !== 'file' || !name.endsWith('.json')) continue;
+
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          const content = await file.text();
+          const graph = JSON.parse(content) as CompiledGraph;
+          const modelKey = name.replace('.json', '');
+          graphs.push({ modelKey, graph });
+        } catch {
+          // Fichier corrompu, on l'ignore
+        }
+      }
+
+      return graphs;
+    } catch {
+      return graphs;
+    }
+  }
+
+  /**
+   * Utilitaire: formate l'âge d'un timestamp en texte lisible
+   */
+  private formatAge(timestamp: number): string {
+    const ageMs = Date.now() - timestamp;
+    const minutes = Math.floor(ageMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days} jour${days > 1 ? 's' : ''}`;
+    if (hours > 0) return `${hours} heure${hours > 1 ? 's' : ''}`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    return 'quelques secondes';
+  }
 }
 
 // Export du singleton

@@ -17,8 +17,9 @@
  */
 
 import { createLogger } from '../../lib/logger';
-import { storageManager } from './StorageManager';
+import { storageManager, CompiledGraph, COMPILED_GRAPH_VERSION } from './StorageManager';
 import { resourceManager } from './ResourceManager';
+import { memoryManager } from './MemoryManager';
 import {
   MockWebLLMEngine,
   MockTransformersJSEngine,
@@ -156,6 +157,34 @@ interface InferenceRecord {
   usedFallback: boolean;
 }
 
+/**
+ * Événement de progression de compilation
+ * Utilisé pour informer l'UI de l'avancement de la pré-compilation
+ */
+export interface CompilationProgress {
+  modelKey: string;
+  stage: 'checking' | 'loading' | 'parsing' | 'linking' | 'optimizing' | 'compiling' | 'caching' | 'done';
+  progress: number; // 0.0 - 1.0
+  estimatedRemainingMs: number;
+  message: string;
+}
+
+/**
+ * Callback pour la progression de compilation
+ */
+export type CompilationProgressCallback = (progress: CompilationProgress) => void;
+
+/**
+ * Stats du cache de graphes compilés
+ */
+export interface CompiledGraphStats {
+  inMemory: number;
+  inStorage: number;
+  cacheHits: number;
+  cacheMisses: number;
+  lastCompilationMs: number | null;
+}
+
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
   initialDelayMs: 500,
@@ -187,6 +216,36 @@ class RuntimeManager {
   private metricsCacheTime: number = 0;
   private readonly METRICS_CACHE_TTL = 5000; // 5 secondes
 
+  // ============================================================================
+  // PRÉ-COMPILATION: Cache des graphes compilés pour démarrage instantané
+  // ============================================================================
+
+  /**
+   * Cache mémoire des graphes compilés (LRU)
+   * Premier niveau de cache pour accès instantané
+   */
+  private loadedCompiledGraphs: Map<string, CompiledGraph> = new Map();
+  private readonly MAX_CACHED_GRAPHS = 3;
+
+  /**
+   * Stats du cache de graphes
+   */
+  private graphStats: {
+    cacheHits: number;
+    cacheMisses: number;
+    lastCompilationMs: number | null;
+  } = {
+      cacheHits: 0,
+      cacheMisses: 0,
+      lastCompilationMs: null,
+    };
+
+  /**
+   * Flag pour éviter le warming concurrent
+   */
+  private isWarmingUp: boolean = false;
+  private warmupPromise: Promise<void> | null = null;
+
   private status: RuntimeStatus = {
     isReady: false,
     backend: null,
@@ -206,6 +265,23 @@ class RuntimeManager {
       this.status.gpuInfo = this.gpuInfo;
       log.info(`WebGPU disponible: ${available}`);
     });
+
+    // Lancer le nettoyage des graphes obsolètes en arrière-plan
+    this.initializeGraphCache();
+  }
+
+  /**
+   * Initialise le cache de graphes (nettoyage au boot)
+   */
+  private async initializeGraphCache(): Promise<void> {
+    try {
+      const cleanup = await storageManager.cleanupObsoleteGraphs(30);
+      if (cleanup.deleted > 0) {
+        log.info(`[Pre-Compile] Nettoyage initial: ${cleanup.deleted} graphes obsolètes supprimés`);
+      }
+    } catch {
+      // Ignorer les erreurs de nettoyage
+    }
   }
 
   /**
@@ -318,7 +394,7 @@ class RuntimeManager {
           const delay = this.calculateRetryDelay(attempt);
           log.warn(
             `${operationName} échoué (tentative ${attempt + 1}/${this.retryConfig.maxRetries + 1}), ` +
-              `retry dans ${delay}ms: ${lastError.message}`
+            `retry dans ${delay}ms: ${lastError.message}`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else if (
@@ -544,9 +620,10 @@ class RuntimeManager {
         // return new TransformersEngine();
         return new MockTransformersJSEngine();
 
-      case 'auto':
+      case 'auto': {
         const selectedBackend = await this.autoSelectBackend();
         return this.createEngine(selectedBackend);
+      }
 
       default:
         throw new Error(`Backend non supporté: ${backend}`);
@@ -616,8 +693,8 @@ class RuntimeManager {
 
       log.debug(
         `Inférence complète: ${result.tokensGenerated} tokens en ${result.timeMs.toFixed(0)}ms` +
-          (retries > 0 ? ` (${retries} retries)` : '') +
-          (usedFallback ? ' (fallback CPU)' : '')
+        (retries > 0 ? ` (${retries} retries)` : '') +
+        (usedFallback ? ' (fallback CPU)' : '')
       );
 
       return result;
@@ -665,8 +742,8 @@ class RuntimeManager {
 
       log.debug(
         `Streaming complété: ${result.tokensGenerated} tokens en ${result.timeMs.toFixed(0)}ms` +
-          (retries > 0 ? ` (${retries} retries)` : '') +
-          (usedFallback ? ' (fallback CPU)' : '')
+        (retries > 0 ? ` (${retries} retries)` : '') +
+        (usedFallback ? ' (fallback CPU)' : '')
       );
 
       return result;
@@ -848,167 +925,267 @@ class RuntimeManager {
     }
   }
 
-  /**
-   * Cache des graphes compilés en mémoire
-   */
-  private loadedCompiledGraphs: Map<string, any> = new Map();
-  private readonly MAX_CACHED_GRAPHS = 3;
-
-  // Statistiques du cache pour monitoring
-  private cacheStats = {
-    hits: 0,
-    misses: 0,
-    currentSize: 0
-  };
-
-  // Événements pour le feedback utilisateur
-  private eventListeners: Map<string, Function[]> = new Map();
+  // ============================================================================
+  // MÉTHODES DE PRÉ-COMPILATION (Démarrage instantané)
+  // ============================================================================
 
   /**
-   * Éviction du graphe le plus ancien (LRU)
+   * Charge un modèle avec le système de pré-compilation 3-niveaux:
+   * 1. Cache mémoire (instantané)
+   * 2. Cache OPFS (< 200ms)
+   * 3. Compilation complète (~ 4 secondes simulées)
    */
-  private evictOldestGraph(): void {
-    if (this.loadedCompiledGraphs.size >= this.MAX_CACHED_GRAPHS) {
-      const keys = Array.from(this.loadedCompiledGraphs.keys());
-      if (keys.length > 0) {
-        const oldest = keys[0];
-        this.loadedCompiledGraphs.delete(oldest);
-        this.cacheStats.currentSize = this.loadedCompiledGraphs.size;
-        log.info(`[RuntimeManager] Éviction du graphe ${oldest} (LRU)`);
-      }
-    }
-  }
-
-  /**
-   * Obtient les statistiques du cache
-   */
-  public getCacheStats(): { hits: number; misses: number; currentSize: number } {
-    return { ...this.cacheStats };
-  }
-
-  /**
-   * Charge un modèle avec la logique de cache
-   */
-  public async loadModel(modelKey: string, isUserRequested: boolean = true): Promise<void> {
-    // 1. Vérifier si le graphe est déjà en mémoire vive
-    if (this.loadedCompiledGraphs.has(modelKey)) {
-      log.info(`[RuntimeManager] Le graphe pour ${modelKey} est déjà en VRAM (simulé).`);
-      this.cacheStats.hits++;
-      return;
-    } else {
-      this.cacheStats.misses++;
-    }
-
-    // 2. Vérifier si le graphe est dans le stockage persistant (OPFS)
-    const cachedGraph = await storageManager.getCompiledGraph(modelKey);
-    if (cachedGraph) {
-      log.info(`[RuntimeManager] Chargement du graphe pré-compilé pour ${modelKey} depuis l'OPFS...`);
-      // Simule un chargement ultra-rapide depuis le stockage vers la VRAM
-      await new Promise(r => setTimeout(r, 200)); // <200ms
-      this.loadedCompiledGraphs.set(modelKey, cachedGraph);
-      this.cacheStats.currentSize = this.loadedCompiledGraphs.size;
-      log.info(`[RuntimeManager] ✅ ${modelKey} prêt (démarrage à froid évité).`);
-      return;
-    }
-
-    // 3. Si aucun graphe n'existe, simuler la compilation longue
-    log.info(`[RuntimeManager] ⚠️ Aucun graphe pré-compilé pour ${modelKey}. Lancement de la compilation...`);
-    
-    // Timeline simulée déterministe pour une progression cohérente
-    const compilationStages = [
-      { stage: 'parsing', duration: 800, progress: 0.2 },
-      { stage: 'linking', duration: 600, progress: 0.4 },
-      { stage: 'optimizing', duration: 1000, progress: 0.7 },
-      { stage: 'compiling', duration: 600, progress: 0.9 },
-      { stage: 'finalizing', duration: 200, progress: 1.0 }
-    ];
-    
-    // Émettre des événements de progression pendant la compilation
-    this.emit('compilation-progress', { modelKey, stage: 'initializing', progress: 0.0 });
-    
-    // Simule une compilation longue et coûteuse (shaders, etc.)
-    for (const { stage, duration, progress } of compilationStages) {
-      await new Promise(r => setTimeout(r, duration));
-      this.emit('compilation-progress', { modelKey, stage, progress });
-    }
-    
-    const newGraph = { 
-      id: modelKey, 
-      compiledAt: Date.now(), 
-      version: '2.0',
-      schemaVersion: '1.0' // Pour permettre des migrations futures
+  public async loadCompiledModel(
+    modelKey: string,
+    onProgress?: CompilationProgressCallback
+  ): Promise<CompiledGraph> {
+    const emitProgress = (
+      stage: CompilationProgress['stage'],
+      progress: number,
+      estimatedRemainingMs: number,
+      message: string
+    ) => {
+      onProgress?.({
+        modelKey,
+        stage,
+        progress,
+        estimatedRemainingMs,
+        message,
+      });
     };
-    
-    // Sauvegarde le nouveau graphe dans l'OPFS et en mémoire
+
+    emitProgress('checking', 0, 0, 'Vérification du cache mémoire...');
+
+    // ============ NIVEAU 1: Cache mémoire (instantané) ============
+    const cachedInMemory = this.loadedCompiledGraphs.get(modelKey);
+    if (cachedInMemory) {
+      this.graphStats.cacheHits++;
+      log.info(`[Pre-Compile] ✅ ${modelKey} trouvé en mémoire (instantané)`);
+      emitProgress('done', 1, 0, 'Graphe en mémoire, démarrage instantané');
+      return cachedInMemory;
+    }
+
+    // ============ NIVEAU 2: Cache OPFS (< 200ms) ============
+    emitProgress('loading', 0.1, 200, 'Recherche du graphe pré-compilé dans le stockage...');
+
+    const cachedInStorage = await storageManager.getCompiledGraph(modelKey);
+    if (cachedInStorage) {
+      this.graphStats.cacheHits++;
+      log.info(`[Pre-Compile] 📦 ${modelKey} trouvé dans OPFS, chargement rapide...`);
+
+      // Simuler le temps de chargement depuis OPFS vers la mémoire (< 200ms)
+      emitProgress('loading', 0.5, 100, 'Transfert du graphe vers la VRAM...');
+      await this.simulateDelay(150, 50); // 150ms ± 50ms
+
+      // Ajouter au cache mémoire
+      this.evictOldestGraphIfNeeded();
+      this.loadedCompiledGraphs.set(modelKey, cachedInStorage);
+
+      emitProgress('done', 1, 0, 'Graphe chargé depuis le stockage (démarrage à froid évité)');
+      log.info(`[Pre-Compile] ✅ ${modelKey} prêt (warm start depuis OPFS)`);
+      return cachedInStorage;
+    }
+
+    // ============ NIVEAU 3: Compilation complète (~ 4 secondes) ============
+    this.graphStats.cacheMisses++;
+    log.warn(`[Pre-Compile] ⚠️ Aucun graphe pour ${modelKey}, compilation nécessaire...`);
+
+    const compilationStart = performance.now();
+
+    // Simulation des différentes phases de compilation
+    const phases = [
+      { stage: 'parsing' as const, duration: 800, msg: 'Parsing du modèle...' },
+      { stage: 'linking' as const, duration: 600, msg: 'Linking des dépendances...' },
+      { stage: 'optimizing' as const, duration: 1000, msg: 'Optimisation du graphe...' },
+      { stage: 'compiling' as const, duration: 1400, msg: 'Compilation des shaders WebGPU...' },
+      { stage: 'caching' as const, duration: 200, msg: 'Mise en cache du graphe compilé...' },
+    ];
+
+    const totalEstimated = phases.reduce((sum, p) => sum + p.duration, 0);
+    let elapsed = 0;
+
+    for (const phase of phases) {
+      emitProgress(phase.stage, elapsed / totalEstimated, totalEstimated - elapsed, phase.msg);
+
+      // Ajouter un jitter réaliste (±15%)
+      await this.simulateDelay(phase.duration, phase.duration * 0.15);
+      elapsed += phase.duration;
+    }
+
+    const compilationTimeMs = performance.now() - compilationStart;
+    this.graphStats.lastCompilationMs = compilationTimeMs;
+
+    // Créer le nouveau graphe compilé
+    const newGraph: CompiledGraph = {
+      id: modelKey,
+      version: COMPILED_GRAPH_VERSION,
+      schemaHash: this.generateSchemaHash(modelKey),
+      compiledAt: Date.now(),
+      compilationTimeMs: Math.round(compilationTimeMs),
+      metadata: {
+        modelName: modelKey,
+        backend: this.currentBackend || 'mock',
+        optimizationLevel: 'balanced',
+      },
+    };
+
+    // Sauvegarder dans OPFS pour les prochains lancements
     await storageManager.saveCompiledGraph(modelKey, newGraph);
-    
-    // Gestion du cache mémoire avec eviction LRU
-    this.evictOldestGraph();
+
+    // Ajouter au cache mémoire
+    this.evictOldestGraphIfNeeded();
     this.loadedCompiledGraphs.set(modelKey, newGraph);
-    this.cacheStats.currentSize = this.loadedCompiledGraphs.size;
-    log.info(`[RuntimeManager] ✅ ${modelKey} compilé et prêt.`);
+
+    emitProgress('done', 1, 0, `Compilation terminée (${Math.round(compilationTimeMs)}ms)`);
+    log.info(`[Pre-Compile] ✅ ${modelKey} compilé et prêt (${Math.round(compilationTimeMs)}ms)`);
+
+    return newGraph;
   }
 
   /**
-   * Pré-charge les modèles en arrière-plan
+   * Pré-compile une liste de modèles en arrière-plan (warming)
+   * Non-bloquant, idéal pour exécuter pendant l'onboarding utilisateur
    */
-  public async warmupModels(modelKeys: string[]): Promise<void> {
-    log.info(`[RuntimeManager] Warming up ${modelKeys.length} models in background...`);
-    
-    // Utiliser requestIdleCallback si disponible pour un warming à faible priorité
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      (window as any).requestIdleCallback(async () => {
-        await this.performWarmup(modelKeys);
-      }, { timeout: 5000 }); // Timeout de 5 secondes
-    } else {
-      // Fallback pour les navigateurs qui ne supportent pas requestIdleCallback
-      setTimeout(async () => {
-        await this.performWarmup(modelKeys);
-      }, 0);
+  public async warmupModels(
+    modelKeys: string[],
+    onProgress?: (current: string, index: number, total: number) => void
+  ): Promise<{ success: string[]; failed: string[] }> {
+    // Éviter le warming concurrent
+    if (this.isWarmingUp && this.warmupPromise) {
+      log.info('[Warmup] Warming déjà en cours, attente...');
+      await this.warmupPromise;
     }
-  }
 
-  /**
-   * Effectue le warming des modèles
-   */
-  private async performWarmup(modelKeys: string[]): Promise<void> {
-    // Charger les modèles en parallèle en arrière-plan
-    const warmupPromises = modelKeys.map(async (modelKey) => {
-      try {
-        // Appeler la même pipeline que loadModel, mais en mode "silent/background"
-        await this.loadModel(modelKey, false); // isUserRequested = false pour le warming
-        log.info(`[RuntimeManager] ✅ ${modelKey} warmed up successfully`);
-      } catch (error) {
-        log.warn(`[RuntimeManager] ⚠️ Failed to warm up ${modelKey}:`, error);
-        // Ne jamais bloquer l'UI en cas d'erreur de warming
+    this.isWarmingUp = true;
+    const success: string[] = [];
+    const failed: string[] = [];
+
+    log.info(`[Warmup] Démarrage du pré-chauffage de ${modelKeys.length} modèle(s)...`);
+
+    this.warmupPromise = (async () => {
+      for (let i = 0; i < modelKeys.length; i++) {
+        const modelKey = modelKeys[i];
+        onProgress?.(modelKey, i, modelKeys.length);
+
+        try {
+          // Utiliser requestIdleCallback si disponible pour ne pas bloquer l'UI
+          if (typeof requestIdleCallback !== 'undefined') {
+            await new Promise<void>((resolve) => {
+              requestIdleCallback(() => resolve(), { timeout: 100 });
+            });
+          }
+
+          // Charger silencieusement (sans callback de progression visible)
+          await this.loadCompiledModel(modelKey);
+          success.push(modelKey);
+          log.debug(`[Warmup] ${modelKey} prêt (${i + 1}/${modelKeys.length})`);
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          log.warn(`[Warmup] Échec pour ${modelKey}: ${err.message}`);
+          failed.push(modelKey);
+        }
       }
-    });
-    
-    // Attendre que tous les warmups soient terminés sans bloquer l'UI
-    await Promise.all(warmupPromises);
-    log.info(`[RuntimeManager] Warmup phase complete.`);
+    })();
+
+    await this.warmupPromise;
+    this.isWarmingUp = false;
+    this.warmupPromise = null;
+
+    log.info(`[Warmup] Terminé: ${success.length} succès, ${failed.length} échecs`);
+    return { success, failed };
   }
 
   /**
-   * Ajoute un écouteur d'événements
+   * Éviction LRU du cache mémoire si nécessaire
    */
-  public addEventListener(event: string, callback: Function): void {
-    if (!this.eventListeners.has(event)) {
-      this.eventListeners.set(event, []);
-    }
-    this.eventListeners.get(event)!.push(callback);
-  }
-
-  /**
-   * Émet un événement
-   */
-  private emit(event: string, data: any): void {
-    const callbacks = this.eventListeners.get(event);
-    if (callbacks) {
-      for (const callback of callbacks) {
-        callback(data);
+  private evictOldestGraphIfNeeded(): void {
+    if (this.loadedCompiledGraphs.size >= this.MAX_CACHED_GRAPHS) {
+      // L'ordre d'insertion de Map préserve l'ordre, donc le premier est le plus ancien
+      const oldestKey = this.loadedCompiledGraphs.keys().next().value;
+      if (oldestKey) {
+        this.loadedCompiledGraphs.delete(oldestKey);
+        log.debug(`[Pre-Compile] Éviction LRU: ${oldestKey}`);
       }
     }
+  }
+
+  /**
+   * Retourne les statistiques du cache de graphes compilés
+   */
+  public async getCompiledGraphStats(): Promise<CompiledGraphStats> {
+    const storedGraphs = await storageManager.listCompiledGraphs();
+
+    return {
+      inMemory: this.loadedCompiledGraphs.size,
+      inStorage: storedGraphs.length,
+      cacheHits: this.graphStats.cacheHits,
+      cacheMisses: this.graphStats.cacheMisses,
+      lastCompilationMs: this.graphStats.lastCompilationMs,
+    };
+  }
+
+  /**
+   * Récupère un moteur d'inférence, en s'assurant que le graphe est pré-compilé
+   */
+  public async getEngineFor(
+    modelKey: string,
+    onProgress?: CompilationProgressCallback
+  ): Promise<IInferenceEngine> {
+    // S'assurer que le graphe est chargé
+    await this.loadCompiledModel(modelKey, onProgress);
+
+    // Renvoyer le moteur actuel (la logique de génération est séparée)
+    if (!this.engine) {
+      throw new Error(`Aucun moteur disponible pour ${modelKey}`);
+    }
+
+    return this.engine;
+  }
+
+  /**
+   * Vérifie si un modèle a un graphe pré-compilé disponible
+   */
+  public isGraphCached(modelKey: string): boolean {
+    return this.loadedCompiledGraphs.has(modelKey);
+  }
+
+  /**
+   * Vide le cache de graphes compilés (mémoire + OPFS)
+   */
+  public async clearCompiledGraphs(): Promise<void> {
+    this.loadedCompiledGraphs.clear();
+    this.graphStats.cacheHits = 0;
+    this.graphStats.cacheMisses = 0;
+    this.graphStats.lastCompilationMs = null;
+
+    // Vider le répertoire graphs dans OPFS
+    await storageManager.deleteDirectory('graphs', true);
+
+    log.info('[Pre-Compile] Cache de graphes vidé');
+  }
+
+  /**
+   * Utilitaire: simule un délai avec jitter
+   */
+  private async simulateDelay(baseMs: number, jitterMs: number): Promise<void> {
+    const jitter = jitterMs * (Math.random() * 2 - 1);
+    const delay = Math.max(0, baseMs + jitter);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  /**
+   * Utilitaire: génère un hash de schéma simple
+   */
+  private generateSchemaHash(modelKey: string): string {
+    // Hash simple basé sur le nom et la version
+    const str = `${modelKey}:${COMPILED_GRAPH_VERSION}:${Date.now()}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
   }
 
   /**
