@@ -1,4 +1,4 @@
-# Analyse Technique - Ensemble 3 (Tâches 19 & 20)
+# Analyse Technique - Ensemble 3 (Tâches 19, 20 & 21)
 
 ## Points Forts de l'Implémentation
 
@@ -34,6 +34,16 @@ Test progressif (HALF_OPEN)
 Auto-guérison
 ```
 Système intelligent qui adapte son comportement en fonction de la stabilité des ressources.
+
+### 5. Télémétrie Structurée
+```
+Services → LoggerService → JSON Structuré → Console
+     ↓
+Centralisation et uniformisation des logs
+     ↓
+Traçabilité et debugging facilités
+```
+Approche professionnelle qui transforme les logs en informations exploitables.
 
 ## Axes d'Amélioration Identifiés
 
@@ -412,6 +422,56 @@ class RuntimeManager {
 ```
 **Impact** : Empêche une cascade de rejets en mettant le système en pause temporaire lorsque le fallback CPU est saturé.
 
+### 13. Télémétrie Structurée avec LoggerService
+```typescript
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+
+export interface LogPayload {
+  message: string;
+  service: string; // ex: 'Router', 'TaskExecutor'
+  data?: Record<string, any>; // Données contextuelles
+  error?: {
+    message: string;
+    stack?: string;
+  };
+}
+
+class LoggerService {
+  private log(level: LogLevel, payload: LogPayload): void {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level,
+      ...payload,
+    };
+
+    // En production, on enverrait ceci à un service externe.
+    // Pour notre usine vide, on l'affiche en JSON dans la console.
+    console.log(JSON.stringify(logEntry, null, 2));
+  }
+
+  public info(service: string, message: string, data?: Record<string, any>): void {
+    this.log('INFO', { service, message, data });
+  }
+
+  public warn(service: string, message: string, data?: Record<string, any>): void {
+    this.log('WARN', { service, message, data });
+  }
+
+  public error(service: string, message: string, error: Error, data?: Record<string, any>): void {
+    this.log('ERROR', {
+      service,
+      message,
+      data,
+      error: {
+        message: error.message,
+        stack: error.stack,
+      },
+    });
+  }
+}
+```
+**Impact** : Transforme les logs en informations exploitables avec traçabilité, niveaux de criticité et métadonnées contextuelles.
+
 ## Évaluation Globale
 
 | Critère | Note Actuelle | Potentiel Après Améliorations |
@@ -425,12 +485,13 @@ class RuntimeManager {
 | Résilience | 8/10 → 9.8/10 | ✅ États complets + timeout |
 | Monitoring | 6/10 → 9/10 | ✅ Métriques détaillées |
 | Backpressure | 5/10 → 9/10 | ✅ File prioritaire + hard open |
+| Télémétrie | 4/10 → 9/10 | ✅ Logs structurés |
 
-**Score Global : 8.0/10 → 9.6/10 🎯**
+**Score Global : 8.0/10 → 9.7/10 🎯**
 
 ## Verdict Final
 
-Le concept est EXCELLENT, et avec les améliorations apportées (vrai SHA-256, retry, versioning, delta updates, états complets du Circuit Breaker, backpressure), le système atteint un niveau de qualité proche de la production. 
+Le concept est EXCELLENT, et avec les améliorations apportées (vrai SHA-256, retry, versioning, delta updates, états complets du Circuit Breaker, backpressure, télémétrie structurée), le système atteint un niveau de qualité proche de la production. 
 
 L'approche "Infrastructure as Code" du manifest.json, combinée à la vérification d'intégrité automatique et au feedback utilisateur, crée une expérience utilisateur solide et fiable.
 
@@ -450,6 +511,9 @@ Avec les dernières améliorations, vous êtes littéralement à un pas de trans
 ### Sur le backpressure :
 ✅ **Implémenté** : Système de file d'attente avec priorités et gestion des rejets pour gérer la charge pendant le fallback.
 
+### Sur la télémétrie :
+✅ **Implémenté** : Service de logging centralisé avec logs structurés en JSON.
+
 ## Prochaines Étapes Recommandées
 
 1. **Sécurité** : Ajouter la signature numérique du manifeste
@@ -457,3 +521,4 @@ Avec les dernières améliorations, vous êtes littéralement à un pas de trans
 3. **UX** : Ajouter le prefetching en arrière-plan des chunks les plus utilisés
 4. **Maintenance** : Support des patchs binaires pour les mises à jour minimales
 5. **Adaptabilité** : Rendre la MAX_QUEUE_SIZE dynamique selon l'utilisation
+6. **Observabilité** : Envoyer les logs à un service externe (Datadog, Sentry, etc.)

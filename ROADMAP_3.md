@@ -1,4 +1,4 @@
-# Feuille de Route - Ensemble 3 (Tâches 19 & 20)
+# Feuille de Route - Ensemble 3 (Tâches 19, 20 & 21)
 
 ## Tâche #19 du Manifeste - Offline-First & Intégrité
 
@@ -84,3 +84,41 @@ Implémenter un système de résilience de niveau SOTA avec détection de panne,
 4. Background prefetch pour les chunks les plus utilisés
 5. Support des patchs binaires pour les mises à jour minimales
 6. Rendre la MAX_QUEUE_SIZE dynamique selon l'utilisation
+
+## Tâche #21 du Manifeste - Télémétrie Structurée
+
+### Objectif
+Remplacer tous les console.log par un LoggerService centralisé qui produit des logs structurés en JSON, capable de gérer différents niveaux de criticité et d'enrichir chaque log avec des métadonnées contextuelles.
+
+### Tâches Techniques
+
+#### Tâche #1 : Création du LoggerService
+- [x] Création du LoggerService avec niveaux de criticité (INFO, WARN, ERROR, DEBUG)
+- [x] Implémentation de l'interface LogPayload pour les métadonnées
+- [x] Ajout de la gestion des erreurs avec stack trace
+- [x] Implémentation de la sortie JSON structurée
+
+#### Tâche #2 : Intégration du LoggerService dans les services existants
+- [x] Remplacement des console.log dans le Router
+- [x] Remplacement des console.log dans le TaskExecutor
+- [x] Remplacement des console.log dans le RuntimeManager
+- [x] Remplacement des console.log dans le StorageManager
+- [x] Remplacement des console.log dans les moteurs factices
+
+#### Tâche #3 : Validation de la télémétrie structurée
+- [x] Vérification de la sortie JSON dans la console
+- [x] Test des différents niveaux de criticité
+- [x] Validation des métadonnées contextuelles
+
+### Résultats Attendus
+- ✅ Centralisation : Tous les logs passent par un seul service.
+- ✅ Structure : Chaque événement est un objet JSON riche en contexte, prêt à être analysé, filtré et agrégé.
+- ✅ Niveaux de Criticité : Nous pouvons distinguer un simple message d'information d'une erreur critique qui nécessite une alerte.
+- ✅ Traçabilité : Chaque log est horodaté et associé à un service spécifique.
+- ✅ Debugging : Les erreurs incluent les stack traces pour faciliter le debugging.
+
+### Améliorations Futures Possibles
+1. Envoi des logs à un service externe (Datadog, Sentry, etc.)
+2. Filtrage des logs par niveau de criticité en production
+3. Agrégation des logs pour des métriques en temps réel
+4. Rotation des logs pour éviter la saturation de la console

@@ -1,4 +1,4 @@
-# Spécifications Techniques - Ensemble 3 (Tâches 19 & 20)
+# Spécifications Techniques - Ensemble 3 (Tâches 19, 20 & 21)
 
 ## Tâche #19 du Manifeste - Offline-First & Intégrité
 
@@ -297,6 +297,7 @@ export class MockCPUEngine {
 import { MockGPUEngine } from './engine/MockGPU.engine';
 import { MockCPUEngine } from './engine/MockCPU.engine';
 import { sseStreamer } from './streaming/SSEStreamer';
+import { logger } from './monitoring/LoggerService'; // ✅ Nouveau
 
 // Types pour le Circuit Breaker
 type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -328,10 +329,10 @@ class RuntimeManager {
   // --- Logique du Circuit Breaker ---
   private failureCount = 0;
   private successCount = 0;
-  private rejectionCount = 0; // ✅ Nouveau
+  private rejectionCount = 0;
   private readonly FAILURE_THRESHOLD = 3;
   private readonly SUCCESS_THRESHOLD = 2;
-  private readonly REJECTION_THRESHOLD = 5; // ✅ Nouveau
+  private readonly REJECTION_THRESHOLD = 5;
   private readonly FALLBACK_DURATION = 60_000;
   private readonly HALF_OPEN_TIMEOUT = 5_000;
   private fallbackUntil: number = 0;
@@ -350,13 +351,14 @@ class RuntimeManager {
   };
 
   // File d'attente pour le backpressure
-  private taskQueue: QueuedTask[] = []; // ✅ Nouveau
-  private readonly MAX_QUEUE_SIZE = 100; // ✅ Nouveau
-  private readonly DROP_MODE = 'LOW'; // ✅ Nouveau
+  private taskQueue: QueuedTask[] = [];
+  private readonly MAX_QUEUE_SIZE = 100;
+  private readonly DROP_MODE = 'LOW';
 
   constructor() {
     this.gpuEngine = new MockGPUEngine();
     this.cpuEngine = new MockCPUEngine();
+    logger.info('RuntimeManager', '🚀 RuntimeManager (Production) initialisé.'); // ✅ Nouveau
   }
 
   /**
@@ -374,13 +376,13 @@ class RuntimeManager {
 
       case 'OPEN':
         if (Date.now() < this.fallbackUntil) {
-          console.warn('[RuntimeManager] Circuit OPEN. Fallback CPU.');
+          logger.warn('RuntimeManager', 'Circuit OPEN. Fallback CPU.'); // ✅ Nouveau
           return this.cpuEngine;
         }
         // Le temps est écoulé, passe en HALF_OPEN
         this.circuitState = 'HALF_OPEN';
         this.successCount = 0;
-        console.log('[RuntimeManager] Circuit HALF_OPEN. Test du GPU...');
+        logger.info('RuntimeManager', 'Circuit HALF_OPEN. Test du GPU...'); // ✅ Nouveau
         sseStreamer.streamStatus("Test de stabilité du moteur principal...");
         // Continue vers HALF_OPEN ↓
 
@@ -414,7 +416,7 @@ class RuntimeManager {
 
     if (this.circuitState === 'HALF_OPEN') {
       this.successCount++;
-      console.log(`[RuntimeManager] Test GPU réussi (${this.successCount}/${this.SUCCESS_THRESHOLD})`);
+      logger.info('RuntimeManager', `Test GPU réussi (${this.successCount}/${this.SUCCESS_THRESHOLD})`); // ✅ Nouveau
 
       if (this.successCount >= this.SUCCESS_THRESHOLD) {
         this.closeCircuit();
@@ -434,13 +436,13 @@ class RuntimeManager {
 
     if (this.circuitState === 'HALF_OPEN') {
       // Échec pendant le test → retour immédiat en OPEN
-      console.error('[RuntimeManager] ❌ Test GPU échoué. Retour en OPEN.');
+      logger.error('RuntimeManager', 'Test GPU échoué. Retour en OPEN.', new Error('Test GPU failed')); // ✅ Nouveau
       this.tripCircuitBreaker();
       return;
     }
 
     this.failureCount++;
-    console.error(`[RuntimeManager] Échec GPU (${this.failureCount}/${this.FAILURE_THRESHOLD})`);
+    logger.warn('RuntimeManager', `Échec GPU (${this.failureCount}/${this.FAILURE_THRESHOLD})`); // ✅ Nouveau
 
     if (this.failureCount >= this.FAILURE_THRESHOLD) {
       this.tripCircuitBreaker();
@@ -450,10 +452,10 @@ class RuntimeManager {
   /**
    * Enregistre un rejet de tâche (backpressure)
    */
-  public registerRejection(): void { // ✅ Nouveau
+  public registerRejection(): void {
     this.rejectionCount++;
     this.metrics.rejectionCount = this.rejectionCount;
-    console.warn(`[RuntimeManager] Rejet enregistré (${this.rejectionCount}/${this.REJECTION_THRESHOLD})`);
+    logger.warn('RuntimeManager', `Rejet enregistré (${this.rejectionCount}/${this.REJECTION_THRESHOLD})`); // ✅ Nouveau
     
     if (this.rejectionCount >= this.REJECTION_THRESHOLD) {
       this.tripCircuitBreakerHard();
@@ -463,8 +465,8 @@ class RuntimeManager {
   /**
    * Ouvre le circuit de manière stricte (hard-open)
    */
-  private tripCircuitBreakerHard(): void { // ✅ Nouveau
-    console.error('[RuntimeManager] ⚠️ Tous les moteurs saturés, hard-open mode.');
+  private tripCircuitBreakerHard(): void {
+    logger.error('RuntimeManager', 'Tous les moteurs saturés, hard-open mode.', new Error('All engines saturated')); // ✅ Nouveau
     this.circuitState = 'OPEN';
     this.fallbackUntil = Date.now() + this.FALLBACK_DURATION;
     this.metrics.fallbackUntil = this.fallbackUntil;
@@ -475,7 +477,7 @@ class RuntimeManager {
    * Ouvre le circuit et passe en mode fallback.
    */
   private tripCircuitBreaker(): void {
-    console.error('[RuntimeManager] 🚨 CIRCUIT OPEN ! Fallback CPU.');
+    logger.error('RuntimeManager', '🚨 CIRCUIT OPEN ! Fallback CPU.', new Error('Circuit breaker opened')); // ✅ Nouveau
     this.circuitState = 'OPEN';
     this.fallbackUntil = Date.now() + this.FALLBACK_DURATION;
     this.failureCount = 0; // Reset pour le prochain cycle
@@ -487,18 +489,18 @@ class RuntimeManager {
    * Ferme le circuit.
    */
   private closeCircuit(): void {
-    console.log('[RuntimeManager] ✅ Circuit CLOSED. GPU stable.');
+    logger.info('RuntimeManager', '✅ Circuit CLOSED. GPU stable.'); // ✅ Nouveau
     this.circuitState = 'CLOSED';
     this.failureCount = 0;
     this.successCount = 0;
-    this.rejectionCount = 0; // ✅ Reset aussi le compteur de rejets
+    this.rejectionCount = 0;
     sseStreamer.streamStatus("Moteur principal rétabli (GPU).");
   }
 
   /**
    * Vérifie si le système est en mode fallback
    */
-  public isInFallbackMode(): boolean { // ✅ Nouveau
+  public isInFallbackMode(): boolean {
     return this.circuitState === 'OPEN' && Date.now() < this.fallbackUntil;
   }
 
@@ -529,22 +531,23 @@ export const runtimeManager = new RuntimeManager();
 
 ```typescript
 import { runtimeManager } from './RuntimeManager';
+import { logger } from './monitoring/LoggerService'; // ✅ Nouveau
 // ...
 
 class TaskExecutor {
   // ... propriétés existantes
   
   // File d'attente pour le backpressure
-  private taskQueue: QueuedTask[] = []; // ✅ Nouveau
-  private readonly MAX_QUEUE_SIZE = 100; // ✅ Nouveau
-  private readonly DROP_MODE = 'LOW'; // ✅ Nouveau
+  private taskQueue: QueuedTask[] = [];
+  private readonly MAX_QUEUE_SIZE = 100;
+  private readonly DROP_MODE = 'LOW';
 
   // ...
   
   /**
    * Enfile une tâche avec gestion du backpressure
    */
-  public async enqueueTask(task: ExpertTask): Promise<TaskResult> { // ✅ Nouveau
+  public async enqueueTask(task: ExpertTask): Promise<TaskResult> {
     if (runtimeManager.isInFallbackMode()) {
       if (this.taskQueue.length >= this.MAX_QUEUE_SIZE) {
         // Stratégies adaptatives
@@ -553,21 +556,22 @@ class TaskExecutor {
             const lowPriority = this.taskQueue.findIndex(t => t.priority === 'LOW');
             if (lowPriority !== -1) {
               const dropped = this.taskQueue.splice(lowPriority, 1);
-              console.warn(`[Queue] Suppression de tâche LOW priority: ${dropped[0].task.id}`);
+              logger.warn('TaskExecutor', `Suppression de tâche LOW priority: ${dropped[0].task.id}`); // ✅ Nouveau
               break;
             }
             // Sinon, on rejette la nouvelle
             runtimeManager.registerRejection();
+            logger.error('TaskExecutor', 'Trop de requêtes: refus de nouvelle tâche (CPU saturé)', new Error('Too many requests')); // ✅ Nouveau
             throw new Error('[Queue] Trop de requêtes: refus de nouvelle tâche (CPU saturé)');
           }
           case 'OLDEST': {
             const dropped = this.taskQueue.shift();
-            console.warn(`[Queue] Suppression ancienne tâche: ${dropped?.task.id}`);
+            logger.warn('TaskExecutor', `Suppression ancienne tâche: ${dropped?.task.id}`); // ✅ Nouveau
             break;
           }
           case 'ALL': {
             this.taskQueue = [];
-            console.warn(`[Queue] Saturation totale: purge complète`);
+            logger.warn('TaskExecutor', 'Saturation totale: purge complète'); // ✅ Nouveau
             break;
           }
         }
@@ -586,7 +590,7 @@ class TaskExecutor {
   /**
    * Traite la file d'attente
    */
-  private async processQueue(): Promise<TaskResult> { // ✅ Nouveau
+  private async processQueue(): Promise<TaskResult> {
     // Trie par priorité puis par date
     this.taskQueue.sort((a, b) => {
       const priorityOrder = { CRITICAL: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
@@ -605,6 +609,8 @@ class TaskExecutor {
 
   private async executeSingleTask(task: ExpertTask): Promise<TaskResult> {
     try {
+      logger.info('TaskExecutor', `Délégation de la tâche pour ${task.expert}`, { priority: task.priority }); // ✅ Nouveau
+      
       // Demande le moteur approprié (GPU ou CPU)
       const engine = await runtimeManager.getEngineFor(task);
       
@@ -638,6 +644,7 @@ class TaskExecutor {
 
       return { expert: task.expert, result: fullResponse, status: 'success' };
     } catch (error) {
+      logger.error('TaskExecutor', `Échec de la tâche pour ${task.expert}`, error as Error, { taskId: task.id }); // ✅ Nouveau
       // Notifie le RuntimeManager de l'échec
       runtimeManager.handleFailure();
       throw error; // Propage l'erreur pour que le ResilienceEngine la gère
@@ -653,6 +660,137 @@ class TaskExecutor {
       fullResponse += token;
     }
     return fullResponse;
+  }
+}
+```
+
+## Tâche #21 du Manifeste - Télémétrie Structurée
+
+### Objectif
+Remplacer tous les console.log par un LoggerService centralisé qui produit des logs structurés en JSON. Ce service doit être capable de gérer différents niveaux de criticité (INFO, WARN, ERROR) et d'enrichir chaque log avec des métadonnées contextuelles.
+
+### Philosophie "Usine Vide"
+Nous implémentons le vrai service de logging. La seule chose simulée est la "destination" des logs. Au lieu de les envoyer à un service externe (comme Datadog ou Sentry), nous les afficherons dans la console, mais au format JSON standardisé.
+
+### Étape 1 : Créer le LoggerService
+
+#### src/core/kernel/monitoring/LoggerService.ts (Nouveau fichier)
+```typescript
+console.log("📜 LoggerService (Production) initialisé.");
+
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+
+export interface LogPayload {
+  message: string;
+  service: string; // ex: 'Router', 'TaskExecutor'
+  data?: Record<string, any>; // Données contextuelles
+  error?: {
+    message: string;
+    stack?: string;
+  };
+}
+
+class LoggerService {
+  private log(level: LogLevel, payload: LogPayload): void {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level,
+      ...payload,
+    };
+
+    // En production, on enverrait ceci à un service externe.
+    // Pour notre usine vide, on l'affiche en JSON dans la console.
+    console.log(JSON.stringify(logEntry, null, 2));
+  }
+
+  public info(service: string, message: string, data?: Record<string, any>): void {
+    this.log('INFO', { service, message, data });
+  }
+
+  public warn(service: string, message: string, data?: Record<string, any>): void {
+    this.log('WARN', { service, message, data });
+  }
+
+  public error(service: string, message: string, error: Error, data?: Record<string, any>): void {
+    this.log('ERROR', {
+      service,
+      message,
+      data,
+      error: {
+        message: error.message,
+        stack: error.stack,
+      },
+    });
+  }
+
+  public debug(service: string, message: string, data?: Record<string, any>): void {
+    // Les logs de debug pourraient être désactivés en production
+    if (process.env.NODE_ENV !== 'production') {
+      this.log('DEBUG', { service, message, data });
+    }
+  }
+}
+
+export const logger = new LoggerService();
+```
+
+### Étape 2 : Remplacer les console.log dans tous les services
+
+C'est un travail de refactoring systématique. Voici quelques exemples clés.
+
+#### src/core/kernel/Router.ts (Mise à jour)
+```typescript
+import { logger } from './monitoring/LoggerService';
+
+// ...
+class Router {
+  public async createPlan(prompt: string): Promise<ExecutionPlan> {
+    // ...
+    logger.info('Router', `Intent détecté: ${intent}`, { prompt: prompt.substring(0, 50) });
+    // ...
+    logger.info('Router', `Score de capacité: ${capacityScore}/10`, { strategy });
+    // ...
+  }
+}
+
+#### src/core/kernel/TaskExecutor.ts (Mise à jour)
+```typescript
+import { logger } from './monitoring/LoggerService';
+
+// ...
+class TaskExecutor {
+  public async executePlan(plan: ExecutionPlan): Promise<TaskResult[]> {
+    logger.info('TaskExecutor', `Exécution du plan ${plan.id}`, { strategy: plan.strategy });
+    // ...
+  }
+
+  private async executeSingleTask(task: ExpertTask): Promise<TaskResult> {
+    try {
+      logger.info('TaskExecutor', `Délégation de la tâche pour ${task.expert}`, { priority: task.priority });
+      // ...
+    } catch (error) {
+      logger.error('TaskExecutor', `Échec de la tâche pour ${task.expert}`, error as Error, { taskId: task.id });
+      runtimeManager.handleFailure();
+      throw error;
+    }
+  }
+}
+
+#### src/core/kernel/RuntimeManager.ts (Mise à jour)
+```typescript
+import { logger } from './monitoring/LoggerService';
+
+// ...
+class RuntimeManager {
+  private tripCircuitBreaker(): void {
+    logger.error('RuntimeManager', 'Circuit Breaker ouvert !', new Error('Circuit breaker opened'), { duration: this.FALLBACK_DURATION });
+    // ...
+  }
+  
+  public handleFailure(): void {
+    logger.warn('RuntimeManager', `Échec GPU détecté`, { count: this.failureCount + 1, threshold: this.FAILURE_THRESHOLD });
+    this.failureCount++;
+    // ...
   }
 }
 ```

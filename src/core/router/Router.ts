@@ -11,9 +11,10 @@ import {
 } from './RouterTypes';
 import { kernelCoordinator } from '../kernel';
 import { runtimeManager } from '../kernel/RuntimeManager';
-import { createLogger } from '../../lib/logger';
+import { logger } from '../kernel/monitoring/LoggerService'; // ✅ Remplace createLogger
 
-const log = createLogger('Router');
+// const log = createLogger('Router'); // ✅ Supprimé
+const log = logger; // ✅ Nouveau
 
 /**
  * Configuration du Router
@@ -101,7 +102,7 @@ export class Router {
       this.usagePatterns.set(category, 0);
     }
 
-    log.info('Router initialisé avec config:', this.config);
+    log.info('Router', 'Router initialisé avec config:', this.config); // ✅ Mis à jour
   }
 
   /**
@@ -109,7 +110,7 @@ export class Router {
    */
   public setConfig(config: Partial<RouterConfig>): void {
     this.config = { ...this.config, ...config };
-    log.info('Configuration du Router mise à jour:', this.config);
+    log.info('Router', 'Configuration du Router mise à jour:', this.config); // ✅ Mis à jour
   }
 
   /**
@@ -124,7 +125,11 @@ export class Router {
       // 1. Classifier l'intention
       const classificationResult = await this.intentClassifier.classify(userQuery);
 
-      log.info(`Intent classifié: ${classificationResult.intent} (conf: ${classificationResult.confidence}, méthode: ${classificationResult.method})`);
+      log.info('Router', `Intent classifié: ${classificationResult.intent} (conf: ${classificationResult.confidence}, méthode: ${classificationResult.method})`, { // ✅ Mis à jour
+        intent: classificationResult.intent,
+        confidence: classificationResult.confidence,
+        method: classificationResult.method
+      });
 
       // Mettre à jour les patterns d'utilisation
       this.updateUsagePatterns(classificationResult.intent);
@@ -132,14 +137,16 @@ export class Router {
       // 2. Évaluer la capacité du système
       const capacityMetrics = await this.capacityEvaluator.evaluate();
 
-      log.info(`Capacité système: ${capacityMetrics.overallScore}/10`);
+      log.info('Router', `Capacité système: ${capacityMetrics.overallScore}/10`, { // ✅ Mis à jour
+        score: capacityMetrics.overallScore
+      });
 
       // 3. Vérifier si le modèle est déjà préchargé
       const targetModelKey = this.getModelKeyForIntent(classificationResult.intent);
       wasPreloaded = this.config.useModelPool && runtimeManager.isModelInPool(targetModelKey);
 
       if (wasPreloaded) {
-        log.info(`Modèle ${targetModelKey} déjà dans le pool - routage optimisé`);
+        log.info('Router', `Modèle ${targetModelKey} déjà dans le pool - routage optimisé`); // ✅ Mis à jour
       }
 
       // 4. Sélectionner les experts
@@ -192,10 +199,18 @@ export class Router {
       });
 
       if (downgradedFromIntent) {
-        log.warn(`Plan dégradé: ${downgradedFromIntent} → ${primaryTask.agentName}. Raison: ${downgradeReason}`);
+        log.warn('Router', `Plan dégradé: ${downgradedFromIntent} → ${primaryTask.agentName}. Raison: ${downgradeReason}`, { // ✅ Mis à jour
+          from: downgradedFromIntent,
+          to: primaryTask.agentName,
+          reason: downgradeReason
+        });
       }
 
-      log.info(`Plan créé en ${routingTimeMs.toFixed(2)}ms: stratégie ${strategy}, durée estimée ${estimatedDuration}ms`);
+      log.info('Router', `Plan créé en ${routingTimeMs.toFixed(2)}ms: stratégie ${strategy}, durée estimée ${estimatedDuration}ms`, { // ✅ Mis à jour
+        strategy,
+        duration: estimatedDuration,
+        timeTaken: routingTimeMs
+      });
 
       return plan;
 
@@ -218,7 +233,9 @@ export class Router {
       this.stats.failedRoutes++;
 
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error('Erreur lors de la création du plan:', err);
+      log.error('Router', 'Erreur lors de la création du plan:', err, { // ✅ Mis à jour
+        error: err.message
+      });
       throw err;
     }
   }
@@ -276,16 +293,16 @@ export class Router {
 
       // Vérifier si déjà dans le pool
       if (!runtimeManager.isModelInPool(modelKey)) {
-        log.info(`Préchargement intelligent: ${modelKey} pour intent ${intent}`);
+        log.info('Router', `Préchargement intelligent: ${modelKey} pour intent ${intent}`); // ✅ Mis à jour
 
         // Précharger en arrière-plan (non-bloquant)
         runtimeManager.preloadModel(modelKey).then((success) => {
           if (success) {
             this.stats.preloadsTriggered++;
-            log.info(`Préchargement réussi: ${modelKey}`);
+            log.info('Router', `Préchargement réussi: ${modelKey}`); // ✅ Mis à jour
           }
         }).catch((err) => {
-          log.warn(`Échec du préchargement de ${modelKey}:`, err);
+          log.warn('Router', `Échec du préchargement de ${modelKey}:`, err); // ✅ Mis à jour
         });
       }
     }
@@ -314,7 +331,7 @@ export class Router {
         if (!decision.canLoad) {
           // Vérifier si le modèle est déjà dans le pool RuntimeManager
           if (this.config.useModelPool && runtimeManager.isModelInPool(MODEL_KEYS.CODE_EXPERT)) {
-            log.info('Modèle code trouvé dans le pool malgré la décision négative du kernel');
+            log.info('Router', 'Modèle code trouvé dans le pool malgré la décision négative du kernel'); // ✅ Mis à jour
           } else if (this.config.fallbackToDialogue) {
             const fallbackTask: Task = {
               agentName: 'GeneralDialogue',
@@ -364,7 +381,7 @@ export class Router {
         const decision = await kernelCoordinator.canLoadModel(MODEL_KEYS.MATH_EXPERT);
         if (!decision.canLoad) {
           if (this.config.useModelPool && runtimeManager.isModelInPool(MODEL_KEYS.MATH_EXPERT)) {
-            log.info('Modèle math trouvé dans le pool malgré la décision négative du kernel');
+            log.info('Router', 'Modèle math trouvé dans le pool malgré la décision négative du kernel'); // ✅ Mis à jour
           } else if (this.config.fallbackToDialogue) {
             const fallbackTask: Task = {
               agentName: 'CalculatorAgent',
@@ -527,7 +544,7 @@ export class Router {
     for (const category of ['CODE', 'MATH', 'DIALOGUE', 'FACTCHECK', 'UNKNOWN'] as IntentCategory[]) {
       this.usagePatterns.set(category, 0);
     }
-    log.info('Statistiques du Router réinitialisées');
+    log.info('Router', 'Statistiques du Router réinitialisées'); // ✅ Mis à jour
   }
 
   /**
@@ -557,7 +574,10 @@ export class Router {
       }
     }
 
-    log.info(`Préchargement: ${success.length} succès, ${failed.length} échecs`);
+    log.info('Router', `Préchargement: ${success.length} succès, ${failed.length} échecs`, { // ✅ Mis à jour
+      successCount: success.length,
+      failedCount: failed.length
+    });
     return { success, failed };
   }
 
