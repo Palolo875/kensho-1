@@ -25,6 +25,9 @@ import {
   MockTransformersJSEngine,
   createMockEngine,
 } from '../runtime/mocks/mock-engines';
+import { MockGPUEngine } from './engine/MockGPU.engine';
+import { MockCPUEngine } from './engine/MockCPU.engine';
+import { sseStreamer } from '../streaming/SSEStreamer';
 
 const log = createLogger('RuntimeManager');
 
@@ -257,6 +260,15 @@ class RuntimeManager {
     gpuInfo: null,
   };
 
+  // --- Logique du Circuit Breaker ---
+  private failureCount = 0;
+  private readonly FAILURE_THRESHOLD = 3;
+  private readonly FALLBACK_DURATION = 60 * 1000; // 1 minute
+  private fallbackUntil: number = 0;
+  private gpuEngine: MockGPUEngine;
+  private cpuEngine: MockCPUEngine;
+  private currentState: 'GPU_PRIMARY' | 'CPU_FALLBACK' = 'GPU_PRIMARY';
+
   constructor() {
     log.info('RuntimeManager créé');
     // Détecter WebGPU au démarrage
@@ -268,6 +280,9 @@ class RuntimeManager {
 
     // Lancer le nettoyage des graphes obsolètes en arrière-plan
     this.initializeGraphCache();
+
+    this.gpuEngine = new MockGPUEngine();
+    this.cpuEngine = new MockCPUEngine();
   }
 
   /**
@@ -1332,6 +1347,62 @@ class RuntimeManager {
       }
     }
     log.info('Pool vidé (moteurs inactifs)');
+  }
+
+  /**
+   * Notifie le Circuit Breaker d'un échec.
+   */
+  public handleFailure(): void {
+    this.failureCount++;
+    console.error(`[RuntimeManager] Échec GPU détecté (${this.failureCount}/${this.FAILURE_THRESHOLD}).`);
+
+    if (this.failureCount >= this.FAILURE_THRESHOLD) {
+      this.tripCircuitBreaker();
+    }
+  }
+
+  /**
+   * Ouvre le circuit et passe en mode fallback.
+   */
+  private tripCircuitBreaker(): void {
+    console.error(`[RuntimeManager] 🚨 CIRCUIT OUVERT ! Passage au fallback CPU pour ${this.FALLBACK_DURATION / 1000}s.`);
+    this.currentState = 'CPU_FALLBACK';
+    this.fallbackUntil = Date.now() + this.FALLBACK_DURATION;
+    sseStreamer.streamStatus("Alerte: Le moteur principal est instable. Passage en mode dégradé.");
+  }
+
+  /**
+   * Réinitialise le circuit.
+   */
+  public resetCircuitBreaker(): void {
+    this.currentState = 'GPU_PRIMARY';
+    this.failureCount = 0;
+    this.fallbackUntil = 0;
+    console.log(`[RuntimeManager] ✅ Circuit fermé. Opérations normales reprises.`);
+    sseStreamer.streamStatus("Le moteur principal est de nouveau stable.");
+  }
+  
+  // Méthode pour les tests
+  public forceGpuFailure(fail: boolean) {
+    this.gpuEngine.forceFailure(fail);
+  }
+
+  /**
+   * Obtient le moteur approprié (GPU ou CPU) selon l'état du Circuit Breaker
+   */
+  public async getEngineForCircuitBreaker(task: any): Promise<MockGPUEngine | MockCPUEngine> {
+    // Vérifie si le circuit est "ouvert" (en mode fallback)
+    if (this.currentState === 'CPU_FALLBACK') {
+      if (Date.now() < this.fallbackUntil) {
+        console.warn(`[RuntimeManager] Circuit ouvert. Utilisation du fallback CPU.`);
+        return this.cpuEngine;
+      } else {
+        // Le temps de fallback est écoulé, on tente de revenir au GPU
+        console.log(`[RuntimeManager] Tentative de fermeture du circuit. Retour au GPU.`);
+        this.resetCircuitBreaker();
+      }
+    }
+    return this.gpuEngine;
   }
 }
 
