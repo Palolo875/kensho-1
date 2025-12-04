@@ -1125,6 +1125,45 @@ class RuntimeManager {
   }
 
   /**
+   * Async generator for pipelined token generation (Task #16)
+   * This method simulates CPU/GPU pipelining where the CPU prepares the next token
+   * while the GPU computes the current one, reducing idle time.
+   */
+  public async *generate(prompt: string, modelKey: string): AsyncGenerator<string> {
+    log.info(`[RuntimeManager] Début de la génération pour ${modelKey} avec pipelining...`);
+    
+    // Get the engine for this model
+    const engine = await this.getEngineFor(modelKey);
+    
+    // If the engine has the new generate method, use it
+    if (typeof (engine as any).generate === 'function' && (engine as any).generate.constructor.name === 'AsyncGeneratorFunction') {
+      // Use the engine's built-in pipelining
+      for await (const chunk of (engine as any).generate(prompt, modelKey)) {
+        yield chunk;
+      }
+    } else {
+      // Fallback to traditional streaming
+      let fullResponse = '';
+      await new Promise<void>((resolve) => {
+        engine.generateStream(
+          prompt,
+          (chunk: string) => {
+            fullResponse += chunk;
+          }
+        ).then(() => resolve());
+      });
+      
+      // Split response into tokens and yield them
+      const tokens = fullResponse.split(' ');
+      for (const token of tokens) {
+        yield token + ' ';
+      }
+    }
+    
+    log.info(`[RuntimeManager] Fin de la génération pour ${modelKey}.`);
+  }
+
+  /**
    * Récupère un moteur d'inférence, en s'assurant que le graphe est pré-compilé
    */
   public async getEngineFor(

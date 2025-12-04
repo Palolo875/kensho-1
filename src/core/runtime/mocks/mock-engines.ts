@@ -159,6 +159,78 @@ abstract class BaseMockEngine implements IInferenceEngine {
     };
   }
 
+  /**
+   * Async generator for pipelined token generation (Task #16)
+   */
+  public async *generate(prompt: string, modelKey: string): AsyncGenerator<string> {
+    log.info(`[${this.name}] Début de la génération pour ${modelKey} avec pipelining...`);
+    
+    const tokens = `Réponse simulée (pipelined, via ${this.name}) du modèle ${modelKey} pour le prompt : "${prompt}"`.split(' ');
+    let nextTokenData: any = null; // Buffer du prochain token
+
+    for (let i = 0; i < tokens.length; i++) {
+      const tokenId = `${modelKey}-${Date.now()}-${i}`;
+      
+      // Simulate memory allocation for token activations
+      // In a real implementation, this would interact with the MemoryManager
+      const allocated = true; // Always succeed in mock
+      if (!allocated) {
+        log.error("[MockEngine] PIPELINE STALL: Plus de mémoire d'activation !");
+        // Implement backpressure with timeout
+        const startTime = Date.now();
+        while (!allocated) {
+          log.warn("[MockEngine] Backpressure: attente de libération mémoire...");
+          await new Promise(r => setTimeout(r, 10)); // Short active wait
+          // Timeout after 500ms
+          if (Date.now() - startTime > 500) throw new Error("Memory deadlock");
+        }
+      }
+
+      try {
+        // Prepare the next token (CPU)
+        const prepareNext = i < tokens.length - 1 
+          ? this.prepareTokenData(tokens[i + 1], `${tokenId}-next`) 
+          : Promise.resolve();
+
+        // Compute the current token (GPU) in parallel
+        const currentToken = nextTokenData || await this.prepareTokenData(tokens[i], tokenId);
+        const result = await this.computeToken(currentToken);
+
+        // Both execute in parallel!
+        nextTokenData = await prepareNext;
+
+        yield result + ' ';
+      } finally {
+        // Guarantee release even in case of error
+        // In a real implementation, this would free memory from pools
+        log.debug(`Released memory for token ${tokenId}`);
+      }
+    }
+    log.info(`[${this.name}] Fin de la génération pour ${modelKey}.`);
+  }
+
+  private async prepareTokenData(token: string, tokenId: string): Promise<any> {
+    // Simulate allocation for preparation
+    // In a real implementation, this would allocate from 'uniforms' pool
+    try {
+      await new Promise(r => setTimeout(r, 5)); // Simulate CPU
+      return { token, prepared: true, tokenId };
+    } finally {
+      // In a real implementation, this would free from 'uniforms' pool
+    }
+  }
+
+  private async computeToken(data: any): Promise<string> {
+    // Simulate allocation for computation
+    // In a real implementation, this would allocate from 'kv-cache' pool
+    try {
+      await new Promise(r => setTimeout(r, 15)); // Simulate GPU
+      return data.token;
+    } finally {
+      // In a real implementation, this would free from 'kv-cache' pool
+    }
+  }
+
   async unload(): Promise<void> {
     log.info(`[${this.name}] Déchargement du modèle: ${this.currentModelId}`);
     this.loaded = false;

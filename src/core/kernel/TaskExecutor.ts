@@ -15,6 +15,7 @@
  * - PARALLEL_FULL: max 4 tâches simultanées
  */
 
+// @ts-ignore
 import PQueue from 'p-queue';
 import { runtimeManager, type InferenceResult, type InferenceOptions } from './RuntimeManager';
 import { Router, router } from '../router/Router';
@@ -271,18 +272,57 @@ export class TaskExecutor {
         let result: InferenceResult;
 
         if (options.streaming && options.onChunk) {
-          // Mode streaming
+          // Mode streaming with pipelining support
           options.onChunk({ type: 'status', status: `Exécution de ${task.agentName}...` });
 
+          // Check if runtimeManager has the new generate method for pipelining
           let fullResponse = '';
-          result = await runtimeManager.generateStream(
-            prompt,
-            (chunk: string) => {
-              fullResponse += chunk;
-              options.onChunk?.({ type: 'primary', content: chunk });
-            },
-            inferenceOptions
-          );
+          
+          // Try to use the new pipelined generate method first
+          try {
+            // Use a flag to track if we're using the new method
+            let usingNewMethod = false;
+            
+            // Check if runtimeManager has the new async generator method
+            if (typeof (runtimeManager as any).generate === 'function') {
+              // Try to use the new method
+              try {
+                for await (const chunk of runtimeManager.generate(prompt, task.modelKey)) {
+                  fullResponse += chunk;
+                  options.onChunk?.({ type: 'primary', content: chunk });
+                }
+                usingNewMethod = true;
+              } catch (pipelineError) {
+                // If the new method fails, fall back to the old method
+                log.warn('Pipelined generation failed, falling back to traditional streaming', pipelineError as Error);
+              }
+            }
+            
+            // If we didn't use the new method, fall back to traditional streaming
+            if (!usingNewMethod) {
+              result = await runtimeManager.generateStream(
+                prompt,
+                (chunk: string) => {
+                  fullResponse += chunk;
+                  options.onChunk?.({ type: 'primary', content: chunk });
+                },
+                inferenceOptions
+              );
+            } else {
+              // Create a result object from the full response
+              const endTime = performance.now();
+              result = {
+                text: fullResponse,
+                tokensGenerated: fullResponse.split(' ').length,
+                timeMs: endTime - startTime,
+                finishReason: 'stop'
+              };
+            }
+          } catch (error) {
+            // If everything fails, fall back to the non-streaming method
+            log.warn('Streaming failed, falling back to non-streaming generation', error as Error);
+            result = await runtimeManager.generate(prompt, inferenceOptions);
+          }
         } else {
           // Mode non-streaming
           result = await runtimeManager.generate(prompt, inferenceOptions);
@@ -373,9 +413,250 @@ export class TaskExecutor {
   }
 
   /**
+   * Exécute un plan complet avec pipelining
+   */
+  public async *processStreamWithPipelining(userPrompt: string): AsyncGenerator<StreamChunk> {
+    const planId = this.generatePlanId();
+    const startTime = performance.now();
+    this.activeRequests++;
+    
+    log.info(`Requête pipelined #${planId} (${this.activeRequests} active(s))`);
+    
+    // Créer un token d'annulation
+    const abortController = new AbortController();
+    this.activeCancellationTokens.set(planId, abortController);
+    
+    try {
+      // 1. Créer le plan
+      const plan = await this.routerInstance.createPlan(userPrompt);
+      log.info(`Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
+      
+      this.stats.tasksByStrategy[plan.strategy]++;
+      
+      // 2. Vérifier le cache
+      if (this.config.enableCache) {
+        const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
+        if (cached) {
+          this.stats.cacheHits++;
+          log.info('Cache HIT - Réponse trouvée');
+          sseStreamer.streamInfo('Response found in cache.');
+          
+          // Streamer la réponse en cache
+          for (const char of cached.response) {
+            yield { type: 'primary', content: char };
+          }
+          
+          yield {
+            type: 'fusion',
+            content: cached.response,
+            expertResults: [
+              {
+                agentName: 'cache',
+                modelKey: plan.primaryTask.modelKey,
+                result: cached.response,
+                status: 'success',
+              },
+            ],
+          };
+          
+          this.recordExecution(planId, plan.strategy, performance.now() - startTime, true, 1, 0, true);
+          return;
+        }
+        this.stats.cacheMisses++;
+      }
+      
+      sseStreamer.streamInfo('Processing request with pipelining...');
+      
+      // 3. Obtenir la queue appropriée
+      const queue = this.getQueue(plan.strategy);
+      log.info(`Stratégie: ${plan.strategy}`);
+      sseStreamer.streamInfo(`Using strategy: ${plan.strategy}`);
+      
+      // 4. Exécuter la tâche principale avec pipelining
+      let primaryResult: TaskExecutionResult | null = null;
+      let fallbackResults: TaskExecutionResult[] = [];
+      
+      // Utiliser le nouveau RuntimeManager avec pipelining
+      if (typeof runtimeManager.generate === 'function') {
+        let fullResponse = '';
+        
+        try {
+          // Streamer la réponse principale avec pipelining
+          for await (const chunk of runtimeManager.generate(plan.primaryTask.prompt || userPrompt, plan.primaryTask.modelKey)) {
+            fullResponse += chunk;
+            yield { type: 'primary', content: chunk };
+            
+            // Vérifier l'annulation pendant le streaming
+            if (abortController.signal.aborted) {
+              throw new Error('Cancelled');
+            }
+          }
+          
+          // Créer le résultat principal
+          primaryResult = {
+            taskId: this.generateTaskId(),
+            agentName: plan.primaryTask.agentName,
+            modelKey: plan.primaryTask.modelKey,
+            result: fullResponse,
+            error: null,
+            status: 'success',
+            duration: performance.now() - startTime,
+            retries: 0,
+            tokensGenerated: fullResponse.split(' ').length,
+            startTime,
+            endTime: performance.now(),
+          };
+        } catch (streamError) {
+          if (streamError instanceof Error && streamError.message === 'Cancelled') {
+            primaryResult = this.createTaskResult(this.generateTaskId(), plan.primaryTask, startTime, {
+              status: 'cancelled',
+              retries: 0,
+            });
+          } else {
+            log.warn('Pipelined streaming failed, falling back to traditional method', streamError as Error);
+            // Fallback to traditional method
+            primaryResult = await queue.add(
+              () =>
+                this.executeTaskWithRetry(plan.primaryTask, userPrompt, {
+                  signal: abortController.signal,
+                  streaming: this.config.enableStreaming,
+                }),
+              { priority: 100 }
+            );
+          }
+        }
+      } else {
+        // Fallback si le RuntimeManager n'a pas la méthode generate
+        primaryResult = await queue.add(
+          () =>
+            this.executeTaskWithRetry(plan.primaryTask, userPrompt, {
+              signal: abortController.signal,
+              streaming: this.config.enableStreaming,
+            }),
+          { priority: 100 }
+        );
+      }
+      
+      // 5. Exécuter les tâches fallback en parallèle (sans streaming)
+      const fallbackPromises = plan.fallbackTasks.map((task) =>
+        queue.add(
+          () =>
+            this.executeTaskWithRetry(task, userPrompt, {
+              signal: abortController.signal,
+              streaming: false,
+            }),
+          { priority: this.getPriorityValue(task.priority) }
+        )
+      );
+      
+      // 6. Attendre les fallbacks avec Promise.allSettled
+      if (fallbackPromises.length > 0) {
+        log.info(`Attente de ${fallbackPromises.length} fallback(s)...`);
+        
+        const settledResults = await Promise.allSettled(fallbackPromises);
+        
+        fallbackResults = settledResults.map((settled, index) => {
+          if (settled.status === 'fulfilled') {
+            return settled.value;
+          } else {
+            const task = plan.fallbackTasks[index];
+            return this.createTaskResult(this.generateTaskId(), task, startTime, {
+              status: 'error',
+              error: {
+                type: 'UnknownError',
+                message: settled.reason?.message || 'Erreur inconnue',
+              },
+            });
+          }
+        });
+        
+        const successCount = fallbackResults.filter((r) => r.status === 'success').length;
+        log.info(`Fallback: ${successCount}/${fallbackResults.length} succès`);
+      }
+      
+      // 7. Fusion des résultats
+      const taskResultsForFusion: TaskResult[] = [
+        this.convertToTaskResult(primaryResult),
+        ...fallbackResults.map((r) => this.convertToTaskResult(r)),
+      ];
+      
+      const finalResponse = await fusioner.fuse({
+        primaryResult: taskResultsForFusion[0],
+        expertResults: taskResultsForFusion.slice(1),
+      });
+      
+      // 8. Mettre en cache
+      if (this.config.enableCache && primaryResult.status === 'success') {
+        responseCache.set(userPrompt, plan.primaryTask.modelKey, finalResponse, primaryResult.tokensGenerated);
+        log.info('Résultat mis en cache');
+      }
+      
+      // 9. Enregistrer l'exécution
+      const totalDuration = performance.now() - startTime;
+      const totalRetries = primaryResult.retries + fallbackResults.reduce((sum, r) => sum + r.retries, 0);
+      const success = primaryResult.status === 'success';
+      
+      this.recordExecution(
+        planId,
+        plan.strategy,
+        totalDuration,
+        success,
+        1 + fallbackResults.length,
+        totalRetries,
+        false
+      );
+      
+      if (success) {
+        this.stats.successfulExecutions++;
+      } else {
+        this.stats.failedExecutions++;
+      }
+      this.stats.totalExecutions++;
+      
+      // 10. Yield le résultat final
+      yield {
+        type: 'fusion',
+        content: finalResponse,
+        expertResults: taskResultsForFusion,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      log.error('Erreur:', error as Error);
+      
+      this.stats.failedExecutions++;
+      this.stats.totalExecutions++;
+      this.recordError(errorMessage);
+      
+      sseStreamer.streamError(error instanceof Error ? error : new Error(errorMessage));
+      
+      yield {
+        type: 'status',
+        status: `Erreur: ${errorMessage}`,
+      };
+      
+      throw error;
+    } finally {
+      this.activeRequests--;
+      this.activeCancellationTokens.delete(planId);
+    }
+  }
+
+  /**
    * Exécute un plan complet avec streaming
    */
   public async *processStream(userPrompt: string): AsyncGenerator<StreamChunk> {
+    // Directly use the new pipelined processing approach
+    try {
+      for await (const chunk of this.processStreamWithPipelining(userPrompt)) {
+        yield chunk;
+      }
+      return;
+    } catch (error) {
+      log.warn('Pipelined processing failed, falling back to traditional processing', error as Error);
+    }
+
+    // Fall back to traditional processing
+
     const planId = this.generatePlanId();
     const startTime = performance.now();
     this.activeRequests++;

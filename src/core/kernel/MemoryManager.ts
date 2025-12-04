@@ -66,8 +66,30 @@ class MemoryManager {
   private totalVRAM: number = 8;
   private initialized: boolean = false;
 
+  // Buffer pools for memory management (Task #16)
+  private bufferPools: Map<string, { 
+    size: number, 
+    available: number,
+    activeAllocations: Array<{
+      size: number,
+      lastUse: number,
+      scopeId?: string
+    }>
+  }> = new Map();
+
+  // Event listeners for monitoring (Task #16)
+  private listeners: Map<string, Function[]> = new Map();
+
   constructor() {
     this.detectGPU();
+    
+    // Initialize default buffer pools (Task #16)
+    this.createPool('kv-cache', 50);      // Key-value cache
+    this.createPool('activations', 30);   // Neural activations
+    this.createPool('uniforms', 20);      // Uniform parameters
+    
+    // Start garbage collector (Task #16)
+    this.startGarbageCollector();
   }
 
   private async detectGPU(): Promise<void> {
@@ -377,6 +399,153 @@ class MemoryManager {
       `Modèles épinglés conservés: ${pinnedModels.length}`
     );
     this.logStats();
+  }
+
+  // ==================================================================
+  // Buffer Pool Management Methods (Task #16)
+  // ==================================================================
+
+  /**
+   * Creates a new buffer pool with the specified size
+   */
+  public createPool(poolName: string, sizeMB: number): void {
+    if (this.bufferPools.has(poolName)) {
+      log.warn(`Pool ${poolName} already exists`);
+      return;
+    }
+
+    this.bufferPools.set(poolName, {
+      size: sizeMB,
+      available: sizeMB,
+      activeAllocations: []
+    });
+
+    log.info(`Created buffer pool ${poolName} with ${sizeMB}MB`);
+    this.emit('pool-created', { poolName, size: sizeMB });
+  }
+
+  /**
+   * Allocates memory from a pool
+   */
+  public allocateFromPool(poolName: string, sizeMB: number, scopeId?: string): boolean {
+    const pool = this.bufferPools.get(poolName);
+    if (!pool) {
+      log.warn(`Pool ${poolName} does not exist`);
+      return false;
+    }
+
+    if (pool.available < sizeMB) {
+      log.warn(`Insufficient memory in pool ${poolName}: requested ${sizeMB}MB, available ${pool.available}MB`);
+      return false;
+    }
+
+    pool.available -= sizeMB;
+    pool.activeAllocations.push({
+      size: sizeMB,
+      lastUse: Date.now(),
+      scopeId
+    });
+
+    log.debug(`Allocated ${sizeMB}MB from pool ${poolName}`);
+    this.emit('alloc', { poolName, size: sizeMB, scopeId });
+    return true;
+  }
+
+  /**
+   * Frees memory back to a pool
+   */
+  public freeToPool(poolName: string, sizeMB: number, scopeId?: string): void {
+    const pool = this.bufferPools.get(poolName);
+    if (!pool) {
+      log.warn(`Pool ${poolName} does not exist`);
+      return;
+    }
+
+    // Find and remove the allocation
+    const index = pool.activeAllocations.findIndex(alloc => alloc.scopeId === scopeId);
+    if (index !== -1) {
+      pool.activeAllocations.splice(index, 1);
+    }
+
+    pool.available = Math.min(pool.size, pool.available + sizeMB);
+    log.debug(`Freed ${sizeMB}MB to pool ${poolName}`);
+    this.emit('free', { poolName, size: sizeMB, scopeId });
+  }
+
+  /**
+   * Checks if allocation is possible without actually allocating
+   */
+  public canAllocate(poolName: string, sizeMB: number): boolean {
+    const pool = this.bufferPools.get(poolName);
+    if (!pool) {
+      log.warn(`Pool ${poolName} does not exist`);
+      return false;
+    }
+
+    return pool.available >= sizeMB;
+  }
+
+  /**
+   * Gets statistics for all pools
+   */
+  public getPoolStats(): Record<string, { size: number, used: number, utilization: number }> {
+    const stats: any = {};
+    for (const [name, pool] of this.bufferPools) {
+      const used = pool.size - pool.available;
+      stats[name] = {
+        size: pool.size,
+        used,
+        utilization: parseFloat((used / pool.size * 100).toFixed(1))
+      };
+    }
+    return stats;
+  }
+
+  /**
+   * Starts garbage collector for buffer pools
+   */
+  public startGarbageCollector(): void {
+    setInterval(() => {
+      const now = Date.now();
+      for (const [name, pool] of this.bufferPools) {
+        // Filter out inactive allocations (older than 30 seconds)
+        const initialLength = pool.activeAllocations.length;
+        pool.activeAllocations = pool.activeAllocations.filter(alloc => {
+          if (now - alloc.lastUse > 30000) {
+            pool.available += alloc.size;
+            log.debug(`[GC] Released ${alloc.size}MB from ${name}`);
+            return false;
+          }
+          return true;
+        });
+        
+        if (initialLength !== pool.activeAllocations.length) {
+          log.info(`[GC] Cleaned up ${initialLength - pool.activeAllocations.length} allocations from ${name}`);
+        }
+      }
+    }, 10000); // Execute every 10 seconds
+  }
+
+  /**
+   * Adds event listener for monitoring
+   */
+  public addEventListener(event: string, callback: Function): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event)!.push(callback);
+  }
+
+  /**
+   * Emits events for monitoring
+   */
+  private emit(event: string, data: any): void {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      for (const callback of callbacks) {
+        callback(data);
+      }
+    }
   }
 
   public isInitialized(): boolean {
