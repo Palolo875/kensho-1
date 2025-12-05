@@ -1,6 +1,10 @@
 // src/core/kernel/guardrails/RateLimiter.ts
 import { createLogger } from '@/lib/logger';
 import { auditLogger } from './AuditLogger';
+import { GuardrailService } from './GuardrailServiceInterface';
+
+// Export interfaces for external use
+export type { RateLimitStatus, UserRole };
 
 const log = createLogger('RateLimiter');
 
@@ -38,7 +42,44 @@ interface RateLimitStatus {
   limit: number;
 }
 
-class RateLimiter {
+class RateLimiter implements GuardrailService {
+  readonly serviceName = 'RateLimiter';
+  readonly version = '1.0.0';
+  
+  /**
+   * Initialize the service
+   */
+  async initialize(): Promise<void> {
+    log.info(`${this.serviceName} v${this.version} initialized`);
+  }
+  
+  /**
+   * Shutdown the service gracefully
+   */
+  async shutdown(): Promise<void> {
+    log.info(`${this.serviceName} shutdown completed`);
+  }
+  
+  /**
+   * Get service statistics/metrics
+   */
+  getStats(): Record<string, any> {
+    return {
+      totalTracked: requestCounts.size,
+      bannedCount: bannedEntities.size,
+      violationStats: Object.fromEntries(violationCounts)
+    };
+  }
+  
+  /**
+   * Reset service statistics
+   */
+  resetStats(): void {
+    requestCounts.clear();
+    violationCounts.clear();
+    bannedEntities.clear();
+  }
+
   /**
    * Creates a composite identifier considering both user ID and IP as fallback
    */
@@ -53,7 +94,8 @@ class RateLimiter {
    * Gets the request limit based on user role
    */
   private getRequestLimit(role: UserRole = 'PUBLIC'): number {
-    return RATE_LIMIT_CONFIG.maxRequests[role] || RATE_LIMIT_CONFIG.maxRequests.DEFAULT;
+    const roleKey = role as keyof typeof RATE_LIMIT_CONFIG.maxRequests;
+    return RATE_LIMIT_CONFIG.maxRequests[roleKey] || RATE_LIMIT_CONFIG.maxRequests.DEFAULT;
   }
 
   /**

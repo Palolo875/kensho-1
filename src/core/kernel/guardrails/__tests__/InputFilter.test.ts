@@ -2,6 +2,27 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { inputFilter } from '../InputFilter';
 
+// Test the GuardrailService interface compliance
+it('should comply with GuardrailService interface', () => {
+  // Check properties
+  expect(inputFilter).toHaveProperty('serviceName');
+  expect(inputFilter).toHaveProperty('version');
+  expect(typeof inputFilter.serviceName).toBe('string');
+  expect(typeof inputFilter.version).toBe('string');
+  
+  // Check methods
+  expect(inputFilter).toHaveProperty('initialize');
+  expect(inputFilter).toHaveProperty('shutdown');
+  expect(inputFilter).toHaveProperty('getStats');
+  expect(inputFilter).toHaveProperty('resetStats');
+  
+  // Check that methods are functions
+  expect(typeof inputFilter.initialize).toBe('function');
+  expect(typeof inputFilter.shutdown).toBe('function');
+  expect(typeof inputFilter.getStats).toBe('function');
+  expect(typeof inputFilter.resetStats).toBe('function');
+});
+
 describe('InputFilter', () => {
   beforeEach(() => {
     // Reset any state if needed

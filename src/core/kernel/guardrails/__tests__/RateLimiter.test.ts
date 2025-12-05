@@ -2,6 +2,27 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { rateLimiter } from '../RateLimiter';
 
+// Test the GuardrailService interface compliance
+it('should comply with GuardrailService interface', () => {
+  // Check properties
+  expect(rateLimiter).toHaveProperty('serviceName');
+  expect(rateLimiter).toHaveProperty('version');
+  expect(typeof rateLimiter.serviceName).toBe('string');
+  expect(typeof rateLimiter.version).toBe('string');
+  
+  // Check methods
+  expect(rateLimiter).toHaveProperty('initialize');
+  expect(rateLimiter).toHaveProperty('shutdown');
+  expect(rateLimiter).toHaveProperty('getStats');
+  expect(rateLimiter).toHaveProperty('resetStats');
+  
+  // Check that methods are functions
+  expect(typeof rateLimiter.initialize).toBe('function');
+  expect(typeof rateLimiter.shutdown).toBe('function');
+  expect(typeof rateLimiter.getStats).toBe('function');
+  expect(typeof rateLimiter.resetStats).toBe('function');
+});
+
 describe('RateLimiter', () => {
   beforeEach(() => {
     // Reset rate limiter state before each test

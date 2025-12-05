@@ -5,6 +5,36 @@ import { outputGuard } from '../OutputGuard';
 import { rateLimiter } from '../RateLimiter';
 import { auditLogger } from '../AuditLogger';
 
+// Test the GuardrailService interface compliance for all services
+it('should comply with GuardrailService interface for all services', () => {
+  const services = [
+    { name: 'inputFilter', service: inputFilter },
+    { name: 'outputGuard', service: outputGuard },
+    { name: 'rateLimiter', service: rateLimiter },
+    { name: 'auditLogger', service: auditLogger }
+  ];
+  
+  services.forEach(({ name, service }) => {
+    // Check properties
+    expect(service).toHaveProperty('serviceName');
+    expect(service).toHaveProperty('version');
+    expect(typeof service.serviceName).toBe('string');
+    expect(typeof service.version).toBe('string');
+    
+    // Check methods
+    expect(service).toHaveProperty('initialize');
+    expect(service).toHaveProperty('shutdown');
+    expect(service).toHaveProperty('getStats');
+    expect(service).toHaveProperty('resetStats');
+    
+    // Check that methods are functions
+    expect(typeof service.initialize).toBe('function');
+    expect(typeof service.shutdown).toBe('function');
+    expect(typeof service.getStats).toBe('function');
+    expect(typeof service.resetStats).toBe('function');
+  });
+});
+
 describe('GuardrailPipeline', () => {
   beforeEach(() => {
     // Reset rate limiter state before each test

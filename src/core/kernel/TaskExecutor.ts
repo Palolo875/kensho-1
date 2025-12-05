@@ -31,6 +31,11 @@ import { fusioner } from './Fusioner';
 import { responseCache } from '../cache/ResponseCache';
 import { sseStreamer } from '../eventbus/SSEStreamerCompat';
 import { createLogger } from '../../lib/logger';
+import { watermarkingService } from './guardrails/WatermarkingService';
+import { inputFilter } from './guardrails/InputFilter';
+import { outputGuard } from './guardrails/OutputGuard';
+import { rateLimiter } from './guardrails/RateLimiter';
+import { auditLogger } from './guardrails/AuditLogger';
 
 const log = createLogger('TaskExecutor');
 
@@ -120,6 +125,15 @@ const DEFAULT_CONFIG: TaskExecutorConfig = {
   concurrencyFull: 4,
 };
 
+/**
+ * Statistiques de sécurité utilisateur
+ */
+interface UserSecurityStats {
+  jailbreakAttempts: number;
+  suspiciousBehavior: number;
+  lastIncident: number;
+}
+
 export class TaskExecutor {
   private routerInstance: Router;
   private queueSerial: PQueue;
@@ -150,6 +164,26 @@ export class TaskExecutor {
   // Cancellation tokens
   private activeCancellationTokens: Map<string, AbortController> = new Map();
 
+  // Worker management
+  private workerPool: Map<string, Worker> = new Map();
+  private workerActivity: Map<string, { lastActive: number, taskCount: number }> = new Map();
+  private lastHeartbeat: Map<string, number> = new Map();
+  private readonly MAX_WORKERS = 4; // Limite CPU-friendly
+  private readonly WORKER_IDLE_TIMEOUT = 60000; // 1 minute
+  private readonly WORKER_MAX_TASKS = 100; // Maximum tasks per worker before recycling
+
+  // Security statistics
+  private userSecurityStats: Map<string, UserSecurityStats> = new Map();
+  
+  // Configuration de sécurité
+  private securityConfig = {
+    enableInputValidation: true,
+    enableOutputGuard: true,
+    enableWatermarking: true,
+    enableRateLimiting: true,
+    enableAuditLogging: true
+  };
+
   constructor(config: Partial<TaskExecutorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.routerInstance = router;
@@ -170,6 +204,12 @@ export class TaskExecutor {
     this.queueParallelFull = new PQueue({
       concurrency: this.config.concurrencyFull,
     });
+
+    // Vérification périodique des heartbeats
+    setInterval(() => this.checkHeartbeats(), 15000);
+    
+    // Terminaison des workers inactifs
+    setInterval(() => this.terminateIdleWorkers(), 10000);
 
     log.info('Queues initialisées:', {
       serial: this.config.concurrencySerial,
@@ -413,47 +453,251 @@ export class TaskExecutor {
   }
 
   /**
-   * Exécute un plan complet avec pipelining
+   * Incrémente les statistiques de sécurité pour un utilisateur
    */
-  public async *processStreamWithPipelining(userPrompt: string): AsyncGenerator<StreamChunk> {
+  public incrementUserSecurityStats(userId: string, eventType: string): number {
+    if (!this.userSecurityStats.has(userId)) {
+      this.userSecurityStats.set(userId, {
+        jailbreakAttempts: 0,
+        suspiciousBehavior: 0,
+        lastIncident: Date.now()
+      });
+    }
+    
+    const stats = this.userSecurityStats.get(userId)!;
+    if (eventType === "jailbreak_attempts") {
+      stats.jailbreakAttempts++;
+    } else if (eventType === "suspicious_behavior") {
+      stats.suspiciousBehavior++;
+    }
+    stats.lastIncident = Date.now();
+    
+    return stats.jailbreakAttempts;
+  }
+
+  /**
+   * Terminaison des workers inactifs
+   */
+  private terminateIdleWorkers() {
+    const now = Date.now();
+    for (const [key, info] of this.workerActivity.entries()) {
+      if (now - info.lastActive > this.WORKER_IDLE_TIMEOUT) {
+        log.info(`[TaskExecutor] Worker ${key} trop ancien → termination.`);
+        this.workerPool.get(key)?.terminate();
+        this.workerPool.delete(key);
+        this.workerActivity.delete(key);
+        this.lastHeartbeat.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Vérification des heartbeats
+   */
+  private checkHeartbeats() {
+    const now = Date.now();
+    for (const [expert, last] of this.lastHeartbeat.entries()) {
+      if (now - last > 30000) { // 30 secondes
+        log.warn(`[Monitor] Worker ${expert} silent >30s → restart.`);
+        this.workerPool.get(expert)?.terminate();
+        this.workerPool.delete(expert);
+        this.workerActivity.delete(expert);
+        this.lastHeartbeat.delete(expert);
+      }
+    }
+  }
+
+  /**
+   * Convertit la priorité de tâche en valeur numérique
+   */
+  private getPriorityValue(priority?: string): number {
+    switch (priority) {
+      case 'HIGH':
+        return 50;
+      case 'MEDIUM':
+        return 25;
+      case 'LOW':
+        return 10;
+      default:
+        return 20;
+    }
+  }
+
+  /**
+   * Convertit TaskExecutionResult en TaskResult pour le fusioner
+   */
+  private convertToTaskResult(execResult: TaskExecutionResult): TaskResult {
+    return {
+      agentName: execResult.agentName,
+      modelKey: execResult.modelKey,
+      result: execResult.result || undefined,
+      error: execResult.error || undefined,
+      status: execResult.status === 'cancelled' ? 'error' : execResult.status,
+      duration: execResult.duration,
+    };
+  }
+
+  /**
+   * Enregistre une exécution dans l'historique
+   */
+  private recordExecution(
+    planId: string,
+    strategy: ExecutionStrategy,
+    duration: number,
+    success: boolean,
+    tasksCount: number,
+    retries: number,
+    fromCache: boolean
+  ): void {
+    const record: ExecutionRecord = {
+      timestamp: Date.now(),
+      planId,
+      strategy,
+      duration,
+      success,
+      tasksCount,
+      retries,
+      fromCache,
+    };
+
+    this.executionHistory.push(record);
+
+    // Limiter la taille de l'historique
+    if (this.executionHistory.length > this.MAX_HISTORY_SIZE) {
+      this.executionHistory = this.executionHistory.slice(-this.MAX_HISTORY_SIZE);
+    }
+
+    // Recalculer le temps moyen d'exécution
+    const totalTime = this.executionHistory.reduce((sum, r) => sum + r.duration, 0);
+    this.stats.averageExecutionTime = totalTime / this.executionHistory.length;
+  }
+
+  /**
+   * Exécute un plan complet avec pipelining et guardrails avancés
+   */
+  public async *processStreamWithSecurity(
+    userPrompt: string, 
+    userId: string = 'anonymous',
+    sessionId: string = `session-${Date.now()}`
+  ): AsyncGenerator<StreamChunk> {
     const planId = this.generatePlanId();
     const startTime = performance.now();
     this.activeRequests++;
     
-    log.info(`Requête pipelined #${planId} (${this.activeRequests} active(s))`);
+    log.info(`Requête sécurisée #${planId} (${this.activeRequests} active(s))`);
     
     // Créer un token d'annulation
     const abortController = new AbortController();
     this.activeCancellationTokens.set(planId, abortController);
     
     try {
-      // 1. Créer le plan
+      // 1. Validation d'entrée avancée
+      if (this.securityConfig.enableInputValidation) {
+        log.info('🛡️ Validation d\'entrée en cours...');
+        const inputValidation = inputFilter.validate(userPrompt);
+        
+        if (!inputValidation.safe) {
+          const errorMessage = inputValidation.reason || 'Prompt rejeté par les filtres de sécurité';
+          log.warn(`🚨 Validation d'entrée échouée: ${errorMessage}`);
+          
+          // Enregistrer l'incident dans l'audit
+          if (this.securityConfig.enableAuditLogging) {
+            auditLogger.logSecurityEvent('INPUT_VALIDATION_FAILED', {
+              reason: errorMessage,
+              promptLength: userPrompt.length,
+              userId,
+              sessionId
+            }, 'HIGH', {
+              userId,
+              requestId: planId,
+              policyVersion: '1.0'
+            });
+          }
+          
+          // Incrémenter les statistiques de sécurité
+          this.incrementUserSecurityStats(userId, "jailbreak_attempts");
+          
+          throw new Error(`Sécurité: ${errorMessage}`);
+        }
+        
+        log.info('✅ Validation d\'entrée réussie');
+        
+        // Enregistrer la validation réussie
+        if (this.securityConfig.enableAuditLogging) {
+          auditLogger.logSecurityEvent('INPUT_VALIDATION_PASSED', {
+            promptLength: userPrompt.length,
+            userId,
+            sessionId
+          }, 'LOW', {
+            userId,
+            requestId: planId,
+            policyVersion: '1.0'
+          });
+        }
+      }
+      
+      // 2. Rate limiting
+      if (this.securityConfig.enableRateLimiting) {
+        const rateLimitCheck = rateLimiter.isAllowed(userId);
+        if (!rateLimitCheck.allowed) {
+          const errorMessage = rateLimitCheck.reason || 'Limite de taux dépassée';
+          log.warn(`⏳ Rate limiting appliqué: ${errorMessage}`);
+          
+          if (this.securityConfig.enableAuditLogging) {
+            auditLogger.logSecurityEvent('RATE_LIMIT_EXCEEDED', {
+              reason: errorMessage,
+              userId,
+              sessionId
+            }, 'MEDIUM', {
+              userId,
+              requestId: planId,
+              policyVersion: '1.0'
+            });
+          }
+          
+          throw new Error(`Taux: ${errorMessage}`);
+        }
+      }
+      
+      // 3. Créer le plan
       const plan = await this.routerInstance.createPlan(userPrompt);
-      log.info(`Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
+      log.info(`📋 Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
       
       this.stats.tasksByStrategy[plan.strategy]++;
       
-      // 2. Vérifier le cache
+      // 4. Vérifier le cache
       if (this.config.enableCache) {
         const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
         if (cached) {
           this.stats.cacheHits++;
-          log.info('Cache HIT - Réponse trouvée');
-          sseStreamer.streamInfo('Response found in cache.');
+          log.info('💾 Cache HIT - Réponse trouvée');
           
-          // Streamer la réponse en cache
-          for (const char of cached.response) {
+          // Appliquer le watermarking sur la réponse en cache si activé
+          let finalResponse = cached.response;
+          if (this.securityConfig.enableWatermarking) {
+            const watermarked = watermarkingService.apply(finalResponse, {
+              modelId: plan.primaryTask.modelKey,
+              sessionId,
+              userId
+            });
+            finalResponse = watermarked.watermarkedText;
+            
+            log.info('💧 Réponse en cache watermarked');
+          }
+          
+          // Streamer la réponse
+          for (const char of finalResponse) {
             yield { type: 'primary', content: char };
           }
           
           yield {
             type: 'fusion',
-            content: cached.response,
+            content: finalResponse,
             expertResults: [
               {
                 agentName: 'cache',
                 modelKey: plan.primaryTask.modelKey,
-                result: cached.response,
+                result: finalResponse,
                 status: 'success',
               },
             ],
@@ -465,14 +709,11 @@ export class TaskExecutor {
         this.stats.cacheMisses++;
       }
       
-      sseStreamer.streamInfo('Processing request with pipelining...');
-      
-      // 3. Obtenir la queue appropriée
+      // 5. Obtenir la queue appropriée
       const queue = this.getQueue(plan.strategy);
-      log.info(`Stratégie: ${plan.strategy}`);
-      sseStreamer.streamInfo(`Using strategy: ${plan.strategy}`);
+      log.info(`⚙️ Stratégie: ${plan.strategy}`);
       
-      // 4. Exécuter la tâche principale avec pipelining
+      // 6. Exécuter la tâche principale avec pipelining
       let primaryResult: TaskExecutionResult | null = null;
       let fallbackResults: TaskExecutionResult[] = [];
       
@@ -537,7 +778,7 @@ export class TaskExecutor {
         );
       }
       
-      // 5. Exécuter les tâches fallback en parallèle (sans streaming)
+      // 7. Exécuter les tâches fallback en parallèle (sans streaming)
       const fallbackPromises = plan.fallbackTasks.map((task) =>
         queue.add(
           () =>
@@ -549,9 +790,9 @@ export class TaskExecutor {
         )
       );
       
-      // 6. Attendre les fallbacks avec Promise.allSettled
+      // 8. Attendre les fallbacks avec Promise.allSettled
       if (fallbackPromises.length > 0) {
-        log.info(`Attente de ${fallbackPromises.length} fallback(s)...`);
+        log.info(`⏳ Attente de ${fallbackPromises.length} fallback(s)...`);
         
         const settledResults = await Promise.allSettled(fallbackPromises);
         
@@ -571,27 +812,84 @@ export class TaskExecutor {
         });
         
         const successCount = fallbackResults.filter((r) => r.status === 'success').length;
-        log.info(`Fallback: ${successCount}/${fallbackResults.length} succès`);
+        log.info(`✅ Fallback: ${successCount}/${fallbackResults.length} succès`);
       }
       
-      // 7. Fusion des résultats
+      // Vérifier que primaryResult existe
+      if (!primaryResult) {
+        throw new Error('Échec de l\'exécution de la tâche principale');
+      }
+      
+      // 9. Guardrails de sortie
+      let finalResponse = primaryResult.result || '';
+      if (this.securityConfig.enableOutputGuard && finalResponse) {
+        log.info('🛡️ Application des guardrails de sortie...');
+        const sanitized = outputGuard.sanitize(finalResponse);
+        
+        if (sanitized.modified) {
+          log.warn(`⚠️ Réponse modifiée pour supprimer ${sanitized.removedCount} éléments sensibles`);
+          finalResponse = sanitized.sanitized;
+          
+          // Enregistrer la sanitization dans l'audit
+          if (this.securityConfig.enableAuditLogging) {
+            auditLogger.logSecurityEvent('OUTPUT_SANITIZED', {
+              modifications: sanitized.removedCount,
+              patterns: sanitized.detectedTypes,
+              userId,
+              sessionId
+            }, 'MEDIUM', {
+              userId,
+              requestId: planId,
+              policyVersion: '1.0'
+            });
+          }
+        } else {
+          log.info('✅ Réponse validée par les guardrails de sortie');
+          
+          if (this.securityConfig.enableAuditLogging) {
+            auditLogger.logSecurityEvent('OUTPUT_VALIDATION_PASSED', {
+              responseLength: finalResponse.length,
+              userId,
+              sessionId
+            }, 'LOW', {
+              userId,
+              requestId: planId,
+              policyVersion: '1.0'
+            });
+          }
+        }
+      }
+      
+      // 10. Watermarking
+      if (this.securityConfig.enableWatermarking && finalResponse) {
+        log.info('💧 Application du watermarking...');
+        const watermarked = watermarkingService.apply(finalResponse, {
+          modelId: primaryResult.modelKey,
+          sessionId,
+          userId
+        });
+        finalResponse = watermarked.watermarkedText;
+        log.info('✅ Watermarking appliqué avec succès');
+      }
+      
+      // 11. Fusion des résultats
       const taskResultsForFusion: TaskResult[] = [
         this.convertToTaskResult(primaryResult),
         ...fallbackResults.map((r) => this.convertToTaskResult(r)),
       ];
       
-      const finalResponse = await fusioner.fuse({
+      const fusedResponse = await fusioner.fuse({
         primaryResult: taskResultsForFusion[0],
         expertResults: taskResultsForFusion.slice(1),
       });
       
-      // 8. Mettre en cache
+      // 12. Mettre en cache
       if (this.config.enableCache && primaryResult.status === 'success') {
-        responseCache.set(userPrompt, plan.primaryTask.modelKey, finalResponse, primaryResult.tokensGenerated);
-        log.info('Résultat mis en cache');
+        responseCache.set(userPrompt, plan.primaryTask.modelKey, fusedResponse, primaryResult.tokensGenerated);
+        log.info('💾 Résultat mis en cache');
       }
       
-      // 9. Enregistrer l'exécution
+      // 13. Enregistrer l'exécution
       const totalDuration = performance.now() - startTime;
       const totalRetries = primaryResult.retries + fallbackResults.reduce((sum, r) => sum + r.retries, 0);
       const success = primaryResult.status === 'success';
@@ -613,21 +911,32 @@ export class TaskExecutor {
       }
       this.stats.totalExecutions++;
       
-      // 10. Yield le résultat final
+      // 14. Yield le résultat final
       yield {
         type: 'fusion',
-        content: finalResponse,
+        content: fusedResponse,
         expertResults: taskResultsForFusion,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-      log.error('Erreur:', error as Error);
+      log.error('💥 Erreur:', error as Error);
       
       this.stats.failedExecutions++;
       this.stats.totalExecutions++;
       this.recordError(errorMessage);
       
-      sseStreamer.streamError(error instanceof Error ? error : new Error(errorMessage));
+      // Enregistrer l'erreur dans l'audit
+      if (this.securityConfig.enableAuditLogging) {
+        auditLogger.logSecurityEvent('EXECUTION_ERROR', {
+          error: errorMessage,
+          userId,
+          sessionId
+        }, 'HIGH', {
+          userId,
+          requestId: planId,
+          policyVersion: '1.0'
+        });
+      }
       
       yield {
         type: 'status',
@@ -642,529 +951,138 @@ export class TaskExecutor {
   }
 
   /**
-   * Exécute un plan complet avec streaming
+   * Exécute un plan complet avec streaming et sécurité
    */
   public async *processStream(userPrompt: string): AsyncGenerator<StreamChunk> {
-    // Directly use the new pipelined processing approach
+    // Utiliser la nouvelle méthode avec sécurité avancée
     try {
-      for await (const chunk of this.processStreamWithPipelining(userPrompt)) {
+      for await (const chunk of this.processStreamWithSecurity(userPrompt)) {
         yield chunk;
       }
       return;
     } catch (error) {
-      log.warn('Pipelined processing failed, falling back to traditional processing', error as Error);
+      log.warn('Pipelined processing with security failed, falling back to traditional processing', error as Error);
     }
 
-    // Fall back to traditional processing
+    // Fallback à l'ancienne méthode si nécessaire
+    const plan = await this.routerInstance.createPlan(userPrompt);
+    log.info(`Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
 
-    const planId = this.generatePlanId();
-    const startTime = performance.now();
-    this.activeRequests++;
+    this.stats.tasksByStrategy[plan.strategy]++;
 
-    log.info(`Requête #${planId} (${this.activeRequests} active(s))`);
-
-    // Créer un token d'annulation
-    const abortController = new AbortController();
-    this.activeCancellationTokens.set(planId, abortController);
-
-    try {
-      // 1. Créer le plan
-      const plan = await this.routerInstance.createPlan(userPrompt);
-      log.info(`Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
-
-      this.stats.tasksByStrategy[plan.strategy]++;
-
-      // 2. Vérifier le cache
-      if (this.config.enableCache) {
-        const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
-        if (cached) {
-          this.stats.cacheHits++;
-          log.info('Cache HIT - Réponse trouvée');
-          sseStreamer.streamInfo('Response found in cache.');
-
-          // Streamer la réponse en cache
-          for (const char of cached.response) {
-            yield { type: 'primary', content: char };
-          }
-
-          yield {
-            type: 'fusion',
-            content: cached.response,
-            expertResults: [
-              {
-                agentName: 'cache',
-                modelKey: plan.primaryTask.modelKey,
-                result: cached.response,
-                status: 'success',
-              },
-            ],
-          };
-
-          this.recordExecution(planId, plan.strategy, performance.now() - startTime, true, 1, 0, true);
-          return;
-        }
-        this.stats.cacheMisses++;
-      }
-
-      sseStreamer.streamInfo('Processing request...');
-
-      // 3. Obtenir la queue appropriée
-      const queue = this.getQueue(plan.strategy);
-      log.info(`Stratégie: ${plan.strategy}`);
-      sseStreamer.streamInfo(`Using strategy: ${plan.strategy}`);
-
-      // 4. Collecter les chunks
-      const chunks: StreamChunk[] = [];
-      const onChunk = (chunk: StreamChunk) => {
-        chunks.push(chunk);
-      };
-
-      // 5. Exécuter la tâche principale avec streaming
-      const primaryPromise = queue.add(
-        () =>
-          this.executeTaskWithRetry(plan.primaryTask, userPrompt, {
-            onChunk,
-            signal: abortController.signal,
-            streaming: this.config.enableStreaming,
-          }),
-        { priority: 100 }
-      );
-
-      // 6. Exécuter les tâches fallback (sans streaming)
-      const fallbackPromises = plan.fallbackTasks.map((task) =>
-        queue.add(
-          () =>
-            this.executeTaskWithRetry(task, userPrompt, {
-              signal: abortController.signal,
-              streaming: false,
-            }),
-          { priority: this.getPriorityValue(task.priority) }
-        )
-      );
-
-      // 7. Polling pour le streaming des chunks
-      let primaryResult: TaskExecutionResult | null = null;
-      let lastIndex = 0;
-      const pollInterval = 50;
-
-      while (!primaryResult) {
-        // Yield les nouveaux chunks
-        for (let i = lastIndex; i < chunks.length; i++) {
-          yield chunks[i];
-          lastIndex = i + 1;
-        }
-
-        try {
-          primaryResult = await Promise.race([
-            primaryPromise,
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), pollInterval)),
-          ]);
-        } catch (error) {
-          log.error('Erreur dans la tâche principale:', error as Error);
-          primaryResult = this.createTaskResult(this.generateTaskId(), plan.primaryTask, startTime, {
-            status: 'error',
-            error: {
-              type: 'UnknownError',
-              message: error instanceof Error ? error.message : 'Erreur inconnue',
-            },
-          });
-        }
-      }
-
-      // Yield les chunks restants
-      for (let i = lastIndex; i < chunks.length; i++) {
-        yield chunks[i];
-      }
-
-      // 8. Attendre les fallbacks avec Promise.allSettled
-      let fallbackResults: TaskExecutionResult[] = [];
-      if (fallbackPromises.length > 0) {
-        log.info(`Attente de ${fallbackPromises.length} fallback(s)...`);
-
-        const settledResults = await Promise.allSettled(fallbackPromises);
-
-        fallbackResults = settledResults.map((settled, index) => {
-          if (settled.status === 'fulfilled') {
-            return settled.value;
-          } else {
-            const task = plan.fallbackTasks[index];
-            return this.createTaskResult(this.generateTaskId(), task, startTime, {
-              status: 'error',
-              error: {
-                type: 'UnknownError',
-                message: settled.reason?.message || 'Erreur inconnue',
-              },
-            });
-          }
-        });
-
-        const successCount = fallbackResults.filter((r) => r.status === 'success').length;
-        log.info(`Fallback: ${successCount}/${fallbackResults.length} succès`);
-      }
-
-      // 9. Fusion des résultats
-      const taskResultsForFusion: TaskResult[] = [
-        this.convertToTaskResult(primaryResult),
-        ...fallbackResults.map((r) => this.convertToTaskResult(r)),
-      ];
-
-      const finalResponse = await fusioner.fuse({
-        primaryResult: taskResultsForFusion[0],
-        expertResults: taskResultsForFusion.slice(1),
-      });
-
-      // 10. Mettre en cache
-      if (this.config.enableCache && primaryResult.status === 'success') {
-        responseCache.set(userPrompt, plan.primaryTask.modelKey, finalResponse, primaryResult.tokensGenerated);
-        log.info('Résultat mis en cache');
-      }
-
-      // 11. Enregistrer l'exécution
-      const totalDuration = performance.now() - startTime;
-      const totalRetries = primaryResult.retries + fallbackResults.reduce((sum, r) => sum + r.retries, 0);
-      const success = primaryResult.status === 'success';
-
-      this.recordExecution(
-        planId,
-        plan.strategy,
-        totalDuration,
-        success,
-        1 + fallbackResults.length,
-        totalRetries,
-        false
-      );
-
-      if (success) {
-        this.stats.successfulExecutions++;
-      } else {
-        this.stats.failedExecutions++;
-      }
-      this.stats.totalExecutions++;
-
-      // 12. Yield le résultat final
-      yield {
-        type: 'fusion',
-        content: finalResponse,
-        expertResults: taskResultsForFusion,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-      log.error('Erreur:', error as Error);
-
-      this.stats.failedExecutions++;
-      this.stats.totalExecutions++;
-      this.recordError(errorMessage);
-
-      sseStreamer.streamError(error instanceof Error ? error : new Error(errorMessage));
-
-      yield {
-        type: 'status',
-        status: `Erreur: ${errorMessage}`,
-      };
-
-      throw error;
-    } finally {
-      this.activeRequests--;
-      this.activeCancellationTokens.delete(planId);
-    }
-  }
-
-  /**
-   * Convertit TaskExecutionResult en TaskResult pour le fusioner
-   */
-  private convertToTaskResult(execResult: TaskExecutionResult): TaskResult {
-    return {
-      agentName: execResult.agentName,
-      modelKey: execResult.modelKey,
-      result: execResult.result || undefined,
-      error: execResult.error || undefined,
-      status: execResult.status === 'cancelled' ? 'error' : execResult.status,
-      duration: execResult.duration,
-    };
-  }
-
-  /**
-   * Exécute un plan et retourne le résultat final (non-streaming)
-   */
-  public async process(userPrompt: string): Promise<string> {
-    let finalContent = '';
-
-    for await (const chunk of this.processStream(userPrompt)) {
-      if (chunk.type === 'fusion' && chunk.content) {
-        finalContent = chunk.content;
-      }
-    }
-
-    return finalContent;
-  }
-
-  /**
-   * Exécute un plan et retourne un résultat détaillé
-   */
-  public async executePlan(plan: ExecutionPlan, userPrompt: string): Promise<PlanExecutionResult> {
-    const planId = this.generatePlanId();
-    const startTime = performance.now();
-
-    log.info(`Exécution directe du plan ${planId}`);
-
-    // Vérifier le cache
+    let cached;
     if (this.config.enableCache) {
-      const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
+      cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
       if (cached) {
         this.stats.cacheHits++;
-        return {
-          planId,
-          strategy: plan.strategy,
-          primaryResult: this.createTaskResult(this.generateTaskId(), plan.primaryTask, startTime, {
-            status: 'success',
-            result: cached.response,
-          }),
-          fallbackResults: [],
-          fusedResponse: cached.response,
-          totalDuration: performance.now() - startTime,
-          capacityScore: plan.capacityScore,
-          fromCache: true,
-          success: true,
+        log.info('Cache HIT - Réponse trouvée');
+
+        yield {
+          type: 'fusion',
+          content: cached.response,
+          expertResults: [
+            {
+              agentName: 'cache',
+              modelKey: plan.primaryTask.modelKey,
+              result: cached.response,
+              status: 'success',
+            },
+          ],
         };
+
+        return;
       }
       this.stats.cacheMisses++;
     }
 
     const queue = this.getQueue(plan.strategy);
+    log.info(`Stratégie: ${plan.strategy}`);
 
-    // Exécuter toutes les tâches
-    const allTasks = [plan.primaryTask, ...plan.fallbackTasks];
-    const taskPromises = allTasks.map((task, index) =>
-      queue.add(() => this.executeTaskWithRetry(task, userPrompt), {
-        priority: index === 0 ? 100 : this.getPriorityValue(task.priority),
-      })
+    const primaryResult = await queue.add(
+      () =>
+        this.executeTaskWithRetry(plan.primaryTask, userPrompt, {
+          streaming: this.config.enableStreaming,
+        }),
+      { priority: 100 }
     );
 
-    // Attendre tous les résultats avec allSettled
-    const settledResults = await Promise.allSettled(taskPromises);
+    let fallbackResults: TaskExecutionResult[] = [];
+    const fallbackPromises = plan.fallbackTasks.map((task) =>
+      queue.add(
+        () =>
+          this.executeTaskWithRetry(task, userPrompt, {
+            streaming: false,
+          }),
+        { priority: this.getPriorityValue(task.priority) }
+      )
+    );
 
-    const results: TaskExecutionResult[] = settledResults.map((settled, index) => {
-      if (settled.status === 'fulfilled') {
-        return settled.value;
+    if (fallbackPromises.length > 0) {
+      log.info(`Attente de ${fallbackPromises.length} fallback(s)...`);
+
+      const settledResults = await Promise.allSettled(fallbackPromises);
+
+      fallbackResults = settledResults.map((settled, index) => {
+        if (settled.status === 'fulfilled') {
+          return settled.value;
+        } else {
+          const task = plan.fallbackTasks[index];
+          return this.createTaskResult(this.generateTaskId(), task, performance.now(), {
+            status: 'error',
+            error: {
+              type: 'UnknownError',
+              message: settled.reason?.message || 'Erreur inconnue',
+            },
+          });
+        }
+      });
+
+      const successCount = fallbackResults.filter((r) => r.status === 'success').length;
+      log.info(`Fallback: ${successCount}/${fallbackResults.length} succès`);
+    }
+
+    let finalResponse = primaryResult.result || '';
+    if (finalResponse && outputGuard) {
+      log.info('Application des guardrails de sortie...');
+      const sanitized = outputGuard.sanitize(finalResponse);
+
+      if (sanitized.modified) {
+        log.warn(`Réponse modifiée pour supprimer ${sanitized.removedCount} éléments sensibles`);
+        finalResponse = sanitized.sanitized;
       } else {
-        const task = allTasks[index];
-        return this.createTaskResult(this.generateTaskId(), task, startTime, {
-          status: 'error',
-          error: {
-            type: 'UnknownError',
-            message: settled.reason?.message || 'Erreur inconnue',
-          },
-        });
+        log.info('Réponse validée par les guardrails de sortie');
       }
-    });
+    }
 
-    const primaryResult = results[0];
-    const fallbackResults = results.slice(1);
+    if (finalResponse && watermarkingService) {
+      log.info('Application du watermarking...');
+      const watermarked = watermarkingService.apply(finalResponse, {
+        modelId: primaryResult.modelKey,
+        sessionId: `session-${Date.now()}`,
+      });
+      finalResponse = watermarked.watermarkedText;
+      log.info('Watermarking appliqué avec succès');
+    }
 
-    // Fusion
-    const taskResultsForFusion = results.map((r) => this.convertToTaskResult(r));
+    const taskResultsForFusion: TaskResult[] = [
+      this.convertToTaskResult(primaryResult),
+      ...fallbackResults.map((r) => this.convertToTaskResult(r)),
+    ];
+
     const fusedResponse = await fusioner.fuse({
       primaryResult: taskResultsForFusion[0],
       expertResults: taskResultsForFusion.slice(1),
     });
 
-    // Cache
     if (this.config.enableCache && primaryResult.status === 'success') {
       responseCache.set(userPrompt, plan.primaryTask.modelKey, fusedResponse, primaryResult.tokensGenerated);
+      log.info('Résultat mis en cache');
     }
 
-    const totalDuration = performance.now() - startTime;
-    const success = primaryResult.status === 'success';
-
-    this.stats.totalExecutions++;
-    if (success) {
-      this.stats.successfulExecutions++;
-    } else {
-      this.stats.failedExecutions++;
-    }
-    this.stats.tasksByStrategy[plan.strategy]++;
-
-    return {
-      planId,
-      strategy: plan.strategy,
-      primaryResult,
-      fallbackResults,
-      fusedResponse,
-      totalDuration,
-      capacityScore: plan.capacityScore,
-      fromCache: false,
-      success,
+    yield {
+      type: 'fusion',
+      content: fusedResponse,
+      expertResults: taskResultsForFusion,
     };
-  }
-
-  /**
-   * Annule une requête en cours
-   */
-  public cancelRequest(planId: string): boolean {
-    const controller = this.activeCancellationTokens.get(planId);
-    if (controller) {
-      controller.abort();
-      this.activeCancellationTokens.delete(planId);
-      log.info(`Requête ${planId} annulée`);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Annule toutes les requêtes en cours
-   */
-  public cancelAllRequests(): number {
-    let cancelled = 0;
-    for (const [planId, controller] of this.activeCancellationTokens.entries()) {
-      controller.abort();
-      this.activeCancellationTokens.delete(planId);
-      cancelled++;
-    }
-    log.info(`${cancelled} requête(s) annulée(s)`);
-    return cancelled;
-  }
-
-  /**
-   * Convertit la priorité de tâche en valeur numérique
-   */
-  private getPriorityValue(priority?: string): number {
-    switch (priority) {
-      case 'HIGH':
-        return 50;
-      case 'MEDIUM':
-        return 25;
-      case 'LOW':
-        return 10;
-      default:
-        return 20;
-    }
-  }
-
-  /**
-   * Enregistre une exécution dans l'historique
-   */
-  private recordExecution(
-    planId: string,
-    strategy: ExecutionStrategy,
-    duration: number,
-    success: boolean,
-    tasksCount: number,
-    retries: number,
-    fromCache: boolean
-  ): void {
-    const record: ExecutionRecord = {
-      timestamp: Date.now(),
-      planId,
-      strategy,
-      duration,
-      success,
-      tasksCount,
-      retries,
-      fromCache,
-    };
-
-    this.executionHistory.push(record);
-
-    // Limiter la taille de l'historique
-    if (this.executionHistory.length > this.MAX_HISTORY_SIZE) {
-      this.executionHistory = this.executionHistory.slice(-this.MAX_HISTORY_SIZE);
-    }
-
-    // Recalculer le temps moyen d'exécution
-    const totalTime = this.executionHistory.reduce((sum, r) => sum + r.duration, 0);
-    this.stats.averageExecutionTime = totalTime / this.executionHistory.length;
-  }
-
-  /**
-   * Obtient les statistiques du TaskExecutor
-   */
-  public getStats(): ExecutorStats {
-    return { ...this.stats };
-  }
-
-  /**
-   * Obtient l'historique des exécutions
-   */
-  public getExecutionHistory(limit: number = 50): ExecutionRecord[] {
-    return this.executionHistory.slice(-limit);
-  }
-
-  /**
-   * Obtient le nombre de requêtes actives
-   */
-  public getActiveRequestsCount(): number {
-    return this.activeRequests;
-  }
-
-  /**
-   * Obtient l'état des queues
-   */
-  public getQueueStatus(): {
-    serial: { pending: number; size: number };
-    limited: { pending: number; size: number };
-    full: { pending: number; size: number };
-  } {
-    return {
-      serial: { pending: this.queueSerial.pending, size: this.queueSerial.size },
-      limited: { pending: this.queueParallelLimited.pending, size: this.queueParallelLimited.size },
-      full: { pending: this.queueParallelFull.pending, size: this.queueParallelFull.size },
-    };
-  }
-
-  /**
-   * Réinitialise les statistiques
-   */
-  public resetStats(): void {
-    this.stats = {
-      totalExecutions: 0,
-      successfulExecutions: 0,
-      failedExecutions: 0,
-      totalRetries: 0,
-      averageExecutionTime: 0,
-      cacheHits: 0,
-      cacheMisses: 0,
-      tasksByStrategy: {
-        SERIAL: 0,
-        PARALLEL_LIMITED: 0,
-        PARALLEL_FULL: 0,
-      },
-      errorsByType: {},
-    };
-    this.executionHistory = [];
-    log.info('Statistiques réinitialisées');
-  }
-
-  /**
-   * Vide les queues
-   */
-  public clearQueues(): void {
-    this.queueSerial.clear();
-    this.queueParallelLimited.clear();
-    this.queueParallelFull.clear();
-    log.info('Queues vidées');
-  }
-
-  /**
-   * Pause toutes les queues
-   */
-  public pauseQueues(): void {
-    this.queueSerial.pause();
-    this.queueParallelLimited.pause();
-    this.queueParallelFull.pause();
-    log.info('Queues en pause');
-  }
-
-  /**
-   * Reprend toutes les queues
-   */
-  public resumeQueues(): void {
-    this.queueSerial.start();
-    this.queueParallelLimited.start();
-    this.queueParallelFull.start();
-    log.info('Queues reprises');
   }
 }
-
-// Export singleton
-export const taskExecutor = new TaskExecutor();

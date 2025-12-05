@@ -2,6 +2,27 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { outputGuard } from '../OutputGuard';
 
+// Test the GuardrailService interface compliance
+it('should comply with GuardrailService interface', () => {
+  // Check properties
+  expect(outputGuard).toHaveProperty('serviceName');
+  expect(outputGuard).toHaveProperty('version');
+  expect(typeof outputGuard.serviceName).toBe('string');
+  expect(typeof outputGuard.version).toBe('string');
+  
+  // Check methods
+  expect(outputGuard).toHaveProperty('initialize');
+  expect(outputGuard).toHaveProperty('shutdown');
+  expect(outputGuard).toHaveProperty('getStats');
+  expect(outputGuard).toHaveProperty('resetStats');
+  
+  // Check that methods are functions
+  expect(typeof outputGuard.initialize).toBe('function');
+  expect(typeof outputGuard.shutdown).toBe('function');
+  expect(typeof outputGuard.getStats).toBe('function');
+  expect(typeof outputGuard.resetStats).toBe('function');
+});
+
 describe('OutputGuard', () => {
   beforeEach(() => {
     // Reset any state if needed

@@ -1,5 +1,6 @@
 // src/core/kernel/guardrails/AuditLogger.ts
 import { createLogger } from '@/lib/logger';
+import { GuardrailService } from './GuardrailServiceInterface';
 
 const log = createLogger('AuditLogger');
 
@@ -33,7 +34,38 @@ interface AuditContext {
   policyVersion?: string;
 }
 
-class AuditLogger {
+class AuditLogger implements GuardrailService {
+  readonly serviceName = 'AuditLogger';
+  readonly version = '1.0.0';
+  
+  /**
+   * Initialize the service
+   */
+  async initialize(): Promise<void> {
+    log.info(`${this.serviceName} v${this.version} initialized`);
+  }
+  
+  /**
+   * Shutdown the service gracefully
+   */
+  async shutdown(): Promise<void> {
+    log.info(`${this.serviceName} shutdown completed`);
+  }
+  
+  /**
+   * Get service statistics/metrics
+   */
+  getStats(): Record<string, any> {
+    return this.getStatistics();
+  }
+  
+  /**
+   * Reset service statistics
+   */
+  resetStats(): void {
+    this.clearEvents();
+  }
+
   /**
    * Logs a security event with enhanced metadata
    */

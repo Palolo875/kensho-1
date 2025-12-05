@@ -1,6 +1,10 @@
 // src/core/kernel/guardrails/InputFilter.ts
 import { createLogger } from '@/lib/logger';
 import { auditLogger } from './AuditLogger';
+import { GuardrailService } from './GuardrailServiceInterface';
+
+// Export interface for external use
+export type { ValidationResult };
 
 const log = createLogger('InputFilter');
 
@@ -44,7 +48,39 @@ interface ValidationResult {
   detectedPatterns?: string[];
 }
 
-class InputFilter {
+class InputFilter implements GuardrailService {
+  readonly serviceName = 'InputFilter';
+  readonly version = '1.0.0';
+  
+  /**
+   * Initialize the service
+   */
+  async initialize(): Promise<void> {
+    log.info(`${this.serviceName} v${this.version} initialized`);
+  }
+  
+  /**
+   * Shutdown the service gracefully
+   */
+  async shutdown(): Promise<void> {
+    log.info(`${this.serviceName} shutdown completed`);
+  }
+  
+  /**
+   * Get service statistics/metrics
+   */
+  getStats(): Record<string, any> {
+    // Stats are tracked in the auditLogger
+    return {};
+  }
+  
+  /**
+   * Reset service statistics
+   */
+  resetStats(): void {
+    // Stats are tracked in the auditLogger
+  }
+
   /**
    * Advanced Unicode normalization removing zero-width characters and other invisible characters
    */

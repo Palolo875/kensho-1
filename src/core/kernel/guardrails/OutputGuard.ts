@@ -1,6 +1,10 @@
 // src/core/kernel/guardrails/OutputGuard.ts
 import { createLogger } from '@/lib/logger';
 import { auditLogger } from './AuditLogger';
+import { GuardrailService } from './GuardrailServiceInterface';
+
+// Export interfaces for external use
+export type { SanitizationResult };
 
 const log = createLogger('OutputGuard');
 
@@ -71,7 +75,39 @@ interface SanitizationResult {
   detectedTypes: string[];
 }
 
-class OutputGuard {
+class OutputGuard implements GuardrailService {
+  readonly serviceName = 'OutputGuard';
+  readonly version = '1.0.0';
+  
+  /**
+   * Initialize the service
+   */
+  async initialize(): Promise<void> {
+    log.info(`${this.serviceName} v${this.version} initialized`);
+  }
+  
+  /**
+   * Shutdown the service gracefully
+   */
+  async shutdown(): Promise<void> {
+    log.info(`${this.serviceName} shutdown completed`);
+  }
+  
+  /**
+   * Get service statistics/metrics
+   */
+  getStats(): Record<string, any> {
+    // Stats are tracked in the auditLogger
+    return {};
+  }
+  
+  /**
+   * Reset service statistics
+   */
+  resetStats(): void {
+    // Stats are tracked in the auditLogger
+  }
+
   /**
    * Sanitizes an outgoing response based on a specific policy
    * @param response The response to sanitize
