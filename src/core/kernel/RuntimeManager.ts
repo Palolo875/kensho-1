@@ -17,6 +17,7 @@
  */
 
 import { createLogger } from '../../lib/logger';
+import { logger } from './monitoring/LoggerService';
 import { storageManager, CompiledGraph, COMPILED_GRAPH_VERSION } from './StorageManager';
 import { resourceManager } from './ResourceManager';
 import { memoryManager } from './MemoryManager';
@@ -31,7 +32,7 @@ import { sseStreamer } from '../streaming/SSEStreamer';
 
 const log = createLogger('RuntimeManager');
 
-log.info('🚀 RuntimeManager (Production) initialisé.');
+logger.info('RuntimeManager', '🚀 RuntimeManager (Production) initialisé.');
 
 // Types pour les différents backends supportés
 export type RuntimeBackend = 'webllm' | 'transformers' | 'mock' | 'auto';
@@ -262,12 +263,17 @@ class RuntimeManager {
 
   // --- Logique du Circuit Breaker ---
   private failureCount = 0;
+  private successCount = 0; // ✅ Nouveau
+  private rejectionCount = 0; // ✅ Nouveau
   private readonly FAILURE_THRESHOLD = 3;
-  private readonly FALLBACK_DURATION = 60 * 1000; // 1 minute
+  private readonly SUCCESS_THRESHOLD = 2; // ✅ Succès nécessaires pour fermer
+  private readonly REJECTION_THRESHOLD = 5; // ✅ Seuil de rejets
+  private readonly FALLBACK_DURATION = 60_000;
+  private readonly HALF_OPEN_TIMEOUT = 5_000; // ✅ Timeout pour un test
   private fallbackUntil: number = 0;
   private gpuEngine: MockGPUEngine;
   private cpuEngine: MockCPUEngine;
-  private currentState: 'GPU_PRIMARY' | 'CPU_FALLBACK' = 'GPU_PRIMARY';
+  private circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED'; // ✅ Nouvel état
 
   constructor() {
     log.info('RuntimeManager créé');
@@ -283,6 +289,7 @@ class RuntimeManager {
 
     this.gpuEngine = new MockGPUEngine();
     this.cpuEngine = new MockCPUEngine();
+    logger.info('RuntimeManager', '🚀 RuntimeManager (Production) initialisé.'); // ✅ Nouveau
   }
 
   /**
@@ -1350,11 +1357,87 @@ class RuntimeManager {
   }
 
   /**
+   * Obtient le moteur approprié selon l'état du Circuit Breaker
+   */
+  public async getEngineFor(task: any): Promise<MockGPUEngine | MockCPUEngine> {
+    // Met à jour les métriques
+    this.metrics.state = this.circuitState;
+    this.metrics.fallbackUntil = this.fallbackUntil;
+
+    switch (this.circuitState) {
+      case 'CLOSED':
+        // Opération normale
+        return this.gpuEngine;
+
+      case 'OPEN':
+        if (Date.now() < this.fallbackUntil) {
+          logger.warn('RuntimeManager', 'Circuit OPEN. Fallback CPU.'); // ✅ Nouveau
+          return this.cpuEngine;
+        }
+        // Le temps est écoulé, passe en HALF_OPEN
+        this.circuitState = 'HALF_OPEN';
+        this.successCount = 0;
+        logger.info('RuntimeManager', 'Circuit HALF_OPEN. Test du GPU...'); // ✅ Nouveau
+        sseStreamer.streamStatus("Test de stabilité du moteur principal...");
+        // Continue vers HALF_OPEN ↓
+
+      case 'HALF_OPEN':
+        // On teste le GPU avec un timeout strict
+        return this.gpuEngine;
+    }
+  }
+
+  /**
+   * Exécute une promesse avec un timeout
+   */
+  private async executeWithTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number
+  ): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+      )
+    ]);
+  }
+
+  /**
+   * Notifie le Circuit Breaker d'un succès.
+   */
+  public handleSuccess(): void {
+    this.metrics.totalSuccesses++;
+    this.metrics.lastSuccessTime = Date.now();
+
+    if (this.circuitState === 'HALF_OPEN') {
+      this.successCount++;
+      logger.info('RuntimeManager', `Test GPU réussi (${this.successCount}/${this.SUCCESS_THRESHOLD})`); // ✅ Nouveau
+
+      if (this.successCount >= this.SUCCESS_THRESHOLD) {
+        this.closeCircuit();
+      }
+    } else if (this.circuitState === 'CLOSED') {
+      // Reset le compteur d'échecs si on était en état normal
+      this.failureCount = Math.max(0, this.failureCount - 1);
+    }
+  }
+
+  /**
    * Notifie le Circuit Breaker d'un échec.
    */
   public handleFailure(): void {
+    this.metrics.totalFailures++;
+    this.metrics.lastFailureTime = Date.now();
+
+    if (this.circuitState === 'HALF_OPEN') {
+      // Échec pendant le test → retour immédiat en OPEN
+      logger.error('RuntimeManager', 'Test GPU échoué. Retour en OPEN.', new Error('Test GPU failed')); // ✅ Nouveau
+      this.tripCircuitBreaker();
+      return;
+    }
+
     this.failureCount++;
-    console.error(`[RuntimeManager] Échec GPU détecté (${this.failureCount}/${this.FAILURE_THRESHOLD}).`);
+    logger.warn('RuntimeManager', `Échec GPU (${this.failureCount}/${this.FAILURE_THRESHOLD})`); // ✅ Nouveau
 
     if (this.failureCount >= this.FAILURE_THRESHOLD) {
       this.tripCircuitBreaker();
@@ -1362,47 +1445,75 @@ class RuntimeManager {
   }
 
   /**
+   * Enregistre un rejet de tâche (backpressure)
+   */
+  public registerRejection(): void {
+    this.rejectionCount++;
+    this.metrics.rejectionCount = this.rejectionCount;
+    logger.warn('RuntimeManager', `Rejet enregistré (${this.rejectionCount}/${this.REJECTION_THRESHOLD})`); // ✅ Nouveau
+    
+    if (this.rejectionCount >= this.REJECTION_THRESHOLD) {
+      this.tripCircuitBreakerHard();
+    }
+  }
+
+  /**
+   * Ouvre le circuit de manière stricte (hard-open)
+   */
+  private tripCircuitBreakerHard(): void {
+    logger.error('RuntimeManager', 'Tous les moteurs saturés, hard-open mode.', new Error('All engines saturated')); // ✅ Nouveau
+    this.circuitState = 'OPEN';
+    this.fallbackUntil = Date.now() + this.FALLBACK_DURATION;
+    this.metrics.fallbackUntil = this.fallbackUntil;
+    sseStreamer.streamStatus('Système en surcharge. Mise en pause temporaire.');
+  }
+
+  /**
    * Ouvre le circuit et passe en mode fallback.
    */
   private tripCircuitBreaker(): void {
-    console.error(`[RuntimeManager] 🚨 CIRCUIT OUVERT ! Passage au fallback CPU pour ${this.FALLBACK_DURATION / 1000}s.`);
-    this.currentState = 'CPU_FALLBACK';
+    logger.error('RuntimeManager', '🚨 CIRCUIT OPEN ! Fallback CPU.', new Error('Circuit breaker opened')); // ✅ Nouveau
+    this.circuitState = 'OPEN';
     this.fallbackUntil = Date.now() + this.FALLBACK_DURATION;
-    sseStreamer.streamStatus("Alerte: Le moteur principal est instable. Passage en mode dégradé.");
+    this.failureCount = 0; // Reset pour le prochain cycle
+    this.metrics.fallbackUntil = this.fallbackUntil;
+    sseStreamer.streamStatus("Mode dégradé activé (CPU).");
   }
 
   /**
-   * Réinitialise le circuit.
+   * Ferme le circuit.
    */
-  public resetCircuitBreaker(): void {
-    this.currentState = 'GPU_PRIMARY';
+  private closeCircuit(): void {
+    logger.info('RuntimeManager', '✅ Circuit CLOSED. GPU stable.'); // ✅ Nouveau
+    this.circuitState = 'CLOSED';
     this.failureCount = 0;
-    this.fallbackUntil = 0;
-    console.log(`[RuntimeManager] ✅ Circuit fermé. Opérations normales reprises.`);
-    sseStreamer.streamStatus("Le moteur principal est de nouveau stable.");
+    this.successCount = 0;
+    this.rejectionCount = 0;
+    sseStreamer.streamStatus("Moteur principal rétabli (GPU).";
   }
-  
+
+  /**
+   * Vérifie si le système est en mode fallback
+   */
+  public isInFallbackMode(): boolean {
+    return this.circuitState === 'OPEN' && Date.now() < this.fallbackUntil;
+  }
+
+  /**
+   * Obtient les métriques du Circuit Breaker.
+   */
+  public getMetrics(): CircuitMetrics {
+    return {
+      ...this.metrics,
+      state: this.circuitState,
+      fallbackUntil: this.fallbackUntil,
+      rejectionCount: this.rejectionCount
+    };
+  }
+
   // Méthode pour les tests
   public forceGpuFailure(fail: boolean) {
     this.gpuEngine.forceFailure(fail);
-  }
-
-  /**
-   * Obtient le moteur approprié (GPU ou CPU) selon l'état du Circuit Breaker
-   */
-  public async getEngineForCircuitBreaker(task: any): Promise<MockGPUEngine | MockCPUEngine> {
-    // Vérifie si le circuit est "ouvert" (en mode fallback)
-    if (this.currentState === 'CPU_FALLBACK') {
-      if (Date.now() < this.fallbackUntil) {
-        console.warn(`[RuntimeManager] Circuit ouvert. Utilisation du fallback CPU.`);
-        return this.cpuEngine;
-      } else {
-        // Le temps de fallback est écoulé, on tente de revenir au GPU
-        console.log(`[RuntimeManager] Tentative de fermeture du circuit. Retour au GPU.`);
-        this.resetCircuitBreaker();
-      }
-    }
-    return this.gpuEngine;
   }
 }
 

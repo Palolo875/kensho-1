@@ -1,4 +1,3 @@
-// src/core/kernel/engine/MockGPU.engine.ts
 export class MockGPUEngine {
   private shouldFail = false;
   

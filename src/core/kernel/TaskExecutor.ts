@@ -31,6 +31,7 @@ import { fusioner } from './Fusioner';
 import { responseCache } from '../cache/ResponseCache';
 import { sseStreamer } from '../eventbus/SSEStreamerCompat';
 import { createLogger } from '../../lib/logger';
+import { logger } from './monitoring/LoggerService';
 import { watermarkingService } from './guardrails/WatermarkingService';
 import { inputFilter } from './guardrails/InputFilter';
 import { outputGuard } from './guardrails/OutputGuard';
@@ -38,6 +39,7 @@ import { rateLimiter } from './guardrails/RateLimiter';
 import { auditLogger } from './guardrails/AuditLogger';
 
 const log = createLogger('TaskExecutor');
+logger.info('TaskExecutor', 'TaskExecutor v4.0 - Chef de Chantier Intelligent (RuntimeManager + Retry + Metrics)');
 
 /**
  * Configuration du TaskExecutor
@@ -302,7 +304,7 @@ export class TaskExecutor {
           });
         }
 
-        log.info(`${task.agentName} démarré (tentative ${retries + 1}/${this.config.maxRetries + 1})`);
+        logger.info('TaskExecutor', `Démarrage de ${task.agentName}`, { attempt: retries + 1, maxRetries: this.config.maxRetries + 1 });
 
         // Vérifier que le runtime est prêt
         if (!runtimeManager.isReady()) {
@@ -371,7 +373,7 @@ export class TaskExecutor {
         const endTime = performance.now();
         const duration = endTime - startTime;
 
-        log.info(`${task.agentName} succès (${duration.toFixed(0)}ms, ${result.tokensGenerated} tokens)`);
+        logger.info('TaskExecutor', `${task.agentName} succès`, { duration: duration.toFixed(0), tokens: result.tokensGenerated });
 
         return {
           taskId,
@@ -392,9 +394,7 @@ export class TaskExecutor {
         this.stats.totalRetries++;
 
         if (retries <= this.config.maxRetries) {
-          log.warn(
-            `${task.agentName} échec (tentative ${retries}/${this.config.maxRetries + 1}): ${lastError.message}`
-          );
+          logger.warn('TaskExecutor', `${task.agentName} échec`, { attempt: retries, maxRetries: this.config.maxRetries + 1, error: lastError.message });
 
           // Délai avant retry avec backoff
           const delay = this.config.retryDelayMs * Math.pow(2, retries - 1);
@@ -404,7 +404,7 @@ export class TaskExecutor {
     }
 
     // Toutes les tentatives ont échoué
-    log.error(`${task.agentName} échec définitif après ${retries} tentatives`);
+    logger.error('TaskExecutor', `${task.agentName} échec définitif`, new Error(`Après ${retries} tentatives`));
 
     this.recordError(lastError?.message || 'UnknownError');
 
@@ -593,12 +593,12 @@ export class TaskExecutor {
     try {
       // 1. Validation d'entrée avancée
       if (this.securityConfig.enableInputValidation) {
-        log.info('🛡️ Validation d\'entrée en cours...');
+        logger.info('TaskExecutor', '🛡️ Validation d\'entrée en cours...');
         const inputValidation = inputFilter.validate(userPrompt);
         
         if (!inputValidation.safe) {
           const errorMessage = inputValidation.reason || 'Prompt rejeté par les filtres de sécurité';
-          log.warn(`🚨 Validation d'entrée échouée: ${errorMessage}`);
+          logger.warn('TaskExecutor', `🚨 Validation d'entrée échouée: ${errorMessage}`);
           
           // Enregistrer l'incident dans l'audit
           if (this.securityConfig.enableAuditLogging) {
@@ -620,7 +620,7 @@ export class TaskExecutor {
           throw new Error(`Sécurité: ${errorMessage}`);
         }
         
-        log.info('✅ Validation d\'entrée réussie');
+        logger.info('TaskExecutor', '✅ Validation d\'entrée réussie');
         
         // Enregistrer la validation réussie
         if (this.securityConfig.enableAuditLogging) {
@@ -641,7 +641,7 @@ export class TaskExecutor {
         const rateLimitCheck = rateLimiter.isAllowed(userId);
         if (!rateLimitCheck.allowed) {
           const errorMessage = rateLimitCheck.reason || 'Limite de taux dépassée';
-          log.warn(`⏳ Rate limiting appliqué: ${errorMessage}`);
+          logger.warn('TaskExecutor', `⏳ Rate limiting appliqué: ${errorMessage}`);
           
           if (this.securityConfig.enableAuditLogging) {
             auditLogger.logSecurityEvent('RATE_LIMIT_EXCEEDED', {
@@ -661,7 +661,7 @@ export class TaskExecutor {
       
       // 3. Créer le plan
       const plan = await this.routerInstance.createPlan(userPrompt);
-      log.info(`📋 Plan: ${plan.strategy}, ${plan.fallbackTasks.length + 1} tâche(s)`);
+      logger.info('TaskExecutor', `📋 Plan: ${plan.strategy}`, { taskCount: plan.fallbackTasks.length + 1 });
       
       this.stats.tasksByStrategy[plan.strategy]++;
       
@@ -670,7 +670,7 @@ export class TaskExecutor {
         const cached = await responseCache.get(userPrompt, plan.primaryTask.modelKey);
         if (cached) {
           this.stats.cacheHits++;
-          log.info('💾 Cache HIT - Réponse trouvée');
+          logger.info('TaskExecutor', '💾 Cache HIT - Réponse trouvée');
           
           // Appliquer le watermarking sur la réponse en cache si activé
           let finalResponse = cached.response;
@@ -711,7 +711,7 @@ export class TaskExecutor {
       
       // 5. Obtenir la queue appropriée
       const queue = this.getQueue(plan.strategy);
-      log.info(`⚙️ Stratégie: ${plan.strategy}`);
+      logger.info('TaskExecutor', `⚙️ Stratégie: ${plan.strategy}`);
       
       // 6. Exécuter la tâche principale avec pipelining
       let primaryResult: TaskExecutionResult | null = null;
@@ -792,7 +792,7 @@ export class TaskExecutor {
       
       // 8. Attendre les fallbacks avec Promise.allSettled
       if (fallbackPromises.length > 0) {
-        log.info(`⏳ Attente de ${fallbackPromises.length} fallback(s)...`);
+        logger.info('TaskExecutor', `⏳ Attente de ${fallbackPromises.length} fallback(s)...`);
         
         const settledResults = await Promise.allSettled(fallbackPromises);
         
@@ -812,7 +812,7 @@ export class TaskExecutor {
         });
         
         const successCount = fallbackResults.filter((r) => r.status === 'success').length;
-        log.info(`✅ Fallback: ${successCount}/${fallbackResults.length} succès`);
+        logger.info('TaskExecutor', `✅ Fallback: ${successCount}/${fallbackResults.length} succès`);
       }
       
       // Vérifier que primaryResult existe
@@ -823,11 +823,11 @@ export class TaskExecutor {
       // 9. Guardrails de sortie
       let finalResponse = primaryResult.result || '';
       if (this.securityConfig.enableOutputGuard && finalResponse) {
-        log.info('🛡️ Application des guardrails de sortie...');
+        logger.info('TaskExecutor', '🛡️ Application des guardrails de sortie...');
         const sanitized = outputGuard.sanitize(finalResponse);
         
         if (sanitized.modified) {
-          log.warn(`⚠️ Réponse modifiée pour supprimer ${sanitized.removedCount} éléments sensibles`);
+          logger.warn('TaskExecutor', `⚠️ Réponse modifiée pour supprimer ${sanitized.removedCount} éléments sensibles`);
           finalResponse = sanitized.sanitized;
           
           // Enregistrer la sanitization dans l'audit
@@ -844,7 +844,7 @@ export class TaskExecutor {
             });
           }
         } else {
-          log.info('✅ Réponse validée par les guardrails de sortie');
+          logger.info('TaskExecutor', '✅ Réponse validée par les guardrails de sortie');
           
           if (this.securityConfig.enableAuditLogging) {
             auditLogger.logSecurityEvent('OUTPUT_VALIDATION_PASSED', {
@@ -862,14 +862,14 @@ export class TaskExecutor {
       
       // 10. Watermarking
       if (this.securityConfig.enableWatermarking && finalResponse) {
-        log.info('💧 Application du watermarking...');
+        logger.info('TaskExecutor', '💧 Application du watermarking...');
         const watermarked = watermarkingService.apply(finalResponse, {
           modelId: primaryResult.modelKey,
           sessionId,
           userId
         });
         finalResponse = watermarked.watermarkedText;
-        log.info('✅ Watermarking appliqué avec succès');
+        logger.info('TaskExecutor', '✅ Watermarking appliqué avec succès');
       }
       
       // 11. Fusion des résultats
@@ -886,7 +886,7 @@ export class TaskExecutor {
       // 12. Mettre en cache
       if (this.config.enableCache && primaryResult.status === 'success') {
         responseCache.set(userPrompt, plan.primaryTask.modelKey, fusedResponse, primaryResult.tokensGenerated);
-        log.info('💾 Résultat mis en cache');
+        logger.info('TaskExecutor', '💾 Résultat mis en cache');
       }
       
       // 13. Enregistrer l'exécution
@@ -919,7 +919,7 @@ export class TaskExecutor {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
-      log.error('💥 Erreur:', error as Error);
+      logger.error('TaskExecutor', '💥 Erreur', error as Error);
       
       this.stats.failedExecutions++;
       this.stats.totalExecutions++;
@@ -961,7 +961,7 @@ export class TaskExecutor {
       }
       return;
     } catch (error) {
-      log.warn('Pipelined processing with security failed, falling back to traditional processing', error as Error);
+      logger.warn('TaskExecutor', 'Pipelined processing with security failed, falling back to traditional processing', error as Error);
     }
 
     // Fallback à l'ancienne méthode si nécessaire

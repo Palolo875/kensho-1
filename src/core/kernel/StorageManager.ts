@@ -1294,12 +1294,61 @@ class StorageManager {
   }
 
   /**
-   * Simule une fonction de hashage
+   * Calcule le hash SHA-256 d'un blob
    */
   private async sha256(blob: Blob): Promise<string> {
-    // En réalité, on utiliserait crypto.subtle.digest
-    const text = await blob.text();
-    return `sha256-simule-${text.length}`;
+    const buffer = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `sha256-${hashHex}`;
+  }
+
+  /**
+   * Vérifie l'espace disque disponible
+   */
+  private async checkDiskSpace(manifest: any): Promise<void> {
+    if ('storage' in navigator && 'estimate' in navigator.storage) {
+      const estimate = await navigator.storage.estimate();
+      const available = (estimate.quota || 0) - (estimate.usage || 0);
+      
+      // Calcule l'espace nécessaire
+      const requiredSpace = manifest.files
+        .filter((f: FileInfo) => f.required)
+        .reduce((sum: number, f: FileInfo) => sum + f.size, 0);
+        
+      if (available < requiredSpace) {
+        const neededGB = (requiredSpace / 1e9).toFixed(2);
+        const availableGB = (available / 1e9).toFixed(2);
+        throw new Error(
+          `Espace insuffisant: besoin de ${neededGB}GB, disponible: ${availableGB}GB`
+        );
+      }
+    }
+  }
+
+  /**
+   * Télécharge un fichier avec retry
+   */
+  private async downloadFileWithRetry(fileInfo: FileInfo, maxRetries = 3): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.downloadFile(fileInfo);
+        return; // Succès
+      } catch (error) {
+        console.error(`[StorageManager] Tentative ${attempt}/${maxRetries} échouée pour ${fileInfo.path}`);
+        
+        if (attempt === maxRetries) {
+          console.log(`❌ Échec du téléchargement: ${fileInfo.path}. Mode dégradé.`);
+          throw new Error(`Impossible de télécharger ${fileInfo.path} après ${maxRetries} tentatives`);
+        }
+        
+        // Exponential backoff: 2s, 4s, 8s
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`Nouvelle tentative dans ${delay/1000}s...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
   }
 
   /**
@@ -1308,8 +1357,6 @@ class StorageManager {
   public async initializeAndVerify(): Promise<void> {
     await this.init(); // Initialise OPFS
     
-    // Note: We can't import sseStreamer here due to circular dependencies
-    // In a real implementation, we would use a proper logging mechanism
     console.log("Vérification de l'intégrité des fichiers locaux...");
     
     // 1. Charger le manifeste
@@ -1317,17 +1364,21 @@ class StorageManager {
     try {
       const response = await fetch('/manifest.json');
       manifest = await response.json();
+      this.manifest = manifest;
     } catch (e) {
       throw new Error("Impossible de charger le manifeste des fichiers.");
     }
 
-    // 2. Vérifier chaque fichier du manifeste
+    // 2. Vérifier l'espace disque disponible
+    await this.checkDiskSpace(manifest);
+
+    // 3. Vérifier chaque fichier du manifeste
     for (const fileInfo of manifest.files) {
       const handle = await this.getFileHandle(fileInfo.path);
       
       if (!handle) {
         console.log(`Fichier manquant: ${fileInfo.path}. Téléchargement...`);
-        await this.downloadFile(fileInfo);
+        await this.downloadFileWithRetry(fileInfo);
         continue;
       }
 
@@ -1336,7 +1387,7 @@ class StorageManager {
 
       if (localHash !== fileInfo.hash) {
         console.log(`Fichier corrompu: ${fileInfo.path}. Re-téléchargement...`);
-        await this.downloadFile(fileInfo);
+        await this.downloadFileWithRetry(fileInfo);
       }
     }
     
@@ -1345,23 +1396,42 @@ class StorageManager {
   }
 
   /**
-   * Simule le téléchargement et le stockage d'un fichier.
+   * Télécharge et stocke un fichier avec progression
    */
-  private async downloadFile(fileInfo: { path: string, size: number, hash: string }): Promise<void> {
+  private async downloadFile(fileInfo: FileInfo): Promise<void> {
     if (!this.root) throw new Error("OPFS non initialisé.");
     
-    // Simule un téléchargement basé sur la taille du fichier
-    const downloadTime = fileInfo.size / 5_000_000; // Simule 5MB/s
-    await new Promise(r => setTimeout(r, downloadTime * 1000));
-
+    console.log(`Téléchargement de ${fileInfo.path}...`);
+    
+    const chunkSize = 5_000_000; // 5MB chunks
+    const totalChunks = Math.ceil(fileInfo.size / chunkSize);
+    
     const handle = await this.root.getFileHandle(fileInfo.path, { create: true });
     const writable = await handle.createWritable();
-    // Écrit un contenu factice dont la longueur correspond pour que le hash simulé fonctionne
-    const fakeContent = 'a'.repeat(parseInt(fileInfo.hash.split('-')[2]) || 1);
-    await writable.write(fakeContent);
+    
+    // Simule le téléchargement chunk par chunk
+    for (let i = 0; i < totalChunks; i++) {
+      await new Promise(r => setTimeout(r, 1000)); // 1s par chunk (5MB/s)
+      const progress = ((i + 1) / totalChunks * 100).toFixed(0);
+      console.log(`Téléchargement: ${progress}% (${fileInfo.path})`);
+      
+      // Écrit un chunk de données factices
+      const chunk = new Uint8Array(Math.min(chunkSize, fileInfo.size - i * chunkSize));
+      crypto.getRandomValues(chunk); // Données aléatoires réalistes
+      await writable.write(chunk);
+    }
+    
     await writable.close();
     
-    console.log(`[StorageManager] Fichier ${fileInfo.path} téléchargé et stocké.`);
+    // ✅ Vérifie le hash après téléchargement
+    const file = await handle.getFile();
+    const actualHash = await this.sha256(file);
+    
+    if (actualHash !== fileInfo.hash) {
+      throw new Error(`Échec de vérification après téléchargement: ${fileInfo.path}`);
+    }
+    
+    console.log(`[StorageManager] ✅ ${fileInfo.path} téléchargé et vérifié.`);
   }
 }
 
