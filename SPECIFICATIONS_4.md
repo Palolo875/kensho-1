@@ -482,6 +482,450 @@ VITE_LOG_LEVEL=WARN
 9. Composant UI pour visualiser les logs
 10. Configuration par environnement fonctionnelle
 
-## 🎯 Tâche #22 : [À définir]
+## 🎯 Tâche #22 : Améliorations du RuntimeManager
 
-[Vide - À remplir avec la prochaine tâche]
+### Objectif
+Améliorer le RuntimeManager avec du versioning de graphes, du feedback utilisateur pendant compilation, un cache mémoire observable et du warming planifié.
+
+### Spécifications Techniques Détaillées
+
+#### 1. Versioning des Graphes
+```typescript
+// Header JSON standardisé pour les graphes
+interface GraphHeader {
+  version: string;          // Version du graphe (ex: "1.2.3")
+  modelName: string;        // Nom du modèle
+  schemaHash: string;       // Hash du schéma pour vérification d'intégrité
+  generatedAt: string;      // Timestamp de génération ISO 8601
+  dependencies?: string[];  // Dépendances du graphe
+}
+
+class RuntimeManager {
+  private readonly GRAPH_VERSION = '1.0.0';
+  
+  // Utilisation du header comme clé de cache
+  private getGraphCacheKey(modelKey: string): string {
+    return `${modelKey}@${this.GRAPH_VERSION}`;
+  }
+  
+  // Nettoyage automatique des graphes obsolètes au boot
+  public async cleanupObsoleteGraphs(): Promise<void> {
+    const allGraphs = await storageManager.listGraphs();
+    for (const graphKey of allGraphs) {
+      const [modelName, version] = graphKey.split('@');
+      if (version !== this.GRAPH_VERSION) {
+        await storageManager.deleteGraph(graphKey);
+        logger.info('RuntimeManager', `Graphe obsolète supprimé: ${graphKey}`);
+      }
+    }
+  }
+}
+```
+
+#### 2. Feedback Utilisateur Pendant Compilation
+```typescript
+class RuntimeManager {
+  // Timeline simulée déterministe
+  private readonly COMPILATION_STAGES = [
+    { name: 'parsing', duration: 200 },
+    { name: 'linking', duration: 300 },
+    { name: 'optimizing', duration: 500 },
+    { name: 'compiling', duration: 500 }
+  ];
+
+  public async compileModel(modelKey: string): Promise<void> {
+    const correlationId = uuidv4();
+    logger.setCorrelationId(correlationId);
+    
+    try {
+      logger.info('RuntimeManager', 'Début de la compilation du modèle', { modelKey });
+      
+      // Émettre des événements de progression
+      for (const stage of this.COMPILATION_STAGES) {
+        // Émettre un événement de progression
+        this.emitProgressEvent(stage.name, 'started');
+        
+        // Simuler le traitement avec une durée déterministe
+        await new Promise(resolve => setTimeout(resolve, stage.duration));
+        
+        // Émettre un événement de progression
+        this.emitProgressEvent(stage.name, 'completed');
+      }
+      
+      logger.info('RuntimeManager', 'Compilation du modèle terminée', { modelKey });
+    } catch (error) {
+      logger.error('RuntimeManager', 'Échec de la compilation du modèle', error, { modelKey });
+      throw error;
+    } finally {
+      logger.clearCorrelationId();
+    }
+  }
+  
+  private emitProgressEvent(stage: string, status: 'started' | 'completed'): void {
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('compilation-progress', {
+        detail: { stage, status, timestamp: Date.now() }
+      }));
+    }
+  }
+}
+```
+
+#### 3. Cache Mémoire Observable
+```typescript
+class LRUCache<T> {
+  private cache: Map<string, { value: T, timestamp: number }> = new Map();
+  private readonly maxSize: number;
+  private hits: number = 0;
+  private misses: number = 0;
+
+  constructor(maxSize: number = 100) {
+    this.maxSize = maxSize;
+  }
+
+  public get(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (entry) {
+      this.hits++;
+      // Mettre à jour le timestamp pour LRU
+      entry.timestamp = Date.now();
+      return entry.value;
+    }
+    this.misses++;
+    return undefined;
+  }
+
+  public set(key: string, value: T): void {
+    // Éviction LRU si nécessaire
+    if (this.cache.size >= this.maxSize) {
+      let oldestKey = '';
+      let oldestTimestamp = Infinity;
+      
+      for (const [k, v] of this.cache.entries()) {
+        if (v.timestamp < oldestTimestamp) {
+          oldestTimestamp = v.timestamp;
+          oldestKey = k;
+        }
+      }
+      
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        logger.info('LRUCache', `Éviction du graphe: ${oldestKey}`);
+      }
+    }
+    
+    this.cache.set(key, { value, timestamp: Date.now() });
+  }
+
+  public getStats(): { size: number, hits: number, misses: number, hitRate: number } {
+    const total = this.hits + this.misses;
+    const hitRate = total > 0 ? this.hits / total : 0;
+    
+    return {
+      size: this.cache.size,
+      hits: this.hits,
+      misses: this.misses,
+      hitRate: parseFloat(hitRate.toFixed(4))
+    };
+  }
+
+  public clear(): void {
+    this.cache.clear();
+    this.hits = 0;
+    this.misses = 0;
+  }
+}
+
+class RuntimeManager {
+  private graphCache = new LRUCache<CompiledGraph>(50); // Cache de 50 graphes max
+  
+  public getCacheStats(): ReturnType<LRUCache<any>['getStats']> {
+    return this.graphCache.getStats();
+  }
+}
+```
+
+#### 4. Warming Planifié
+```typescript
+class RuntimeManager {
+  private warmingScheduler: WorkerScheduler;
+  private readonly WARMING_IDLE_TIMEOUT = 30000; // 30 secondes
+
+  constructor() {
+    this.warmingScheduler = new WorkerScheduler({
+      priority: 'low', // Priorité basse pour ne pas bloquer l'UI
+      idleCallback: true, // Utiliser requestIdleCallback
+      maxConcurrency: 2 // Limiter la concurrence
+    });
+  }
+
+  // Warming basé sur les metrics d'utilisation
+  public async scheduleStrategicWarming(): Promise<void> {
+    try {
+      // Obtenir les modèles les plus fréquemment utilisés
+      const topModels = await this.getModelUsageMetrics();
+      
+      for (const model of topModels.slice(0, 5)) { // Top 5 modèles
+        // Planifier le warming avec une priorité basse
+        this.warmingScheduler.schedule(async () => {
+          await this.preWarmModel(model.modelKey);
+        }, { priority: 'low' });
+      }
+      
+      logger.info('RuntimeManager', 'Warming stratégique planifié', { 
+        modelCount: Math.min(topModels.length, 5) 
+      });
+    } catch (error) {
+      logger.error('RuntimeManager', 'Échec de la planification du warming stratégique', error);
+    }
+  }
+
+  // Pré-warming d'un modèle
+  private async preWarmModel(modelKey: string): Promise<void> {
+    try {
+      logger.info('RuntimeManager', 'Début du pré-warming du modèle', { modelKey });
+      
+      // Charger et compiler le modèle
+      const compiledGraph = await this.loadAndCompileModel(modelKey);
+      
+      // Stocker dans le cache compressé
+      const compressedGraph = await this.compressGraph(compiledGraph);
+      const cacheKey = this.getGraphCacheKey(modelKey);
+      await storageManager.saveCompressedGraph(cacheKey, compressedGraph);
+      
+      logger.info('RuntimeManager', 'Modèle pré-warmé avec succès', { modelKey });
+    } catch (error) {
+      logger.error('RuntimeManager', 'Échec du pré-warming du modèle', error, { modelKey });
+    }
+  }
+
+  // Compression du graphe pour le stockage temporaire
+  private async compressGraph(graph: CompiledGraph): Promise<Blob> {
+    const jsonString = JSON.stringify(graph);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(jsonString));
+        controller.close();
+      }
+    });
+    
+    const compressedStream = stream.pipeThrough(new CompressionStream('gzip'));
+    return await new Response(compressedStream).blob();
+  }
+
+  // Obtention des metrics d'utilisation des modèles
+  private async getModelUsageMetrics(): Promise<{ modelKey: string; usageCount: number }[]> {
+    // Simulation - en réalité, cela viendrait des logs/metrics
+    return [
+      { modelKey: 'llama-3.2-1b', usageCount: 1250 },
+      { modelKey: 'mistral-7b', usageCount: 980 },
+      { modelKey: 'phi-3-mini', usageCount: 750 },
+      { modelKey: 'gemma-2b', usageCount: 620 },
+      { modelKey: 'qwen-1.8b', usageCount: 450 }
+    ];
+  }
+}
+
+// Scheduler pour le warming planifié
+class WorkerScheduler {
+  private tasks: ScheduledTask[] = [];
+  private readonly options: SchedulerOptions;
+
+  constructor(options: SchedulerOptions) {
+    this.options = options;
+  }
+
+  public schedule(task: () => Promise<void>, options: TaskOptions): void {
+    const scheduledTask: ScheduledTask = {
+      task,
+      priority: options.priority || 'normal',
+      scheduledAt: Date.now()
+    };
+
+    this.tasks.push(scheduledTask);
+    this.processNextTask();
+  }
+
+  private async processNextTask(): Promise<void> {
+    if (this.tasks.length === 0) return;
+
+    // Trier par priorité
+    this.tasks.sort((a, b) => {
+      const priorityOrder = { 'high': 0, 'normal': 1, 'low': 2 };
+      return priorityOrder[a.priority] - priorityOrder[b.priority];
+    });
+
+    const nextTask = this.tasks.shift();
+    if (!nextTask) return;
+
+    try {
+      if (this.options.idleCallback && typeof requestIdleCallback !== 'undefined') {
+        // Utiliser requestIdleCallback pour le browser
+        await new Promise<void>((resolve) => {
+          requestIdleCallback(async () => {
+            await nextTask.task();
+            resolve();
+          }, { timeout: this.options.idleTimeout || 1000 });
+        });
+      } else {
+        // Exécuter directement
+        await nextTask.task();
+      }
+    } catch (error) {
+      logger.error('WorkerScheduler', 'Échec de l\'exécution de la tâche', error);
+    }
+  }
+}
+
+interface SchedulerOptions {
+  priority: 'high' | 'normal' | 'low';
+  idleCallback?: boolean;
+  idleTimeout?: number;
+  maxConcurrency?: number;
+}
+
+interface TaskOptions {
+  priority: 'high' | 'normal' | 'low';
+}
+
+interface ScheduledTask {
+  task: () => Promise<void>;
+  priority: 'high' | 'normal' | 'low';
+  scheduledAt: number;
+}
+```
+
+### Résultats Attendus pour la Tâche #22
+1. Versioning des graphes avec header standardisé et nettoyage automatique
+2. Feedback utilisateur pendant compilation avec timeline simulée
+3. Cache mémoire observable avec statistiques d'utilisation
+4. Warming planifié basé sur les metrics d'utilisation
+5. Compression des graphes pour le stockage temporaire
+6. Scheduler intelligent pour le warming avec priorités
+
+## 🎯 Tâche #23 : Suite de Benchmark
+
+### Objectif
+Créer un script de benchmark (npm run benchmark) qui exécute une série de scénarios standardisés sur notre "Usine Vide" et mesure des métriques de performance clés. Ce script doit pouvoir simuler différentes configurations matérielles pour évaluer la performance sur un éventail de "devices".
+
+### Spécifications Techniques Détaillées
+
+#### 1. DeviceSimulator
+Ce module nous permettra de "tromper" notre ResourceManager pour qu'il croie tourner sur un appareil différent.
+
+```typescript
+// src/core/kernel/monitoring/DeviceSimulator.ts
+
+import { resourceManager, DeviceStatus } from '../ResourceManager';
+
+export type DeviceProfile = 'LOW_END_MOBILE' | 'MID_RANGE_TABLET' | 'HIGH_END_DESKTOP';
+
+const PROFILES: Record<DeviceProfile, Partial<DeviceStatus>> = {
+  'LOW_END_MOBILE': {
+    cpu: { hardwareConcurrency: 2 },
+    memory: { jsHeapSizeLimit: 2 * 1024**3, usageRatio: 0.8 },
+    network: { effectiveType: '3g' },
+    battery: { level: 0.4, isCharging: false }
+  },
+  'MID_RANGE_TABLET': {
+    cpu: { hardwareConcurrency: 4 },
+    memory: { jsHeapSizeLimit: 4 * 1024**3, usageRatio: 0.6 },
+    network: { effectiveType: '4g' },
+    battery: { level: 0.7, isCharging: false }
+  },
+  'HIGH_END_DESKTOP': {
+    cpu: { hardwareConcurrency: 16 },
+    memory: { jsHeapSizeLimit: 16 * 1024**3, usageRatio: 0.3 },
+    network: { effectiveType: '4g' },
+    battery: { isCharging: true, level: 1 }
+  }
+};
+
+export function simulateDevice(profile: DeviceProfile): void {
+  const status = PROFILES[profile];
+  // "Monkey-patch" la méthode getStatus pour qu'elle retourne notre profil simulé
+  resourceManager.getStatus = async () => {
+    return { ...resourceManager.getInitialStatus(), ...status } as DeviceStatus;
+  };
+  console.log(`\n[Benchmark] 📱 Simulation du device: ${profile}`);
+}
+```
+
+#### 2. Script de Benchmark
+Ce script sera à la racine du projet et exécutera nos scénarios.
+
+```typescript
+// benchmark.ts (à la racine)
+
+import { dialoguePlugin } from './src/core/plugins/DialoguePlugin';
+import { simulateDevice, DeviceProfile } from './src/core/kernel/monitoring/DeviceSimulator';
+import { logger } from './src/core/kernel/monitoring/LoggerService';
+
+// Désactive les logs JSON pour un affichage plus propre du benchmark
+logger.info = () => {};
+logger.warn = () => {};
+logger.error = () => {};
+
+const SCENARIOS = {
+  'Dialogue Simple': "Explique le concept de l'open source en une phrase.",
+  'Tâche de Code': "Écris une fonction javascript qui inverse une chaîne de caractères.",
+  'Requête Complexe (Parallèle)': "Écris un poème sur la lune et donne-moi le code d'une fonction qui calcule la factorielle."
+};
+
+async function runBenchmarkForProfile(profile: DeviceProfile) {
+  simulateDevice(profile);
+  
+  const results: Record<string, number> = {};
+
+  for (const [name, prompt] of Object.entries(SCENARIOS)) {
+    const startTime = performance.now();
+    
+    // On appelle process, mais on ne se soucie pas de la réponse, juste du temps
+    await dialoguePlugin.process(prompt);
+    
+    const duration = performance.now() - startTime;
+    results[name] = Math.round(duration);
+  }
+
+  return results;
+}
+
+async function runAllBenchmarks() {
+  console.log("📊 === DÉBUT DE LA SUITE DE BENCHMARKS === 📊");
+
+  const allResults: Record<string, any> = {};
+
+  allResults['LOW_END_MOBILE'] = await runBenchmarkForProfile('LOW_END_MOBILE');
+  allResults['MID_RANGE_TABLET'] = await runBenchmarkForProfile('MID_RANGE_TABLET');
+  allResults['HIGH_END_DESKTOP'] = await runBenchmarkForProfile('HIGH_END_DESKTOP');
+
+  console.log("\n\n📈 === RÉSULTATS FINAUX (en ms) === 📈");
+  console.table(allResults);
+  console.log("\n✅ Suite de benchmarks terminée.");
+}
+
+runAllBenchmarks();
+```
+
+#### 3. Configuration du package.json
+Ajout du script de benchmark dans le package.json :
+
+```json
+// package.json
+{
+  "scripts": {
+    "benchmark": "ts-node benchmark.ts"
+  }
+}
+```
+
+### Résultats Attendus pour la Tâche #23
+1. Création du DeviceSimulator pour simuler différentes configurations matérielles
+2. Script de benchmark complet avec scénarios standardisés
+3. Intégration du script dans package.json
+4. Mesure objective des temps d'exécution bout en bout
+5. Simulation multi-device pour évaluer l'adaptation du Router
+6. Détection de régression grâce aux benchmarks réguliers
+7. Distinction claire entre cold start et warm start pour des mesures précises
+8. Instrumentation du RuntimeManager et StorageManager pour les métriques de compilation/loading
+9. Baselines différenciées pour cold et warm start avec seuils de régression

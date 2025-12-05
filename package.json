@@ -30,7 +30,8 @@
     "lint:fix": "eslint . --fix",
     "quality": "npm run type-check && npm run lint && npm run format:check",
     "seed:demo": "tsx scripts/seed-demo-data.ts",
-    "demo:guide": "tsx scripts/demo-scenarios.ts"
+    "demo:guide": "tsx scripts/demo-scenarios.ts",
+    "benchmark": "ts-node benchmark.ts"
   },
   "dependencies": {
     "@mlc-ai/web-llm": "^0.2.79",
