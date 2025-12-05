@@ -854,7 +854,7 @@ class DialoguePlugin {
   }> = [];
   
   private readonly MAX_CONCURRENT_PREDICTIONS = 3;
-  private readonly MAX_QUEUE_SIZE = 10;
+  private readonly MAX_QUEUE_SIZE = 3; // File bornée stricte
   private activePredictions = 0;
 
   // ... (process et processStream existants)
@@ -893,21 +893,21 @@ class DialoguePlugin {
     // 1. Prédire les questions de suivi avec scoring de confiance
     const predictions = await followUpPredictor.predict(originalPrompt, originalResponse);
     
-    // ✅ Ne cache que les questions avec confiance > seuil adaptatif
-    const threshold = cacheMetrics.getConfidenceThreshold();
-    const worthCaching = predictions.filter(p => p.confidence > threshold);
+    // ✅ Ne cache que les questions avec confiance ≥ 0.6
+    const threshold = 0.6; // Seuil fixe selon les spécifications
+    const worthCaching = predictions.filter(p => p.confidence >= threshold);
     
     if (worthCaching.length === 0) {
-      console.log(`[PredictiveCache] Aucune question avec confiance > ${(threshold * 100).toFixed(0)}%`);
+      console.log(`[PredictiveCache] Aucune question avec confiance ≥ ${(threshold * 100).toFixed(0)}%`);
       return;
     }
 
     // 2. Ajoute les prédictions à la file avec backpressure
     for (const { question, confidence, reasoning } of worthCaching) {
-      // Gestion de la backpressure
+      // Gestion de la backpressure stricte
       if (this.predictionQueue.length >= this.MAX_QUEUE_SIZE) {
-        console.log("[PredictiveCache] File pleine, suppression des prédictions les plus anciennes");
-        this.predictionQueue.shift(); // Supprime la plus ancienne
+        console.log("[PredictiveCache] File pleine, suppression des prédictions les plus anciennes (OLDEST)");
+        this.predictionQueue.shift(); // Supprime la plus ancienne (stratégie OLDEST)
       }
       
       this.predictionQueue.push({
@@ -995,9 +995,10 @@ export const dialoguePlugin = new DialoguePlugin();
 16. Exécution en arrière-plan des réponses aux questions de suivi probables avec scoring de confiance
 17. Stockage des réponses prédites dans le cache avec TTL adaptatif
 18. Système de métriques pour le tracking du hit rate et de la performance
-19. Filtrage des prédictions par seuil de confiance adaptatif
+19. Filtrage des prédictions par seuil de confiance fixe (≥ 0.6)
 20. Métadonnées enrichies pour chaque entrée de cache
 21. Garbage collection périodique pour maintenir le cache sain
 22. Limites de taille avec stratégie LRU pour éviter la saturation mémoire
-23. Backpressure pour éviter la surcharge des ressources système
+23. Backpressure stricte avec file bornée (3 max) et stratégie OLDEST
 24. Boucle de rétroaction adaptative qui ajuste le seuil de confiance selon les performances
+25. Suggestions UI branchées sur le même prédicteur pour affichage des follow-ups

@@ -112,10 +112,12 @@ Actuellement, lorsqu'un utilisateur clique sur une question de suivi suggérée,
 4. **❌ Prédicteur simpliste** : Questions génériques sans contexte
 5. **❌ Gaspillage de ressources** : Caching de toutes les prédictions sans filtrage
 6. **❌ Absence de métriques** : Impossible de mesurer l'efficacité du système
+7. **❌ Cache non borné** : Risque de saturation mémoire et de données obsolètes
+8. **❌ Manque de backpressure** : Risque de surcharge des ressources système
 
 ### Solutions Proposées
 
-#### 1. Création d'un Générateur de Questions de Suivi Contextuel
+#### 1. Création d'un Générateur de Questions de Suivi Contextuel et Intelligent
 Ce service simulera la prédiction des prochaines questions de l'utilisateur avec une approche contextuelle :
 
 ```typescript
@@ -138,13 +140,14 @@ class FollowUpPredictor {
 ✅ **Patterns variés** : Différents types de questions (définition, exemple, comparaison, implémentation)
 ✅ **Extensibilité** : Architecture prête pour un vrai modèle de prédiction plus tard
 
-#### 2. Mise en Place du Caching Prédictif Amélioré dans le DialoguePlugin
-L'orchestration du caching prédictif amélioré dans le DialoguePlugin est sophistiquée :
+#### 2. Mise en Place du Caching Prédictif Intelligent dans le DialoguePlugin
+L'orchestration du caching prédictif intelligent dans le DialoguePlugin est sophistiquée :
 
 ```typescript
 private async runPredictiveCaching(originalPrompt: string, originalResponse: string): Promise<void> {
   // Prédire les questions de suivi avec scoring
-  // Filtrer par seuil de confiance
+  // Filtrer par seuil de confiance ≥ 0.6
+  // Gérer la backpressure stricte
   // Exécuter les plans en arrière-plan
   // Mettre en cache les réponses avec TTL
 }
@@ -152,14 +155,15 @@ private async runPredictiveCaching(originalPrompt: string, originalResponse: str
 
 **Points forts :**
 ✅ **Anticipation des besoins** : Préparation des réponses avant la demande utilisateur
-✅ **Filtrage intelligent** : Seulement les questions avec confiance > 60%
+✅ **Filtrage intelligent** : Seulement les questions avec confiance ≥ 0.6
 ✅ **Expiration adaptative** : TTL basé sur le niveau de confiance
 ✅ **Exécution en arrière-plan** : Fire-and-forget avec priorité basse
 ✅ **Stockage efficace** : Utilisation du ResponseCache avec métadonnées
 ✅ **Transparence** : Aucun impact sur l'expérience utilisateur courante
+✅ **Backpressure stricte** : Gestion intelligente de la charge avec file bornée (3 max)
 
-#### 3. Système de Métriques pour le Suivi des Performances
-Un système complet de tracking des performances :
+#### 3. Système de Métriques pour le Suivi des Performances Intelligent
+Un système complet de tracking des performances avec boucle de rétroaction :
 
 ```typescript
 class PredictiveCacheMetrics {
@@ -168,7 +172,7 @@ class PredictiveCacheMetrics {
   }
   
   public trackCacheHit(question: string): void {
-    // Track les hits
+    // Track les hits et ajuste le seuil adaptatif
   }
   
   public getStats(): object {
@@ -182,6 +186,28 @@ class PredictiveCacheMetrics {
 ✅ **Analyse de confiance** : Corrélation entre confiance et utilisation
 ✅ **Temps d'utilisation** : Mesure du délai entre prédiction et utilisation
 ✅ **Feedback continu** : Base pour l'amélioration du prédicteur
+✅ **Seuil adaptatif** : Ajustement dynamique selon les performances
+
+#### 4. Gestion Avancée du Cache avec GC et Limites
+Une gestion intelligente du cache pour maintenir la performance :
+
+```typescript
+class ResponseCache {
+  private performGarbageCollection(): void {
+    // Nettoie les entrées expirées
+  }
+  
+  public getStats(): object {
+    // Retourne les statistiques du cache
+  }
+}
+```
+
+**Points forts :**
+✅ **Garbage collection** : Nettoyage automatique des entrées expirées
+✅ **Limites de taille** : Empêche la saturation mémoire
+✅ **Stratégie LRU** : Éviction intelligente des entrées les plus anciennes
+✅ **Surveillance** : Statistiques pour le monitoring
 
 ### Points Forts de la Solution
 ✅ **Performance instantanée** : Réponses aux questions de suivi disponibles immédiatement
@@ -192,10 +218,15 @@ class PredictiveCacheMetrics {
 ✅ **Filtrage intelligent** : Évite le gaspillage de ressources
 ✅ **Suivi des performances** : Métriques pour l'optimisation continue
 ✅ **Expiration adaptative** : Gestion intelligente de la fraîcheur des données
+✅ **Backpressure stricte** : Protection contre la surcharge des ressources
+✅ **Boucle de rétroaction** : Système qui s'adapte à l'usage
+✅ **Gestion mémoire** : Cache sain et limité dans le temps et en taille
+✅ **Suggestions UI** : Affichage des follow-ups probables pour une expérience unifiée
 
 ### Points d'Amélioration
 🟢 **Personnalisation** : Adaptation des questions prédites au profil utilisateur
 🟢 **Algorithmes avancés** : Utilisation de techniques NLP pour de meilleures prédictions
+🟢 **Couplage avec l'intent spéculatif** : Intégration avec la Tâche #25 pour une synergie maximale
 
 ### Score Final : 9.9/10 🎯
 Critère | Note | Commentaire

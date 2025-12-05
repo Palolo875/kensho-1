@@ -4,6 +4,12 @@ export type ExecutionStrategy = 'SERIAL' | 'PARALLEL_LIMITED' | 'PARALLEL_FULL';
 
 export type TaskPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 
+export type PerformanceMode = 
+  | 'ECO'           // Batterie faible, tâche simple
+  | 'BALANCED'      // Défaut, bon compromis
+  | 'PERFORMANCE'   // Tâche complexe, branché secteur
+  | 'MAXIMUM';      // Tâche critique, performance avant tout
+
 export interface ClassificationResult {
   intent: IntentCategory;
   confidence: number;
@@ -17,6 +23,7 @@ export interface Task {
   timeout: number;
   temperature: number;
   prompt?: string;
+  performanceMode?: PerformanceMode; // Ajout du mode de performance
 }
 
 /**
