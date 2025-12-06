@@ -2,14 +2,6 @@ import { IntentClassifier } from './IntentClassifier';
 import { CapacityEvaluator } from './CapacityEvaluator';
 import { getModelBySpecialization } from './ModelCatalog';
 import { MODEL_KEYS } from '../models/ModelConstants';
-import {
-  IntentCategory,
-  ExecutionPlan,
-  ExecutionStrategy,
-  Task,
-  RouterError,
-  PerformanceMode
-} from './RouterTypes';
 import { kernelCoordinator } from '../kernel';
 import { runtimeManager } from '../kernel/RuntimeManager';
 import { logger } from '../kernel/monitoring/LoggerService'; // ✅ Remplace createLogger
@@ -102,7 +94,8 @@ export class Router {
   
   // Patterns d'utilisation pour l'apprentissage
   private usagePatterns: Map<IntentCategory, number> = new Map();
-  
+  private lastPrewarmedExpert: string | null = null; // Ajout de la propriété
+
   constructor(config: Partial<RouterConfig> = {}) {
     this.intentClassifier = new IntentClassifier();
     this.capacityEvaluator = new CapacityEvaluator();
@@ -124,6 +117,33 @@ export class Router {
     log.info('Router', 'Configuration du Router mise à jour:', this.config); // ✅ Mis à jour
   }
   
+  /**
+   * Préchauffe les plugins en fonction du contexte applicatif de l'utilisateur.
+   */
+  public async prewarmFromContext(context: string): Promise<void> {
+    let expertToPrewarm: string | null = null;
+
+    switch (context) {
+      case 'CODING':
+        expertToPrewarm = this.selectExpertForIntent('CODE');
+        break;
+      case 'DASHBOARD':
+        // Plus tard, on pourrait préchauffer un expert en analyse de données
+        expertToPrewarm = 'math-bitnet-1.58b-mock'; 
+        break;
+      case 'WRITING':
+        // Précharge un modèle plus "profond" pour l'écriture
+        expertToPrewarm = 'dialogue-danube2-1.8b-mock';
+        break;
+    }
+
+    if (expertToPrewarm && expertToPrewarm !== this.lastPrewarmedExpert) {
+      logger.info('Router', `Contexte applicatif détecté: ${context}. Préchauffage de ${expertToPrewarm}...`);
+      runtimeManager.prewarmModel(expertToPrewarm);
+      this.lastPrewarmedExpert = expertToPrewarm;
+    }
+  }
+
   /**
    * Crée un plan d'exécution intelligent
    */
@@ -364,7 +384,7 @@ export class Router {
   private scoreSpecificity(prompt: string): number {
     // Plus c'est spécifique, plus c'est complexe
     const hasNumbers = /\d+/.test(prompt);
-    const hasCodeSnippet = /```/.test(prompt) || /function|class|const/.test(prompt);
+    const hasCodeSnippet = /``/.test(prompt) || /function|class|const/.test(prompt);
     const hasTechnicalTerms = /[A-Z]{2,}/.test(prompt); // Acronymes (API, CPU, etc.)
     const hasConstraints = /doit|must|should|ne.*pas/.test(prompt.toLowerCase());
 
@@ -599,6 +619,22 @@ export class Router {
     }
   }
   
+  /**
+   * Sélectionne l'expert approprié pour une intention donnée.
+   */
+  private selectExpertForIntent(intent: string): string {
+    switch (intent) {
+      case 'CODE':
+        return MODEL_KEYS.CODE_EXPERT;
+      case 'MATH':
+        return MODEL_KEYS.MATH_EXPERT;
+      case 'FACTCHECK':
+        return MODEL_KEYS.FACT_CHECK_EXPERT;
+      default:
+        return MODEL_KEYS.GENERAL_DIALOGUE;
+    }
+  }
+
   /**
    * Met à jour les patterns d'utilisation
    */

@@ -2,11 +2,12 @@
 // VRAIE Implémentation de production utilisant l'Origin Private File System (OPFS)
 // Avec cache LRU, streaming de gros fichiers, et métriques d'utilisation
 
-import { createLogger } from '../../lib/logger';
+import { logger } from './monitoring/LoggerService';
+import { FileStorageService } from './storage/FileStorageService';
+import { MetricsCollector, StorageMetrics } from './monitoring/MetricsCollector';
+import { UnifiedCache } from './cache/UnifiedCache';
 
-const log = createLogger('StorageManager');
-
-log.info('📦 StorageManager (Production) initialisé.');
+logger.info('StorageManager', '📦 StorageManager (Production) initialisé.');
 
 /**
  * Interface pour les métadonnées de fichier
@@ -88,6 +89,14 @@ export interface CompiledGraph extends CompiledGraphHeader {
  */
 export const COMPILED_GRAPH_VERSION = '1.0';
 
+// Interface pour les fichiers dans le manifeste
+interface FileInfo {
+  path: string;
+  size: number;
+  hash: string;
+  required: boolean;
+}
+
 /**
  * Interface pour les entrées du cache LRU
  */
@@ -134,7 +143,7 @@ class LRUCache<T> {
 
     // Ne pas mettre en cache si la taille dépasse le max
     if (size > this.maxSize) {
-      log.debug(`Fichier trop gros pour le cache: ${size} bytes`);
+      logger.debug('StorageManager', `Fichier trop gros pour le cache: ${size} bytes`);
       return;
     }
 
@@ -180,7 +189,7 @@ class LRUCache<T> {
     if (oldestKey && oldest) {
       this.currentSize -= oldest.size;
       this.cache.delete(oldestKey);
-      log.debug(`Cache LRU: éviction de ${oldestKey}`);
+      logger.debug('StorageManager', `Cache LRU: éviction de ${oldestKey}`);
     }
   }
 
@@ -217,6 +226,7 @@ class StorageManager {
   private initPromise: Promise<void> | null = null;
   private isInitialized = false;
   private isPersistent = false;
+  private manifest: any = null;
 
   // Cache LRU pour les fichiers fréquemment accédés
   private fileCache: LRUCache<ArrayBuffer>;
@@ -265,21 +275,21 @@ class StorageManager {
   private async init(): Promise<void> {
     try {
       if (typeof navigator === 'undefined') {
-        log.warn('Navigator non disponible (environnement Node/SSR)');
+        logger.warn('StorageManager', 'Navigator non disponible (environnement Node/SSR)');
         return;
       }
 
       if (navigator.storage && navigator.storage.getDirectory) {
         this.root = await navigator.storage.getDirectory();
-        log.info("Accès à l'Origin Private File System (OPFS) réussi.");
+        logger.info('StorageManager', "Accès à l'Origin Private File System (OPFS) réussi.");
         this.isPersistent = await this.requestPersistence();
         this.isInitialized = true;
       } else {
-        log.warn("OPFS non supporté. Utilisation d'un fallback en mémoire.");
+        logger.warn('StorageManager', "OPFS non supporté. Utilisation d'un fallback en mémoire.");
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error("Erreur d'initialisation de l'OPFS:", err);
+      logger.error('StorageManager', "Erreur d'initialisation de l'OPFS:", err);
     }
   }
 
@@ -304,16 +314,16 @@ class StorageManager {
 
     try {
       if (await navigator.storage.persisted()) {
-        log.info('Stockage déjà persistant.');
+        logger.info('StorageManager', 'Stockage déjà persistant.');
         return true;
       }
 
       const result = await navigator.storage.persist();
-      log.info(`Demande de persistance: ${result ? 'Acceptée ✅' : 'Refusée ❌'}`);
+      logger.info('StorageManager', `Demande de persistance: ${result ? 'Acceptée ✅' : 'Refusée ❌'}`);
       return result;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error('Erreur lors de la demande de persistance:', err);
+      logger.error('StorageManager', 'Erreur lors de la demande de persistance:', err);
       return false;
     }
   }
@@ -425,7 +435,7 @@ class StorageManager {
     try {
       const fileHandle = await this.getFileHandle(path, { create: options.create ?? true });
       if (!fileHandle) {
-        log.error(`Impossible de créer/ouvrir le fichier: ${path}`);
+        logger.error('StorageManager', `Impossible de créer/ouvrir le fichier: ${path}`);
         this.recordOperation('write', path, 0, performance.now() - startTime, false);
         return false;
       }
@@ -463,11 +473,11 @@ class StorageManager {
       }
       this.recordOperation('write', path, size, duration, true);
 
-      log.debug(`Fichier écrit: ${path} (${size} bytes en ${duration.toFixed(2)}ms)`);
+      logger.debug('StorageManager', `Fichier écrit: ${path} (${size} bytes en ${duration.toFixed(2)}ms)`);
       return true;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur d'écriture du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur d'écriture du fichier ${path}:`, err);
       this.recordOperation('write', path, size, performance.now() - startTime, false);
       return false;
     }
@@ -484,7 +494,7 @@ class StorageManager {
       const cached = this.textCache.get(path);
       if (cached !== null) {
         this.metrics.cacheHits++;
-        log.debug(`Cache hit (text): ${path}`);
+        logger.debug('StorageManager', `Cache hit (text): ${path}`);
         return cached;
       }
       this.metrics.cacheMisses++;
@@ -517,7 +527,7 @@ class StorageManager {
       return text;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de lecture du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur de lecture du fichier ${path}:`, err);
       this.recordOperation('read', path, 0, performance.now() - startTime, false);
       return null;
     }
@@ -537,7 +547,7 @@ class StorageManager {
       const cached = this.fileCache.get(path);
       if (cached !== null) {
         this.metrics.cacheHits++;
-        log.debug(`Cache hit (binary): ${path}`);
+        logger.debug('StorageManager', `Cache hit (binary): ${path}`);
         return cached;
       }
       this.metrics.cacheMisses++;
@@ -570,7 +580,7 @@ class StorageManager {
       return buffer;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de lecture du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur de lecture du fichier ${path}:`, err);
       this.recordOperation('read', path, 0, performance.now() - startTime, false);
       return null;
     }
@@ -599,7 +609,7 @@ class StorageManager {
       return file;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de lecture du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur de lecture du fichier ${path}:`, err);
       this.recordOperation('read', path, 0, performance.now() - startTime, false);
       return null;
     }
@@ -619,7 +629,7 @@ class StorageManager {
     try {
       const fileHandle = await this.getFileHandle(path);
       if (!fileHandle) {
-        log.error(`Fichier non trouvé pour streaming: ${path}`);
+        logger.error('StorageManager', `Fichier non trouvé pour streaming: ${path}`);
         return false;
       }
 
@@ -637,7 +647,7 @@ class StorageManager {
         // Vérifier si annulé
         if (options.signal?.aborted) {
           reader.cancel();
-          log.info(`Streaming annulé: ${path}`);
+          logger.info('StorageManager', `Streaming annulé: ${path}`);
           return false;
         }
 
@@ -673,11 +683,11 @@ class StorageManager {
       this.metrics.bytesRead += totalSize;
       this.recordOperation('stream', path, totalSize, duration, true);
 
-      log.info(`Streaming terminé: ${path} (${totalSize} bytes en ${duration.toFixed(2)}ms)`);
+      logger.info('StorageManager', `Streaming terminé: ${path} (${totalSize} bytes en ${duration.toFixed(2)}ms)`);
       return true;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de streaming du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur de streaming du fichier ${path}:`, err);
       this.recordOperation('stream', path, 0, performance.now() - startTime, false);
       return false;
     }
@@ -698,7 +708,7 @@ class StorageManager {
     try {
       const fileHandle = await this.getFileHandle(path, { create: true });
       if (!fileHandle) {
-        log.error(`Impossible de créer le fichier pour streaming: ${path}`);
+        logger.error('StorageManager', `Impossible de créer le fichier pour streaming: ${path}`);
         return false;
       }
 
@@ -709,7 +719,7 @@ class StorageManager {
         // Vérifier si annulé
         if (options.signal?.aborted) {
           await writable.abort();
-          log.info(`Écriture streaming annulée: ${path}`);
+          logger.info('StorageManager', `Écriture streaming annulée: ${path}`);
           return false;
         }
 
@@ -736,11 +746,11 @@ class StorageManager {
       this.metrics.bytesWritten += written;
       this.recordOperation('stream', path, written, duration, true);
 
-      log.info(`Écriture streaming terminée: ${path} (${written} bytes en ${duration.toFixed(2)}ms)`);
+      logger.info('StorageManager', `Écriture streaming terminée: ${path} (${written} bytes en ${duration.toFixed(2)}ms)`);
       return true;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur d'écriture streaming du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur d'écriture streaming du fichier ${path}:`, err);
       this.recordOperation('stream', path, written, performance.now() - startTime, false);
       return false;
     }
@@ -794,14 +804,14 @@ class StorageManager {
       this.metrics.totalDeletes++;
       this.recordOperation('delete', path, 0, performance.now() - startTime, true);
 
-      log.debug(`Fichier supprimé: ${path}`);
+      logger.debug('StorageManager', `Fichier supprimé: ${path}`);
       return true;
     } catch (error) {
       if ((error as DOMException).name === 'NotFoundError') {
         return true; // Déjà supprimé
       }
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de suppression du fichier ${path}:`, err);
+      logger.error('StorageManager', `Erreur de suppression du fichier ${path}:`, err);
       this.recordOperation('delete', path, 0, performance.now() - startTime, false);
       return false;
     }
@@ -831,14 +841,14 @@ class StorageManager {
       // Invalider tout le cache (pourrait contenir des fichiers du répertoire)
       this.clearCache();
 
-      log.debug(`Répertoire supprimé: ${path}`);
+      logger.debug('StorageManager', `Répertoire supprimé: ${path}`);
       return true;
     } catch (error) {
       if ((error as DOMException).name === 'NotFoundError') {
         return true;
       }
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de suppression du répertoire ${path}:`, err);
+      logger.error('StorageManager', `Erreur de suppression du répertoire ${path}:`, err);
       return false;
     }
   }
@@ -875,7 +885,7 @@ class StorageManager {
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de listage du répertoire ${path}:`, err);
+      logger.error('StorageManager', `Erreur de listage du répertoire ${path}:`, err);
     }
 
     return entries;
@@ -893,7 +903,7 @@ class StorageManager {
       return await navigator.storage.estimate();
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error("Erreur d'estimation du quota:", err);
+      logger.error('StorageManager', "Erreur d'estimation du quota:", err);
       return null;
     }
   }
@@ -932,21 +942,14 @@ class StorageManager {
         ? this.metrics.writeTimes.reduce((a, b) => a + b, 0) / this.metrics.writeTimes.length
         : 0;
 
-    const totalCacheOps = this.metrics.cacheHits + this.metrics.cacheMisses;
-    const cacheHitRate = totalCacheOps > 0 ? this.metrics.cacheHits / totalCacheOps : 0;
-
     return {
       totalReads: this.metrics.totalReads,
       totalWrites: this.metrics.totalWrites,
       totalDeletes: this.metrics.totalDeletes,
-      cacheHits: this.metrics.cacheHits,
-      cacheMisses: this.metrics.cacheMisses,
-      cacheHitRate,
       bytesRead: this.metrics.bytesRead,
       bytesWritten: this.metrics.bytesWritten,
       averageReadTime: avgReadTime,
       averageWriteTime: avgWriteTime,
-      operationHistory: [...this.metrics.operationHistory],
     };
   }
 
@@ -969,7 +972,7 @@ class StorageManager {
   public clearCache(): void {
     this.fileCache.clear();
     this.textCache.clear();
-    log.info('Cache vidé');
+    logger.info('StorageManager', 'Cache vidé');
   }
 
   /**
@@ -978,7 +981,7 @@ class StorageManager {
   public setCacheMaxSize(maxSizeBytes: number): void {
     this.fileCache.setMaxSize(maxSizeBytes);
     this.textCache.setMaxSize(maxSizeBytes / 10);
-    log.info(`Taille max du cache configurée: ${maxSizeBytes} bytes`);
+    logger.info('StorageManager', `Taille max du cache configurée: ${maxSizeBytes} bytes`);
   }
 
   /**
@@ -997,7 +1000,7 @@ class StorageManager {
       writeTimes: [],
       operationHistory: [],
     };
-    log.info('Métriques réinitialisées');
+    logger.info('StorageManager', 'Métriques réinitialisées');
   }
 
   /**
@@ -1015,14 +1018,14 @@ class StorageManager {
     try {
       const data = await this.readFileAsArrayBuffer(sourcePath, false);
       if (data === null) {
-        log.error(`Fichier source non trouvé: ${sourcePath}`);
+        logger.error('StorageManager', `Fichier source non trouvé: ${sourcePath}`);
         return false;
       }
 
       return await this.writeFile(destPath, data);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`Erreur de copie de ${sourcePath} vers ${destPath}:`, err);
+      logger.error('StorageManager', `Erreur de copie de ${sourcePath} vers ${destPath}:`, err);
       return false;
     }
   }
@@ -1110,7 +1113,7 @@ class StorageManager {
       }
     });
 
-    log.info(`Préchargement: ${success.length} succès, ${failed.length} échecs`);
+    logger.info('StorageManager', `Préchargement: ${success.length} succès, ${failed.length} échecs`);
     return { success, failed };
   }
 
@@ -1131,7 +1134,7 @@ class StorageManager {
       const handle = await this.getFileHandle(graphPath);
 
       if (!handle) {
-        log.debug(`[Graphs] Aucun graphe trouvé pour ${modelKey}`);
+        logger.debug('StorageManager', `[Graphs] Aucun graphe trouvé pour ${modelKey}`);
         return null;
       }
 
@@ -1141,18 +1144,19 @@ class StorageManager {
 
       // Validation de version
       if (graph.version !== COMPILED_GRAPH_VERSION) {
-        log.warn(
+        logger.warn(
+          'StorageManager',
           `[Graphs] Graphe obsolète pour ${modelKey} (v${graph.version} != v${COMPILED_GRAPH_VERSION}), recompilation nécessaire.`
         );
         return null;
       }
 
-      log.info(`[Graphs] ✅ Graphe pré-compilé valide trouvé pour ${modelKey} (compilé il y a ${this.formatAge(graph.generatedAt)})`);
+      logger.info('StorageManager', `[Graphs] ✅ Graphe pré-compilé valide trouvé pour ${modelKey} (compilé il y a ${this.formatAge(graph.generatedAt)})`);
       return graph;
     } catch (error) {
       // Erreur de lecture ou parsing - graceful degradation
       const err = error instanceof Error ? error : new Error(String(error));
-      log.warn(`[Graphs] Erreur lecture graphe ${modelKey}: ${err.message}`);
+      logger.warn('StorageManager', `[Graphs] Erreur lecture graphe ${modelKey}: ${err.message}`);
       return null; // Fallback vers recompilation
     }
   }
@@ -1163,7 +1167,7 @@ class StorageManager {
   public async saveCompiledGraph(modelKey: string, graphData: CompiledGraph): Promise<boolean> {
     try {
       if (!(await this.ensureReady()) || !this.root) {
-        log.warn('[Graphs] OPFS non disponible, graphe non sauvegardé');
+        logger.warn('StorageManager', '[Graphs] OPFS non disponible, graphe non sauvegardé');
         return false;
       }
 
@@ -1174,13 +1178,13 @@ class StorageManager {
       const success = await this.writeFile(graphPath, JSON.stringify(graphData, null, 2));
 
       if (success) {
-        log.info(`[Graphs] ✅ Graphe pré-compilé sauvegardé pour ${modelKey}`);
+        logger.info('StorageManager', `[Graphs] ✅ Graphe pré-compilé sauvegardé pour ${modelKey}`);
       }
 
       return success;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.error(`[Graphs] Erreur sauvegarde graphe ${modelKey}: ${err.message}`);
+      logger.error('StorageManager', `[Graphs] Erreur sauvegarde graphe ${modelKey}: ${err.message}`);
       return false;
     }
   }
@@ -1218,7 +1222,7 @@ class StorageManager {
 
           if (isObsolete) {
             await graphsDir.removeEntry(name);
-            log.debug(`[Graphs] Graphe obsolète supprimé: ${name}`);
+            logger.debug('StorageManager', `[Graphs] Graphe obsolète supprimé: ${name}`);
             stats.deleted++;
           } else {
             stats.kept++;
@@ -1235,13 +1239,13 @@ class StorageManager {
       }
 
       if (stats.deleted > 0) {
-        log.info(`[Graphs] Nettoyage terminé: ${stats.deleted} supprimés, ${stats.kept} conservés`);
+        logger.info('StorageManager', `[Graphs] Nettoyage terminé: ${stats.deleted} supprimés, ${stats.kept} conservés`);
       }
 
       return stats;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      log.warn(`[Graphs] Erreur nettoyage graphes: ${err.message}`);
+      logger.warn('StorageManager', `[Graphs] Erreur nettoyage graphes: ${err.message}`);
       return stats;
     }
   }

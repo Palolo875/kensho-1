@@ -11,6 +11,7 @@ import { ModelLoadingView } from "@/components/ModelLoadingView";
 import { ModelSelector } from "@/components/ModelSelector";
 import { PlanView } from "@/components/PlanView";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
+import UIController from "@/components/UIController"; // Ajout de l'import
 import { useObservatory } from "@/contexts/ObservatoryContext";
 import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { useKenshoStore } from "@/stores/useKenshoStore";
@@ -21,7 +22,7 @@ import { Plus } from "lucide-react";
 import { Toaster } from "sonner";
 
 
-const Index = () => {
+export default function Index() {
   const isMobile = useIsMobile();
   const { firstName } = useUserPreferences();
   const [showSettings, setShowSettings] = useState(false);
@@ -65,6 +66,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen relative bg-background">
+      <UIController /> {/* Ajout du composant UIController */}
       {/* Model Loading Overlay */}
       <ModelLoadingView />
 
@@ -213,5 +215,3 @@ const Index = () => {
     </div>
   );
 };
-
-export default Index;

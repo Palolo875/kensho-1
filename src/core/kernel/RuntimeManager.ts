@@ -275,6 +275,15 @@ class RuntimeManager {
   private cpuEngine: MockCPUEngine;
   private circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED'; // ✅ Nouvel état
 
+  // Ajout des propriétés pour le préchauffage
+  private prewarmingModels: Map<string, AbortController> = new Map();
+  private prewarmMetrics = {
+    totalPrewarms: 0,
+    successfulPrewarms: 0,
+    cancelledPrewarms: 0,
+    hitRate: 0 // % des prewarms qui ont été utilisés
+  };
+
   constructor() {
     log.info('RuntimeManager créé');
     // Détecter WebGPU au démarrage
@@ -959,7 +968,8 @@ class RuntimeManager {
    */
   public async loadCompiledModel(
     modelKey: string,
-    onProgress?: CompilationProgressCallback
+    onProgress?: CompilationProgressCallback,
+    signal?: AbortSignal
   ): Promise<CompiledGraph> {
     const emitProgress = (
       stage: CompilationProgress['stage'],
@@ -1032,6 +1042,11 @@ class RuntimeManager {
       // Ajouter un jitter réaliste (±15%)
       await this.simulateDelay(phase.duration, phase.duration * 0.15);
       elapsed += phase.duration;
+
+      // Vérifier l'annulation
+      if (signal?.aborted) {
+        throw new Error('Préchauffage annulé');
+      }
     }
 
     const compilationTimeMs = performance.now() - compilationStart;
@@ -1115,6 +1130,66 @@ class RuntimeManager {
 
     log.info(`[Warmup] Terminé: ${success.length} succès, ${failed.length} échecs`);
     return { success, failed };
+  }
+
+  /**
+   * Préchauffe un modèle en arrière-plan.
+   * C'est une opération non bloquante.
+   */
+  public prewarmModel(modelKey: string): void {
+    this.prewarmMetrics.totalPrewarms++;
+    
+    // Annule les autres préchauffages en cours
+    for (const [key, controller] of this.prewarmingModels.entries()) {
+      if (key !== modelKey) {
+        logger.info('RuntimeManager', `Annulation du préchauffage de ${key}`);
+        controller.abort();
+        this.prewarmingModels.delete(key);
+        this.prewarmMetrics.cancelledPrewarms++;
+      }
+    }
+
+    // Si déjà en cours pour ce modèle, ne rien faire
+    if (this.prewarmingModels.has(modelKey)) {
+      logger.debug('RuntimeManager', `${modelKey} déjà en préchauffage`);
+      return;
+    }
+
+    // Si déjà chargé, ne rien faire
+    if (this.loadedCompiledGraphs.has(modelKey)) {
+      logger.debug('RuntimeManager', `${modelKey} déjà chargé`);
+      this.prewarmMetrics.successfulPrewarms++;
+      return;
+    }
+
+    // Lance le préchauffage avec AbortController
+    const controller = new AbortController();
+    this.prewarmingModels.set(modelKey, controller);
+
+    logger.info('RuntimeManager', `🔥 Préchauffage de ${modelKey}...`);
+
+    this.loadCompiledModel(modelKey, undefined, controller.signal)
+      .then(() => {
+        logger.info('RuntimeManager', `✅ ${modelKey} préchauffé et prêt`);
+        this.prewarmingModels.delete(modelKey);
+        this.prewarmMetrics.successfulPrewarms++;
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') {
+          logger.debug('RuntimeManager', `Préchauffage de ${modelKey} annulé`);
+          this.prewarmMetrics.cancelledPrewarms++;
+        } else {
+          logger.error('RuntimeManager', `Échec du préchauffage`, err);
+        }
+        this.prewarmingModels.delete(modelKey);
+      });
+  }
+
+  public getMetrics() {
+    return {
+      ...this.prewarmMetrics,
+      hitRate: (this.prewarmMetrics.successfulPrewarms / this.prewarmMetrics.totalPrewarms * 100).toFixed(1) + '%'
+    };
   }
 
   /**

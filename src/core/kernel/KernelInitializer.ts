@@ -1,5 +1,6 @@
 import { dialoguePlugin } from '../../plugins/dialogue/DialoguePlugin';
 import { eventBus } from '../eventbus/EventBus';
+import { router } from '../router/Router';
 import { 
   KenshoMessage, 
   KenshoResponse, 
@@ -76,6 +77,22 @@ export function initializeKernel(
     }
   }
 
+  // Nouvelle fonction pour gérer le changement de contexte
+  async function handleContextChange(
+    message: Extract<KenshoMessage, { type: 'context-changed' }>
+  ): Promise<void> {
+    const { payload } = message;
+    const { context } = payload;
+    
+    console.log(`[Kernel] Changement de contexte reçu: ${context}`);
+    
+    // Délègue l'analyse de contexte au Router
+    await router.prewarmFromContext(context);
+    
+    // Envoyer une confirmation au client
+    sendResponse(createResponse('context-changed-ack', message.requestId, { context }));
+  }
+
   function handleCancelTask(
     message: Extract<KenshoMessage, { type: 'cancel-task' }>
   ): void {
@@ -137,6 +154,9 @@ export function initializeKernel(
         switch (message.type) {
           case 'process-prompt':
             await handleProcessPrompt(message);
+            break;
+          case 'context-changed': // Ajout du nouveau cas
+            await handleContextChange(message);
             break;
           case 'cancel-task':
             handleCancelTask(message);
