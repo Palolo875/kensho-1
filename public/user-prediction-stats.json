@@ -1,0 +1,16 @@
+{
+  "userId": "anon-abc123",
+  "lastUpdated": "2025-12-04T23:30:00Z",
+  "globalAccuracy": 0.78,
+  "totalPredictions": 127,
+  "intentPatterns": {
+    "solve": { "CODE": 0.65, "MATH": 0.32, "DIALOGUE": 0.03 },
+    "function": { "CODE": 0.92, "DIALOGUE": 0.08 },
+    "calculate": { "MATH": 0.88, "CODE": 0.10 },
+    "write": { "CODE": 0.71, "DIALOGUE": 0.25 }
+  },
+  "userPrefs": {
+    "preferredCodeExpert": "code-expert-v2",
+    "disablePrewarmMath": false
+  }
+}

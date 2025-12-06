@@ -1,6 +1,8 @@
 import { dialoguePlugin } from '../../plugins/dialogue/DialoguePlugin';
 import { eventBus } from '../eventbus/EventBus';
 import { router } from '../router/Router';
+import { catalogManager } from './CatalogManager';
+import { updateService } from './UpdateService';
 import { 
   KenshoMessage, 
   KenshoResponse, 
@@ -26,11 +28,23 @@ interface ActiveTask {
   startTime: number;
 }
 
-export function initializeKernel(
+export async function initializeKernel(
   port: MessagePort, 
   connectionId: string
-): KernelInstance {
+): Promise<KernelInstance> {
   console.log(`[Kernel] Initialisation du noyau Kensho pour connexion ${connectionId}...`);
+  
+  // Initialise le catalogue dynamique
+  try {
+    await catalogManager.initialize();
+    console.log('[Kernel] CatalogManager initialisé avec succès');
+  } catch (error) {
+    console.error('[Kernel] Échec de l\'initialisation du CatalogManager:', error);
+  }
+  
+  // Démarre le service de mise à jour en arrière-plan
+  updateService.start();
+  console.log('[Kernel] UpdateService démarré');
   
   const activeTasks = new Map<string, ActiveTask>();
   const startTime = Date.now();
@@ -77,7 +91,6 @@ export function initializeKernel(
     }
   }
 
-  // Nouvelle fonction pour gérer le changement de contexte
   async function handleContextChange(
     message: Extract<KenshoMessage, { type: 'context-changed' }>
   ): Promise<void> {
@@ -90,7 +103,22 @@ export function initializeKernel(
     await router.prewarmFromContext(context);
     
     // Envoyer une confirmation au client
-    sendResponse(createResponse('context-changed-ack', message.requestId, { context }));
+    sendResponse(createResponse('context-changed-ack', message.requestId));
+  }
+
+  // Nouvelle fonction pour gérer l'événement 'user-is-typing'
+  async function handleUserIsTyping(
+    message: Extract<KenshoMessage, { type: 'user-is-typing' }>
+  ): Promise<void> {
+    const { payload } = message;
+    const { text } = payload;
+    
+    console.log(`[Kernel] Utilisateur est en train de taper: ${text.substring(0, 50)}...`);
+    
+    // Délègue la prédiction d'intention au Router
+    await router.predictIntent(text);
+    
+    // Pas besoin de réponse pour cet événement
   }
 
   function handleCancelTask(
@@ -157,6 +185,9 @@ export function initializeKernel(
             break;
           case 'context-changed': // Ajout du nouveau cas
             await handleContextChange(message);
+            break;
+          case 'user-is-typing': // Ajout du nouveau cas
+            await handleUserIsTyping(message);
             break;
           case 'cancel-task':
             handleCancelTask(message);

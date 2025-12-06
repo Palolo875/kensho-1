@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2025-12-04T10:00:00Z",
+  "minClientVersion": "5.0.0",
+  "featureFlags": {
+    "enableCodeExpert": { 
+      "enabled": true, 
+      "rollout": 100 
+    },
+    "enableNewPhi3": { 
+      "enabled": false, 
+      "rollout": 0, 
+      "reason": "buggy" 
+    },
+    "enableExperimentalMath": { 
+      "enabled": true, 
+      "rollout": 10, 
+      "userGroup": "beta" 
+    },
+    "premiumFeatures": {
+      "enabled": true,
+      "userSegment": "premium",
+      "overrides": {
+        "user-abc123": false
+      }
+    }
+  },
+  "models": {
+    "dialogue-gemma3-270m-mock": { 
+      "specialty": "DIALOGUE_FAST", 
+      "virtual_vram_gb": 0.3,
+      "version": "1.2.0",
+      "deprecated": false,
+      "tags": ["lightweight", "multilingual"],
+      "contextWindow": 2048,
+      "licenseType": "apache-2.0",
+      "downloadUrl": "https://cdn.kensho.ai/models/gemma3-270m.bin"
+    },
+    "dialogue-danube2-1.8b-mock": { 
+      "specialty": "DIALOGUE_DEEP", 
+      "virtual_vram_gb": 1.4,
+      "version": "1.0.0",
+      "deprecated": false,
+      "tags": ["deep", "reasoning"],
+      "contextWindow": 4096,
+      "licenseType": "mit",
+      "downloadUrl": "https://cdn.kensho.ai/models/danube2-1.8b.bin"
+    },
+    "code-qwen2.5-coder-1.5b-mock": { 
+      "specialty": "CODE_EXPERT", 
+      "virtual_vram_gb": 1.0,
+      "version": "1.1.0",
+      "deprecated": false,
+      "tags": ["coding", "python", "javascript"],
+      "contextWindow": 8192,
+      "licenseType": "apache-2.0",
+      "downloadUrl": "https://cdn.kensho.ai/models/qwen2.5-coder-1.5b.bin",
+      "enabled": true,
+      "featureFlag": "enableCodeExpert"
+    },
+    "math-bitnet-1.58b-mock": { 
+      "specialty": "MATH_CALCULATION", 
+      "virtual_vram_gb": 0.4,
+      "version": "1.0.0",
+      "deprecated": false,
+      "tags": ["math", "calculation"],
+      "contextWindow": 1024,
+      "licenseType": "bsd-3-clause",
+      "downloadUrl": "https://cdn.kensho.ai/models/bitnet-1.58b.bin",
+      "enabled": true,
+      "featureFlag": "enableExperimentalMath"
+    },
+    "buggy-expert-v2": {
+      "specialty": "CODE_EXPERT",
+      "enabled": false,
+      "featureFlag": "code-v2-experimental",
+      "rollout": 0.1
+    }
+  },
+  "signature": "base64-encoded-signature"
+}

@@ -31,6 +31,7 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   
+  const worker = (window as any).__kensho_workers?.['MainLLMAgent'];
   const sendMessage = useKenshoStore(state => state.sendMessage);
   const modelReady = useKenshoStore(state => state.modelProgress.phase === 'ready');
   const isKenshoWriting = useKenshoStore(state => state.isKenshoWriting);
@@ -56,6 +57,15 @@ const ChatInput = ({ showSuggestions = false }: ChatInputProps) => {
 
   const handleMessageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
+    
+    // Envoyer l'événement 'user-is-typing' au worker
+    if (newValue.length > 3) { // Ne pas spammer pour quelques lettres
+      worker?.postMessage({ 
+        type: 'user-is-typing', 
+        payload: { text: newValue } 
+      });
+    }
+    
     if (newValue.length <= MAX_MESSAGE_LENGTH) {
       setMessage(newValue);
     } else {

@@ -14,6 +14,7 @@ export type EventMap = {
   ERROR: { message: string; name: string; stack?: string };
   METRICS: { ttft?: number; tokensPerSec?: number };
   INFO: { message: string };
+  UPDATE_READY: { version: string; message: string };
 };
 
 export type Listener<T = any> = (payload: T) => void;
@@ -222,6 +223,15 @@ export class EventBus {
    */
   public streamInfo(message: string): void {
     this.emit('INFO', { message });
+  }
+
+  /**
+   * Convenience method for emitting UPDATE_READY events
+   * @param version The version number
+   * @param message The update message
+   */
+  public streamUpdateReady(version: string, message: string): void {
+    this.emit('UPDATE_READY', { version, message });
   }
 
   /**

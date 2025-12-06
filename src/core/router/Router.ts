@@ -1,11 +1,18 @@
 import { IntentClassifier } from './IntentClassifier';
 import { CapacityEvaluator } from './CapacityEvaluator';
-import { getModelBySpecialization } from './ModelCatalog';
-import { MODEL_KEYS } from '../models/ModelConstants';
+import { catalogManager } from '../kernel/CatalogManager';
 import { kernelCoordinator } from '../kernel';
 import { runtimeManager } from '../kernel/RuntimeManager';
 import { logger } from '../kernel/monitoring/LoggerService'; // ✅ Remplace createLogger
 import { performanceTracker } from '../kernel/PerformanceTracker';
+import type { 
+  IntentCategory, 
+  ExecutionPlan, 
+  Task, 
+  PerformanceMode,
+  ExecutionStrategy
+} from './RouterTypes';
+import { RouterError } from './RouterTypes';
 
 // const log = createLogger('Router'); // ✅ Supprimé
 const log = logger; // ✅ Nouveau
@@ -213,9 +220,8 @@ export class Router {
       
       // 6. Déterminer la stratégie d'exécution
       const strategy = this.capacityEvaluator.determineStrategy(
-        capacityMetrics,
-        primaryTask,
-        fallbackTasks
+        capacityMetrics.overallScore,
+        primaryTask.priority
       );
       
       // 7. Estimer la durée
@@ -487,12 +493,12 @@ export class Router {
     switch (intent) {
       case 'CODE': {
         // Vérifier si le modèle code peut être chargé
-        const decision = await kernelCoordinator.canLoadModel(MODEL_KEYS.CODE_EXPERT);
+        const decision = await kernelCoordinator.canLoadModel('code-qwen2.5-coder-1.5b-mock');
         if (!decision.canLoad) {
           if (this.config.fallbackToDialogue) {
             const fallbackTask: Task = {
               agentName: 'GeneralDialogue',
-              modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
+              modelKey: 'dialogue-gemma3-270m-mock',
               priority: 'LOW',
               timeout: 20000,
               temperature: 0.7
@@ -509,7 +515,7 @@ export class Router {
         
         const primaryTask: Task = {
           agentName: 'CodeExpert',
-          modelKey: MODEL_KEYS.CODE_EXPERT,
+          modelKey: 'code-qwen2.5-coder-1.5b-mock',
           priority: 'HIGH',
           timeout: 30000,
           temperature: 0.2
@@ -517,7 +523,7 @@ export class Router {
         
         const fallbackTasks: Task[] = capacityScore >= 6 ? [{
           agentName: 'GeneralDialogue',
-          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
+          modelKey: 'dialogue-gemma3-270m-mock',
           priority: 'LOW',
           timeout: 20000,
           temperature: 0.7
@@ -527,22 +533,22 @@ export class Router {
       }
       
       case 'MATH': {
-        const mathModel = getModelBySpecialization('math');
+        const mathModel = catalogManager.getModelSpec('math-bitnet-1.58b-mock');
         if (!mathModel) {
           throw new RouterError(
             'Aucun modèle mathématique disponible',
-            'Model catalog missing math expert'
+            'Catalogue dynamique ne contient pas de modèle math'
           );
         }
         
-        const decision = await kernelCoordinator.canLoadModel(MODEL_KEYS.MATH_EXPERT);
+        const decision = await kernelCoordinator.canLoadModel('math-bitnet-1.58b-mock');
         if (!decision.canLoad) {
-          if (this.config.useModelPool && runtimeManager.isModelInPool(MODEL_KEYS.MATH_EXPERT)) {
+          if (this.config.useModelPool && runtimeManager.isModelInPool('math-bitnet-1.58b-mock')) {
             log.info('Router', 'Modèle math trouvé dans le pool malgré la décision négative du kernel'); // ✅ Mis à jour
           } else if (this.config.fallbackToDialogue) {
             const fallbackTask: Task = {
               agentName: 'GeneralDialogue',
-              modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
+              modelKey: 'dialogue-gemma3-270m-mock',
               priority: 'LOW',
               timeout: 20000,
               temperature: 0.7
@@ -559,7 +565,7 @@ export class Router {
         
         const primaryTask: Task = {
           agentName: 'MathExpert',
-          modelKey: MODEL_KEYS.MATH_EXPERT,
+          modelKey: 'math-bitnet-1.58b-mock',
           priority: 'HIGH',
           timeout: 25000,
           temperature: 0.1
@@ -567,7 +573,7 @@ export class Router {
         
         const fallbackTasks: Task[] = capacityScore >= 7 ? [{
           agentName: 'GeneralDialogue',
-          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
+          modelKey: 'dialogue-gemma3-270m-mock',
           priority: 'LOW',
           timeout: 20000,
           temperature: 0.7
@@ -579,7 +585,7 @@ export class Router {
       case 'FACTCHECK': {
         const primaryTask: Task = {
           agentName: 'FactCheckExpert',
-          modelKey: MODEL_KEYS.FACT_CHECK_EXPERT,
+          modelKey: 'fact-check-expert',
           priority: 'HIGH',
           timeout: 20000,
           temperature: 0.3
@@ -587,7 +593,7 @@ export class Router {
         
         const fallbackTasks: Task[] = capacityScore >= 5 ? [{
           agentName: 'GeneralDialogue',
-          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
+          modelKey: 'dialogue-gemma3-270m-mock',
           priority: 'LOW',
           timeout: 20000,
           temperature: 0.7
@@ -599,7 +605,7 @@ export class Router {
       default: { // DIALOGUE ou UNKNOWN
         const primaryTask: Task = {
           agentName: 'GeneralDialogue',
-          modelKey: MODEL_KEYS.GENERAL_DIALOGUE,
+          modelKey: 'dialogue-gemma3-270m-mock',
           priority: 'MEDIUM',
           timeout: 20000,
           temperature: 0.7
@@ -608,7 +614,7 @@ export class Router {
         // Pour le dialogue, on peut ajouter un expert secondaire si la capacité est suffisante
         const fallbackTasks: Task[] = capacityScore >= 8 ? [{
           agentName: 'DeepThinkExpert',
-          modelKey: MODEL_KEYS.DEEP_THINK_EXPERT,
+          modelKey: 'dialogue-danube2-1.8b-mock',
           priority: 'LOW',
           timeout: 30000,
           temperature: 0.9
@@ -625,13 +631,13 @@ export class Router {
   private selectExpertForIntent(intent: string): string {
     switch (intent) {
       case 'CODE':
-        return MODEL_KEYS.CODE_EXPERT;
+        return 'code-qwen2.5-coder-1.5b-mock';
       case 'MATH':
-        return MODEL_KEYS.MATH_EXPERT;
+        return 'math-bitnet-1.58b-mock';
       case 'FACTCHECK':
-        return MODEL_KEYS.FACT_CHECK_EXPERT;
+        return 'fact-check-expert';
       default:
-        return MODEL_KEYS.GENERAL_DIALOGUE;
+        return 'dialogue-gemma3-270m-mock';
     }
   }
 
@@ -649,10 +655,10 @@ export class Router {
    */
   private getModelKeyForIntent(intent: IntentCategory): string {
     switch (intent) {
-      case 'CODE': return MODEL_KEYS.CODE_EXPERT;
-      case 'MATH': return MODEL_KEYS.MATH_EXPERT;
-      case 'FACTCHECK': return MODEL_KEYS.FACT_CHECK_EXPERT;
-      default: return MODEL_KEYS.GENERAL_DIALOGUE;
+      case 'CODE': return 'code-qwen2.5-coder-1.5b-mock';
+      case 'MATH': return 'math-bitnet-1.58b-mock';
+      case 'FACTCHECK': return 'fact-check-expert';
+      default: return 'dialogue-gemma3-270m-mock';
     }
   }
   
@@ -741,20 +747,36 @@ export class Router {
   }
   
   /**
-   * Exposition de l'évaluation de complexité pour l'UI
+   * Prédit l'intention en temps réel pendant que l'utilisateur tape
    */
-  public getLastComplexityAssessment(): { 
-    level: 'LOW' | 'MEDIUM' | 'HIGH',
-    score: number,
-    factors: Record<string, number>
-  } {
-    // Cette méthode serait appelée après createPlan pour obtenir l'évaluation
-    // Pour l'instant, on retourne une valeur par défaut
-    return {
-      level: 'MEDIUM',
-      score: 0.5,
-      factors: {}
-    };
+  public async predictIntent(text: string): Promise<void> {
+    if (text.length < 5) return; // Ne pas prédire pour de très courts textes
+    
+    try {
+      // Classifier l'intention en temps réel
+      const classificationResult = await this.intentClassifier.classify(text);
+      
+      log.info('Router', `Prédiction d'intention en temps réel: ${classificationResult.intent} (conf: ${classificationResult.confidence})`, {
+        intent: classificationResult.intent,
+        confidence: classificationResult.confidence
+      });
+      
+      // Si la confiance est suffisante, préchauffer le modèle approprié
+      if (classificationResult.confidence > this.config.preloadThreshold) {
+        const modelKey = this.getModelKeyForIntent(classificationResult.intent);
+        
+        // Vérifier si le modèle est déjà préchargé
+        if (!runtimeManager.isModelInPool(modelKey)) {
+          log.info('Router', `Préchauffage spéculatif du modèle: ${modelKey}`);
+          runtimeManager.prewarmModel(modelKey);
+          this.stats.preloadsTriggered++;
+        }
+      }
+    } catch (error: unknown) {
+      // Silencieux en cas d'erreur de prédiction - ne pas perturber l'utilisateur
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log.debug('Router', 'Erreur lors de la prédiction d\'intention:', { error: errorMessage });
+    }
   }
 }
 

@@ -37,6 +37,20 @@ export const KenshoMessageSchema = z.discriminatedUnion('type', [
     payload: z.object({}),
     requestId: z.string().uuid(),
   }),
+  z.object({
+    type: z.literal('context-changed'),
+    payload: z.object({
+      context: z.string(),
+    }),
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal('user-is-typing'),
+    payload: z.object({
+      text: z.string(),
+    }),
+    requestId: z.string().uuid(),
+  }),
 ]);
 
 export type KenshoMessage = z.infer<typeof KenshoMessageSchema>;
@@ -53,7 +67,8 @@ export type KenshoResponseType =
   | 'connected'
   | 'ready'
   | 'heartbeat'
-  | 'initializing';
+  | 'initializing'
+  | 'context-changed-ack';
 
 export type WorkerState = 'connecting' | 'initializing' | 'ready' | 'error' | 'disconnected';
 

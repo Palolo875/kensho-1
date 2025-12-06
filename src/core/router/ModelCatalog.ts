@@ -1,3 +1,10 @@
+/**
+ * ⚠️ DÉPRÉCIÉ - ModelCatalog.ts
+ * 
+ * Ce fichier est déprécié et remplacé par le CatalogManager dynamique.
+ * Utilisez catalogManager.getCatalog() à la place.
+ */
+
 export interface RouterModelMeta {
   model_id: string;
   size: string;
@@ -9,6 +16,7 @@ export interface RouterModelMeta {
   verifiedDate?: string;
 }
 
+// Catalogue statique déprécié - utilisé uniquement pour compatibilité descendante
 export const ROUTER_MODEL_CATALOG: Record<string, RouterModelMeta> = {
   "gemma-3-270m": {
     model_id: "gemma-3-270m-it-MLC",
@@ -44,7 +52,11 @@ export const ROUTER_MODEL_CATALOG: Record<string, RouterModelMeta> = {
   }
 };
 
+/**
+ * ⚠️ DÉPRÉCIÉ - Utilisez catalogManager.getModelSpec() à la place
+ */
 export function getModelBySpecialization(specialization: 'dialogue' | 'code' | 'math'): RouterModelMeta | null {
+  console.warn('[ModelCatalog] Utilisation d\'une fonction dépréciée. Utilisez catalogManager à la place.');
   for (const [, model] of Object.entries(ROUTER_MODEL_CATALOG)) {
     if (model.specialization === specialization && model.verified) {
       return model;
@@ -53,10 +65,18 @@ export function getModelBySpecialization(specialization: 'dialogue' | 'code' | '
   return null;
 }
 
+/**
+ * ⚠️ DÉPRÉCIÉ - Utilisez catalogManager.getCatalog() à la place
+ */
 export function getAllVerifiedModels(): RouterModelMeta[] {
+  console.warn('[ModelCatalog] Utilisation d\'une fonction dépréciée. Utilisez catalogManager à la place.');
   return Object.values(ROUTER_MODEL_CATALOG).filter(m => m.verified);
 }
 
+/**
+ * ⚠️ DÉPRÉCIÉ - Utilisez catalogManager.getModelSpec() à la place
+ */
 export function validateModelExists(modelKey: string): boolean {
+  console.warn('[ModelCatalog] Utilisation d\'une fonction dépréciée. Utilisez catalogManager à la place.');
   return modelKey in ROUTER_MODEL_CATALOG && ROUTER_MODEL_CATALOG[modelKey].verified;
 }

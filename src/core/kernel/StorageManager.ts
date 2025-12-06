@@ -1309,6 +1309,16 @@ class StorageManager {
   }
 
   /**
+   * Simule le téléchargement d'un fichier avec retry
+   */
+  public async simulateDownloadFile(fileInfo: any): Promise<void> {
+    console.log(`[StorageManager] Téléchargement simulé de ${fileInfo.path}...`);
+    // Simulation d'un téléchargement
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    console.log(`[StorageManager] Téléchargement terminé: ${fileInfo.path}`);
+  }
+
+  /**
    * Vérifie l'espace disque disponible
    */
   private async checkDiskSpace(manifest: any): Promise<void> {

@@ -63,16 +63,16 @@ Transformer notre ModelCatalog statique en un système de découverte de plugins
 6. Tests unitaires et d'intégration
 
 ### Critères d'Acceptation
-- [ ] Fichier catalog.json créé et accessible avec métadonnées riches et feature flags
-- [ ] CatalogManager implémenté avec validation Zod, cache OPFS, signature cryptographique et gestion des feature flags
-- [ ] Kernel initialise correctement le CatalogManager avec gestion d'erreurs
-- [ ] Router utilise le catalogue dynamique pour la planification avec fallbacks gracieux et prise en compte des feature flags
-- [ ] Découplage complet entre logique d'application et liste des modèles
-- [ ] Extensibilité facilitée pour ajouter de nouveaux plugins
-- [ ] Hot-reload du catalogue avec détection automatique des mises à jour
-- [ ] Validation stricte du format du catalogue
-- [ ] Sécurité renforcée avec vérification de signature
-- [ ] Gestion des déploiements progressifs avec feature flags
+- [x] Fichier catalog.json créé et accessible avec métadonnées riches et feature flags
+- [x] CatalogManager implémenté avec validation Zod, cache OPFS, signature cryptographique et gestion des feature flags
+- [x] Kernel initialise correctement le CatalogManager avec gestion d'erreurs
+- [x] Router utilise le catalogue dynamique pour la planification avec fallbacks gracieux et prise en compte des feature flags
+- [x] Découplage complet entre logique d'application et liste des modèles
+- [x] Extensibilité facilitée pour ajouter de nouveaux plugins
+- [x] Hot-reload du catalogue avec détection automatique des mises à jour
+- [x] Validation stricte du format du catalogue
+- [x] Sécurité renforcée avec vérification de signature
+- [x] Gestion des déploiements progressifs avec feature flags
 - [ ] Tests unitaires couvrant 90% du code
 - [ ] Documentation complète du système
 
@@ -133,10 +133,10 @@ Créer un UpdateService qui, périodiquement et en arrière-plan, vérifie si un
 4. Tests unitaires et d'intégration
 
 ### Critères d'Acceptation
-- [ ] UpdateService implémenté avec vérification périodique
-- [ ] Téléchargement en arrière-plan des mises à jour
-- [ ] Notification utilisateur via SSE quand une mise à jour est prête
-- [ ] Kernel initialise correctement l'UpdateService
+- [x] UpdateService implémenté avec vérification périodique
+- [x] Téléchargement en arrière-plan des mises à jour
+- [x] Notification utilisateur via SSE quand une mise à jour est prête
+- [x] Kernel initialise correctement l'UpdateService
 - [ ] Gestion des erreurs réseau et de téléchargement
 - [ ] Comparaison fine des versions
 - [ ] Priorité de téléchargement

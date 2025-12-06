@@ -1,5 +1,8 @@
 // src/core/models/ModelConstants.ts
-// Constants for model keys used throughout the system
+// ⚠️ DÉPRÉCIÉ - Constants for model keys used throughout the system
+// Utilisez catalogManager.getCatalog() à la place
+
+console.warn('[ModelConstants] Utilisation d\'un fichier déprécié. Utilisez catalogManager à la place.');
 
 export const MODEL_KEYS = {
     CODE_EXPERT: 'qwen2.5-coder-1.5b',
